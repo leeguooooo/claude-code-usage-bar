@@ -157,8 +157,12 @@ The status bar version has passed consistency validation, with display data comp
 
 ## Related Links
 
-- Original Project: [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)
-- Claude Code Documentation: [Status Bar Configuration](https://docs.anthropic.com/en/docs/claude-code/statusline)
+- [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)
+- [Status Bar Configuration](https://docs.anthropic.com/en/docs/claude-code/statusline)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=leeguooooo/claude-code-usage-bar&type=Date)](https://www.star-history.com/#leeguooooo/claude-code-usage-bar&Date)
 
 ## License
 
