@@ -1,57 +1,59 @@
-# 🔋 Claude Code 状态栏监控器
+# Claude Code Status Bar Monitor
 
-轻量级 Claude AI token 使用监控工具，直接集成到 Claude Code 状态栏，显示精确的使用数据。
+Lightweight Claude AI token usage monitor that integrates directly into the Claude Code status bar, displaying precise usage data.
 
-## ✨ 特性
+![img](img.png)
 
-- 🎯 **数据精确**: 与原项目监控数据 99% 匹配
-- ⚡ **实时显示**: 直接在 Claude Code 状态栏显示
-- 🔍 **P90 动态限制**: 自动检测个人使用模式
-- 📊 **清晰标签**: Token、成本、倒计时、使用率一目了然
-- 🚀 **零配置**: 自动适应不同环境
+## Features
 
-## 📊 显示格式
+- **Accurate Data**: 99% match with original project monitoring data
+- **Real-time Display**: Shows directly in Claude Code status bar
+- **P90 Dynamic Limits**: Automatically detects personal usage patterns
+- **Clear Labels**: Token, cost, countdown, and usage rate at a glance
+- **Zero Configuration**: Automatically adapts to different environments
+
+## Display Format
 
 ```
-🔋 T:15.0k/118.2k | $:11.56/119 | ⌛️3h 18m | 使用率:13%
+🔋 T:15.0k/118.2k | $:11.56/119 | ⌛️3h 18m | Usage:13%
 ```
 
-### 📝 格式说明
+### Format Description
 
-- **🔋**: 电池图标表示余量状态
-- **T:15.0k/118.2k**: Token 使用量/P90 动态限制
-- **$:11.56/119**: 成本使用/成本限制
-- **⌛️3h 18m**: 距离重置时间
-- **使用率:13%**: 当前最高使用率百分比
+- **🔋**: Battery icon indicating remaining capacity
+- **T:15.0k/118.2k**: Token usage/P90 dynamic limit
+- **$:11.56/119**: Cost usage/cost limit
+- **⌛️3h 18m**: Time until reset
+- **Usage:13%**: Current maximum usage percentage
 
-### 🎨 颜色状态
+### Color Status
 
-- 🟢 **绿色**: 使用率 < 30%（安全）
-- 🟡 **黄色**: 使用率 30-70%（注意）
-- 🔴 **红色**: 使用率 > 70%（警告）
+- Green: Usage < 30% (Safe)
+- Yellow: Usage 30-70% (Caution)
+- Red: Usage > 70% (Warning)
 
-### 💯 使用率计算
+### Usage Rate Calculation
 
-使用率 = max(Token使用率, 成本使用率)
-- 显示两者中的最高值，确保准确预警
+Usage Rate = max(Token Usage Rate, Cost Usage Rate)
+- Displays the higher of the two values for accurate warnings
 
-## 快速开始
+## Quick Start
 
-### 自动配置（推荐）
+### Automatic Configuration (Recommended)
 
 ```bash
 cd claude-statusbar-monitor
 python3 setup_statusbar.py
 ```
 
-### 手动配置
+### Manual Configuration
 
 ```bash
-# 1. 确保脚本可执行
+# 1. Make script executable
 chmod +x statusbar.py
 
-# 2. 编辑 Claude 设置文件
-# 在 ~/.claude/settings.json 中添加：
+# 2. Edit Claude settings file
+# Add to ~/.claude/settings.json:
 {
   "statusLine": {
     "type": "command", 
@@ -60,104 +62,104 @@ chmod +x statusbar.py
   }
 }
 
-# 3. 重启 Claude Code
+# 3. Restart Claude Code
 ```
 
-### 使用 Claude Code 交互配置
+### Interactive Configuration in Claude Code
 
-在 Claude Code 中运行：
+Run in Claude Code:
 ```
 /statusline
 ```
 
-### 测试
+### Testing
 
 ```bash
-# 基本测试
+# Basic test
 python3 statusbar.py
-# 应显示: 🔋 T:4.6k/118k | $:4.68/119 | CUSTOM* | ⏱3h 33m ✅
+# Should display: 🔋 T:4.6k/118k | $:4.68/119 | ⌛️3h 33m | Usage:5%
 ```
 
-## 使用说明
+## Usage
 
-配置完成后，Claude Code 状态栏将自动显示您的 token 使用情况。
+Once configured, the Claude Code status bar will automatically display your token usage.
 
-## 支持的计划
+## Supported Plans
 
-| 计划 | Token 限制 | 成本限制 |
-|------|-----------|----------|
+| Plan | Token Limit | Cost Limit |
+|------|-------------|------------|
 | Pro | ~19k tokens | $18 |
 | Max5 | ~88k tokens | $35 |
 | Max20 | ~220k tokens | $140 |
-| Custom | 自动检测限制 | 动态计算 |
+| Custom | Auto-detected | Dynamic |
 
-## 安装要求
+## Requirements
 
 - Python 3.6+
-- 无需额外依赖（仅使用 Python 标准库）
+- No additional dependencies (uses Python standard library only)
 
-## 项目架构
+## Architecture
 
-### 文件结构
+### File Structure
 
 ```
 claude-statusbar-monitor/
-├── README.md                    # 项目说明
-├── statusbar.py                 # 核心状态栏脚本
-├── setup_statusbar.py           # 自动设置脚本
-├── requirements.txt             # 依赖文件（仅标准库）
-└── claude-settings-example.json # 配置示例
+├── README.md                    # Project documentation
+├── statusbar.py                 # Core status bar script
+├── setup_statusbar.py           # Automatic setup script
+├── requirements.txt             # Dependencies (standard library only)
+└── claude-settings-example.json # Configuration example
 ```
 
-### 数据源
+### Data Sources
 
-1. **原项目集成**: 优先使用 Claude-Code-Usage-Monitor 的分析引擎
-2. **直接分析**: 备用方案，直接读取 Claude 数据文件
-3. **P90 算法**: 基于历史使用模式动态计算限制
+1. **Original Project Integration**: Prioritizes Claude-Code-Usage-Monitor analysis engine
+2. **Direct Analysis**: Fallback option, directly reads Claude data files
+3. **P90 Algorithm**: Dynamically calculates limits based on historical usage patterns
 
-### 工作原理
+### How It Works
 
-1. 脚本首先尝试从原项目获取数据（如果已安装）
-2. 如果原项目不可用，直接分析 Claude 的 JSONL 数据文件
-3. 基于最近 8 天的使用历史计算 P90 限制
-4. 格式化输出并显示在状态栏
+1. Script first attempts to get data from original project (if installed)
+2. If original project unavailable, directly analyzes Claude's JSONL data files
+3. Calculates P90 limits based on last 8 days of usage history
+4. Formats output and displays in status bar
 
-## 故障排除
+## Troubleshooting
 
-### 常见问题
+### Common Issues
 
-1. **状态栏不显示**
-   - 检查脚本权限: `chmod +x statusbar.py`
-   - 测试脚本: `python3 statusbar.py`
-   - 重启 Claude Code
+1. **Status bar not showing**
+   - Check script permissions: `chmod +x statusbar.py`
+   - Test script: `python3 statusbar.py`
+   - Restart Claude Code
 
-2. **显示 "No Claude data found"**
-   - 确认 Claude Code 已使用过
-   - 检查数据目录: `ls -la ~/.claude/projects`
+2. **Shows "No Claude data found"**
+   - Confirm Claude Code has been used
+   - Check data directory: `ls -la ~/.claude/projects`
 
-3. **显示 "No recent usage"**
-   - 在 Claude Code 中发送消息
-   - 等待几分钟后重试
+3. **Shows "No recent usage"**
+   - Send messages in Claude Code
+   - Wait a few minutes and retry
 
-4. **脚本执行失败**
-   - 检查 Python 版本: `python3 --version`
-   - 查看详细错误: `python3 statusbar.py 2>&1`
+4. **Script execution fails**
+   - Check Python version: `python3 --version`
+   - View detailed errors: `python3 statusbar.py 2>&1`
 
-## 数据验证
+## Data Validation
 
-状态栏版本已通过一致性验证，显示数据与原项目完全匹配：
+The status bar version has passed consistency validation, with display data completely matching the original project:
 
 ```
-✓ Token 使用匹配: (2,300 vs 2,318)
-✓ Token 限制匹配: (113,500 vs 113,505)
-✓ P90 动态计算: 完全一致
+✓ Token usage match: (2,300 vs 2,318)
+✓ Token limit match: (113,500 vs 113,505)
+✓ P90 dynamic calculation: Fully consistent
 ```
 
-## 相关链接
+## Related Links
 
-- 原项目: [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)
-- Claude Code 文档: [状态栏配置](https://docs.anthropic.com/zh-CN/docs/claude-code/statusline)
+- Original Project: [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)
+- Claude Code Documentation: [Status Bar Configuration](https://docs.anthropic.com/en/docs/claude-code/statusline)
 
-## 许可证
+## License
 
 MIT License
