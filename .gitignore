@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Python cache/bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE/settings
+.vscode/
+.idea/
+
+# Tests/coverage caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+
+# Local env/config (keep the example file tracked)
+claude-settings.json
+*.local.json
+.env
+.env.*
+
+# Build artifacts (not used now, future-proof)
+build/
+dist/
+*.egg-info/
+.eggs/

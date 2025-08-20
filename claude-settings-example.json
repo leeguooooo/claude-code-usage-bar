@@ -1,0 +1,7 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/path/to/claude-statusbar-monitor/statusbar.py",
+    "padding": 0
+  }
+}
