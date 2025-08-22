@@ -12,7 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/ma
 
 Never run out of tokens unexpectedly again.
 
-[Include GIF/Screenshot]
+![Screenshot](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/img.png)
 
 🧵👇
 ```
@@ -49,7 +49,7 @@ It auto-detects your system, installs the package, configures Claude Code, and s
 
 No manual configuration. No editing config files. It just works.
 
-[Screenshot of installation]
+![Installation](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/img.png)
 ```
 
 ## Thread (4/6)

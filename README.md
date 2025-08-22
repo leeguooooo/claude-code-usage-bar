@@ -2,7 +2,7 @@
 
 🔋 Lightweight status bar for Claude AI token usage in your terminal.
 
-![Claude Code Status Bar](./img.png)
+![Claude Code Status Bar](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/img.png)
 
 ## ✨ One-Line Install
 

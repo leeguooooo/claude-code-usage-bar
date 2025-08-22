@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/ma
 
 That's it! Just restart Claude Code and you'll see your usage.
 
-[Screenshot here]
+![Claude Status Bar](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/img.png)
 
 **Technical details:**
 - Built on top of the excellent claude-monitor by @Maciek-roboblog
