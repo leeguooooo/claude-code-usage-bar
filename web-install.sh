@@ -112,6 +112,76 @@ configure_shell() {
     fi
 }
 
+# Configure Claude Code status bar
+configure_claude_statusbar() {
+    echo -e "\n${BLUE}Configuring Claude Code status bar...${NC}"
+    
+    # Claude settings file path
+    CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+    
+    # Get the installed claude-statusbar command path
+    STATUSBAR_CMD=$(which claude-statusbar 2>/dev/null)
+    
+    if [ -z "$STATUSBAR_CMD" ]; then
+        echo -e "${YELLOW}⚠️  claude-statusbar command not found in PATH${NC}"
+        return
+    fi
+    
+    # Create .claude directory if it doesn't exist
+    mkdir -p "$HOME/.claude"
+    
+    # Backup existing settings if they exist
+    if [ -f "$CLAUDE_SETTINGS" ]; then
+        cp "$CLAUDE_SETTINGS" "$CLAUDE_SETTINGS.backup.$(date +%Y%m%d_%H%M%S)"
+        echo -e "${GREEN}✅ Backed up existing settings${NC}"
+    fi
+    
+    # Check if settings file exists and has content
+    if [ -f "$CLAUDE_SETTINGS" ] && [ -s "$CLAUDE_SETTINGS" ]; then
+        # Update existing settings using Python
+        python3 -c "
+import json
+import sys
+
+try:
+    with open('$CLAUDE_SETTINGS', 'r') as f:
+        settings = json.load(f)
+except:
+    settings = {}
+
+# Add statusLine configuration
+settings['statusLine'] = {
+    'type': 'command',
+    'command': '$STATUSBAR_CMD',
+    'padding': 0
+}
+
+with open('$CLAUDE_SETTINGS', 'w') as f:
+    json.dump(settings, f, indent=2)
+
+print('✅ Updated Claude Code settings')
+" || {
+            echo -e "${YELLOW}⚠️  Failed to update settings with Python${NC}"
+            return
+        }
+    else
+        # Create new settings file
+        cat > "$CLAUDE_SETTINGS" << EOF
+{
+  "statusLine": {
+    "type": "command",
+    "command": "$STATUSBAR_CMD",
+    "padding": 0
+  }
+}
+EOF
+        echo -e "${GREEN}✅ Created Claude Code settings${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ Claude Code status bar configured!${NC}"
+    echo -e "${YELLOW}📝 Note: Restart Claude Code to see the status bar${NC}"
+}
+
 # Test installation
 test_installation() {
     echo -e "\n${BLUE}Testing installation...${NC}"
@@ -159,6 +229,9 @@ main() {
     
     # Configure shell
     configure_shell
+    
+    # Configure Claude Code status bar
+    configure_claude_statusbar
     
     # Test
     test_installation
