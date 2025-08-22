@@ -16,6 +16,8 @@ This automatically:
 - ✅ Sets up shell aliases
 - ✅ Just restart Claude Code and you're done!
 
+> 💡 **After installation:** Restart Claude Code and say something to see your usage!
+
 ## 📦 Alternative Install Methods
 
 ```bash
