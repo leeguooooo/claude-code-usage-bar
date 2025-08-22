@@ -28,8 +28,18 @@ claude-settings.json
 .env
 .env.*
 
-# Build artifacts (not used now, future-proof)
+# Build artifacts
 build/
 dist/
 *.egg-info/
+src/*.egg-info/
 .eggs/
+
+# Test and draft files
+test_*.py
+*_draft.md
+*_example.json
+setup_*.py
+
+# Claude specific
+.claude/
