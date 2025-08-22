@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-statusbar"
+version = "1.0.0"
+authors = [
+    {name = "leeguooooo", email = "leeguooooo@gmail.com"}
+]
+description = "Lightweight status bar monitor for Claude AI token usage"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Monitoring",
+]
+keywords = ["claude", "ai", "monitoring", "statusbar", "token-usage"]
+
+dependencies = []
+
+[project.optional-dependencies]
+full = [
+    "claude-monitor>=3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/leeguooooo/claude-code-usage-bar"
+Repository = "https://github.com/leeguooooo/claude-code-usage-bar"
+Issues = "https://github.com/leeguooooo/claude-code-usage-bar/issues"
+
+[project.scripts]
+claude-statusbar = "claude_statusbar.cli:main"
+cstatus = "claude_statusbar.cli:main"
+cs = "claude_statusbar.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+claude_statusbar = ["*.py"]

@@ -1,169 +1,165 @@
-# Claude Code Status Bar Monitor
+# Claude Status Bar Monitor
 
-Lightweight Claude AI token usage monitor that integrates directly into the Claude Code status bar, displaying precise usage data.
-
-![img](img.png)
+A lightweight status bar monitor for Claude AI token usage. This tool displays real-time usage statistics in your terminal status bar.
 
 ## Features
 
-- **Accurate Data**: 99% match with original project monitoring data
-- **Real-time Display**: Shows directly in Claude Code status bar
-- **P90 Dynamic Limits**: Automatically detects personal usage patterns
-- **Clear Labels**: Token, cost, countdown, and usage rate at a glance
-- **Zero Configuration**: Automatically adapts to different environments
+- 🔋 Real-time token usage tracking
+- 💰 Cost monitoring
+- ⏱️ Session reset timer
+- 🎨 Color-coded usage indicators (green/yellow/red)
+- 📊 Automatic P90 limit detection
+- 🚀 Lightweight and fast
+- 📦 Available as PyPI package
+- 🔧 One-line web installation
 
-## Display Format
+## Quick Installation
 
-```
-🔋 T:15.0k/118.2k | $:11.56/119 | ⌛️3h 18m | Usage:13%
-```
-
-### Format Description
-
-- **🔋**: Battery icon indicating remaining capacity
-- **T:15.0k/118.2k**: Token usage/P90 dynamic limit
-- **$:11.56/119**: Cost usage/cost limit
-- **⌛️3h 18m**: Time until reset
-- **Usage:13%**: Current maximum usage percentage
-
-### Color Status
-
-- Green: Usage < 30% (Safe)
-- Yellow: Usage 30-70% (Caution)
-- Red: Usage > 70% (Warning)
-
-### Usage Rate Calculation
-
-Usage Rate = max(Token Usage Rate, Cost Usage Rate)
-- Displays the higher of the two values for accurate warnings
-
-## Quick Start
-
-### Automatic Configuration (Recommended)
+### 🚀 One-Line Web Install (Easiest)
 
 ```bash
-cd claude-statusbar-monitor
-python3 setup_statusbar.py
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh | bash
 ```
 
-### Manual Configuration
+Or with wget:
+```bash
+wget -qO- https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh | bash
+```
+
+### 📦 Install from PyPI
 
 ```bash
-# 1. Make script executable
-chmod +x statusbar.py
+# Using uv (recommended - fastest)
+uv tool install claude-statusbar
 
-# 2. Edit Claude settings file
-# Add to ~/.claude/settings.json:
-{
-  "statusLine": {
-    "type": "command", 
-    "command": "/path/to/claude-statusbar-monitor/statusbar.py",
-    "padding": 0
-  }
-}
+# Or using pip
+pip install claude-statusbar
 
-# 3. Restart Claude Code
+# Or using pipx (isolated environment)
+pipx install claude-statusbar
 ```
 
-### Interactive Configuration in Claude Code
-
-Run in Claude Code:
+After installation, run from anywhere:
+```bash
+claude-statusbar  # Full command
+cstatus          # Short alias
+cs               # Shortest alias
 ```
-/statusline
-```
 
-### Testing
+### 🔨 Install from Source
 
 ```bash
-# Basic test
-python3 statusbar.py
-# Should display: 🔋 T:4.6k/118k | $:4.68/119 | ⌛️3h 33m | Usage:5%
+# Clone and install
+git clone https://github.com/leeguooooo/claude-code-usage-bar.git
+cd claude-code-usage-bar
+pip install -e .
+
+# Or use the local installer
+./install.sh
 ```
 
 ## Usage
 
-Once configured, the Claude Code status bar will automatically display your token usage.
+### Basic Usage
 
-## Supported Plans
-
-| Plan | Token Limit | Cost Limit |
-|------|-------------|------------|
-| Pro | ~19k tokens | $18 |
-| Max5 | ~88k tokens | $35 |
-| Max20 | ~220k tokens | $140 |
-| Custom | Auto-detected | Dynamic |
-
-## Requirements
-
-- Python 3.6+
-- No additional dependencies (uses Python standard library only)
-
-## Architecture
-
-### File Structure
-
-```
-claude-statusbar-monitor/
-├── README.md                    # Project documentation
-├── statusbar.py                 # Core status bar script
-├── setup_statusbar.py           # Automatic setup script
-├── requirements.txt             # Dependencies (standard library only)
-└── claude-settings-example.json # Configuration example
+Run the script directly:
+```bash
+./statusbar.py
 ```
 
-### Data Sources
+Output example:
+```
+🔋 T:15.2k/88k | $:12.50/35 | ⏛2h 35m | Usage:17%
+```
 
-1. **Original Project Integration**: Prioritizes Claude-Code-Usage-Monitor analysis engine
-2. **Direct Analysis**: Fallback option, directly reads Claude data files
-3. **P90 Algorithm**: Dynamically calculates limits based on historical usage patterns
+### Integration with tmux
 
-### How It Works
+Add to your `~/.tmux.conf`:
+```bash
+set -g status-right '#(~/path/to/claude-statusbar-monitor/statusbar.py)'
+set -g status-interval 10
+```
 
-1. Script first attempts to get data from original project (if installed)
-2. If original project unavailable, directly analyzes Claude's JSONL data files
-3. Calculates P90 limits based on last 8 days of usage history
-4. Formats output and displays in status bar
+### Integration with Zsh (Oh My Zsh)
+
+Add to your `~/.zshrc`:
+```bash
+# Claude usage in prompt
+claude_usage() {
+    ~/path/to/claude-statusbar-monitor/statusbar.py
+}
+RPROMPT='$(claude_usage)'
+```
+
+### Integration with i3 status bar
+
+Add to your i3 config:
+```bash
+bar {
+    status_command while :; do echo "$(~/path/to/claude-statusbar-monitor/statusbar.py)"; sleep 10; done
+}
+```
+
+## How It Works
+
+The monitor has two data sources:
+
+1. **Primary**: Uses the installed `claude-monitor` package for accurate P90 analysis
+2. **Fallback**: Direct file analysis if the package is not available
+
+## Status Indicators
+
+- **T**: Token usage (current/limit)
+- **$**: Cost in USD (current/limit)
+- **⏱️**: Time until session reset
+- **Usage %**: Color-coded percentage
+  - 🟢 Green: < 30%
+  - 🟡 Yellow: 30-70%
+  - 🔴 Red: > 70%
 
 ## Troubleshooting
 
-### Common Issues
+### No data showing
 
-1. **Status bar not showing**
-   - Check script permissions: `chmod +x statusbar.py`
-   - Test script: `python3 statusbar.py`
-   - Restart Claude Code
-
-2. **Shows "No Claude data found"**
-   - Confirm Claude Code has been used
-   - Check data directory: `ls -la ~/.claude/projects`
-
-3. **Shows "No recent usage"**
-   - Send messages in Claude Code
-   - Wait a few minutes and retry
-
-4. **Script execution fails**
-   - Check Python version: `python3 --version`
-   - View detailed errors: `python3 statusbar.py 2>&1`
-
-## Data Validation
-
-The status bar version has passed consistency validation, with display data completely matching the original project:
-
-```
-✓ Token usage match: (2,300 vs 2,318)
-✓ Token limit match: (113,500 vs 113,505)
-✓ P90 dynamic calculation: Fully consistent
+1. Make sure `claude-monitor` is installed:
+```bash
+pip install claude-monitor
 ```
 
-## Related Links
+2. Check if Claude has active sessions:
+```bash
+claude-monitor --plan custom
+```
 
-- [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)
-- [Status Bar Configuration](https://docs.anthropic.com/en/docs/claude-code/statusline)
+3. Verify the script has execution permissions:
+```bash
+chmod +x statusbar.py
+```
 
-## Star History
+### Wrong timezone
 
-[![Star History Chart](https://api.star-history.com/svg?repos=leeguooooo/claude-code-usage-bar&type=Date)](https://www.star-history.com/#leeguooooo/claude-code-usage-bar&Date)
+The monitor automatically detects your timezone. If incorrect, set it manually in your environment:
+```bash
+export TZ='America/New_York'
+```
+
+## Uninstallation
+
+To remove the status bar monitor and clean up aliases:
+
+```bash
+./uninstall.sh
+```
+
+This will:
+- Remove shell aliases from your configuration files
+- Optionally uninstall the claude-monitor package
+- Keep the project files (you can delete them manually if needed)
 
 ## License
 
-MIT License
+MIT
+
+## Credits
+
+Built on top of [Claude Code Usage Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) by [@Maciek-roboblog](https://github.com/Maciek-roboblog)
