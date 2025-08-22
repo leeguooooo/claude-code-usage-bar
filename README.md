@@ -60,12 +60,8 @@ RPROMPT='$(claude-statusbar)'
 
 If you find this tool helpful, consider:
 - ⭐ Star this repo
+- 💖 Sponsor via GitHub
 - 🐛 Report issues
-- 🍻 Buy me a coffee
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/leeguooooor)
-[![PayPal](https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/leeguooooo)
-[![GitHub Sponsor](https://img.shields.io/badge/Sponsor-EA4AAA?style=for-the-badge&logo=github-sponsors&logoColor=white)](https://github.com/sponsors/leeguooooo)
 
 ## 📄 License
 
