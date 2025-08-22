@@ -60,6 +60,10 @@ RPROMPT='$(claude-statusbar)'
 
 MIT
 
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=leeguooooo/claude-code-usage-bar&type=Date)](https://star-history.com/#leeguooooo/claude-code-usage-bar&Date)
+
 ---
 
 *Built on [Claude Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) by [@Maciek-roboblog](https://github.com/Maciek-roboblog)*
