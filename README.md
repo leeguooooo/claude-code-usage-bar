@@ -2,7 +2,7 @@
 
 🔋 Lightweight status bar for Claude AI token usage in your terminal.
 
-![Status Example](https://img.shields.io/badge/Status-🔋_T:48k%2F133k_%7C_$59%2F119_%7C_⏱️31m_%7C_50%25-yellow)
+![Claude Code Status Bar](./img.png)
 
 ## ✨ One-Line Install
 
