@@ -117,17 +117,34 @@ try:
             if cost > 0:
                 all_costs.append(cost)
         
+        # Also collect message counts for P90 calculation
+        all_messages = []
+        for block in blocks:
+            msg_count = block.get('sentMessagesCount', len(block.get('entries', [])))
+            if msg_count > 0:
+                all_messages.append(msg_count)
+        
         if len(all_costs) >= 5:
             # Use P90 calculation similar to claude-monitor
             all_costs.sort()
+            all_messages.sort()
             p90_index = int(len(all_costs) * 0.9)
             p90_cost = all_costs[min(p90_index, len(all_costs) - 1)]
+            # Calculate message limit using P90 method
+            if all_messages:
+                p90_msg_index = int(len(all_messages) * 0.9)
+                p90_messages = all_messages[min(p90_msg_index, len(all_messages) - 1)]
+                message_limit = max(int(p90_messages * 1.2), 100)  # Similar to cost calculation
+            else:
+                message_limit = 755  # Default based on your example
+            
             # Apply similar logic to claude-monitor (seems to use a different multiplier)
             cost_limit = max(p90_cost * 1.004, 50.0)  # Adjusted to match observed behavior
         else:
             # Fallback to static limit
             from claude_monitor.core.plans import get_cost_limit
             cost_limit = get_cost_limit('custom')
+            message_limit = 755  # Default
     except:
         cost_limit = 90.26  # fallback
     
@@ -138,6 +155,7 @@ try:
                current_block.get('cost_usd', 0.0) or 
                current_block.get('cost', 0.0) or 0.0)
     entries = current_block.get('entries', []) or []
+    messages_count = current_block.get('sentMessagesCount', len(entries))
     is_active = current_block.get('isActive', current_block.get('is_active', False))
     
     output = {
@@ -145,6 +163,8 @@ try:
         'token_limit': token_limit,
         'cost_usd': cost_usd,
         'cost_limit': cost_limit,
+        'messages_count': messages_count,
+        'message_limit': message_limit,
         'entries_count': len(entries),
         'is_active': is_active,
         'plan_type': 'CUSTOM',
@@ -327,6 +347,8 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
             'token_limit': int(token_limit),
             'cost_usd': total_cost,
             'cost_limit': cost_limit,
+            'messages_count': len(current_session_data),  # Each entry is a message
+            'message_limit': 755,  # Default fallback
             'entries_count': len(current_session_data),
             'is_active': True,
             'plan_type': 'CUSTOM' if len(all_sessions) >= 5 else 'AUTO',
@@ -470,40 +492,40 @@ def generate_statusbar_text(usage_data: Dict[str, Any]) -> str:
     token_limit = usage_data['token_limit']
     cost_usd = usage_data['cost_usd']
     cost_limit = usage_data['cost_limit']
+    messages_count = usage_data.get('messages_count', 0)
+    message_limit = usage_data.get('message_limit', 755)
     plan_type = usage_data['plan_type']
     source = usage_data.get('source', 'unknown')
     
     # Calculate percentage - use cost as primary metric
     cost_percentage = (cost_usd / cost_limit) * 100 if cost_limit > 0 else 0
     token_percentage = (total_tokens / token_limit) * 100 if token_limit > 0 else 0
+    message_percentage = (messages_count / message_limit) * 100 if message_limit > 0 else 0
     
-    # Use cost percentage as the main usage metric
-    usage_percentage = cost_percentage
-    
-    # Choose color and display usage based on cost percentage
-    if usage_percentage >= 90:
+    # Choose color based on cost percentage (main metric)
+    if cost_percentage >= 90:
         color = Colors.RED
-        usage_display = f'Usage:{usage_percentage:.1f}%'
-    elif usage_percentage >= 70:
+    elif cost_percentage >= 70:
         color = Colors.RED
-        usage_display = f'Usage:{usage_percentage:.1f}%'
-    elif usage_percentage >= 30:
+    elif cost_percentage >= 30:
         color = Colors.YELLOW
-        usage_display = f'Usage:{usage_percentage:.1f}%'
     else:
         color = Colors.GREEN
-        usage_display = f'Usage:{usage_percentage:.1f}%'
+    
+    # Messages display without percentage
+    messages_display = f'📨:{messages_count}/{message_limit}'
     
     # Get current model and reset time
     current_model = get_current_model()
     reset_time = calculate_reset_time()
     
-    # Format text
-    tokens_text = f"T:{format_number(total_tokens)}/{format_number(token_limit)}"
-    cost_text = f"$:{cost_usd:.2f}/{cost_limit:.2f}"
-    model_text = f"🤖{current_model}"
+    # Format text - all using emoji:value format
+    tokens_text = f"🔋:{format_number(total_tokens)}/{format_number(token_limit)}"
+    cost_text = f"💰:{cost_usd:.2f}/{cost_limit:.2f}"
+    model_text = f"🤖:{current_model}"
+    time_text = f"⌛️:{reset_time}"
     
-    status_text = f"🔋 {tokens_text} | {cost_text} | {model_text} | ⌛️{reset_time} | {usage_display}"
+    status_text = f"{tokens_text} | {cost_text} | {messages_display} | {model_text} | {time_text}"
     
     return f"{color}{status_text}{Colors.RESET}"
 
