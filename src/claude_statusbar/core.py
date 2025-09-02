@@ -507,9 +507,50 @@ def generate_statusbar_text(usage_data: Dict[str, Any]) -> str:
     
     return f"{color}{status_text}{Colors.RESET}"
 
+def check_for_updates():
+    """Check for updates once per day"""
+    try:
+        from datetime import datetime
+        
+        # Check if we should run update check
+        last_check_file = Path.home() / '.claude-statusbar-last-check'
+        now = datetime.now()
+        
+        should_check = True
+        if last_check_file.exists():
+            try:
+                with open(last_check_file, 'r') as f:
+                    last_check_str = f.read().strip()
+                    last_check = datetime.fromisoformat(last_check_str)
+                    # Check once per day
+                    if (now - last_check).days < 1:
+                        should_check = False
+            except:
+                pass
+        
+        if should_check:
+            # Run update check in background
+            from .updater import check_and_upgrade
+            success, message = check_and_upgrade()
+            
+            # Update last check time
+            with open(last_check_file, 'w') as f:
+                f.write(now.isoformat())
+            
+            # If upgrade was successful, notify user
+            if success:
+                print(f"🔄 {message}", file=sys.stderr)
+                
+    except Exception:
+        # Silently fail - don't interrupt main functionality
+        pass
+
 def main():
     """Main function"""
     try:
+        # Check for updates (silent, once per day)
+        check_for_updates()
+        
         # First try original project analysis
         usage_data = try_original_analysis()
         
