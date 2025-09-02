@@ -37,12 +37,13 @@ pipx install claude-statusbar
 claude-statusbar  # or cs for short
 ```
 
-Output: `🔋 T:48.0k/133.3k | $:59.28/119 | ⏱️31m | Usage:50%`
+Output: `🔋 T:48.0k/133.3k | $:59.28/90.26 | 🤖opusplan | ⏱️31m | Usage:16.5%`
 
 - **T**: Token usage (current/limit)
-- **$**: Cost in USD
+- **$**: Cost in USD (dynamic P90 limits)
+- **🤖**: Current Claude model
 - **⏱️**: Time until reset
-- **Usage %**: Color-coded (🟢 <30% | 🟡 30-70% | 🔴 >70%)
+- **Usage %**: Cost-based percentage, color-coded (🟢 <30% | 🟡 30-70% | 🔴 >70%)
 
 ## 🔧 Integrations
 
@@ -55,6 +56,29 @@ set -g status-right '#(claude-statusbar)'
 ```bash
 RPROMPT='$(claude-statusbar)'
 ```
+
+## 🔄 Upgrading
+
+### Automatic Updates (Recommended)
+The tool automatically checks for updates once per day and upgrades itself. No action needed! 🎉
+
+When an update is available, you'll see: `🔄 Upgraded from v1.0.0 to v1.1.0`
+
+### Manual Upgrade
+If automatic upgrade fails, you can manually update:
+
+```bash
+# If installed with pip
+pip install --upgrade claude-statusbar
+
+# If installed with pipx  
+pipx upgrade claude-statusbar
+
+# If installed with uv
+uv tool upgrade claude-statusbar
+```
+
+**Note:** After upgrading, restart Claude Code to use the new version.
 
 ## 💖 Support
 
