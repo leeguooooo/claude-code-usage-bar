@@ -29,30 +29,41 @@ detect_package_manager() {
     fi
 }
 
+# Show current version if installed
+show_current_version() {
+    if command -v claude-statusbar &> /dev/null; then
+        local current_version=$(claude-statusbar --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "unknown")
+        echo -e "${YELLOW}Current version: ${current_version}${NC}"
+    else
+        echo -e "${YELLOW}Not currently installed${NC}"
+    fi
+}
+
 # Install with detected package manager
 install_package() {
     local pm=$(detect_package_manager)
     
-    echo -e "${BLUE}Installing claude-statusbar...${NC}"
+    echo -e "${BLUE}Installing/upgrading claude-statusbar...${NC}"
+    show_current_version
     
     case $pm in
         uv)
             echo "Using uv (recommended)..."
-            uv tool install claude-statusbar
+            uv tool install --force claude-statusbar
             # Also install claude-monitor for full functionality
-            uv tool install claude-monitor
+            uv tool install --force claude-monitor
             ;;
         pipx)
             echo "Using pipx..."
-            pipx install claude-statusbar
-            pipx install claude-monitor
+            pipx install --force claude-statusbar
+            pipx install --force claude-monitor
             ;;
         pip)
             echo "Using pip..."
             if command -v pip3 &> /dev/null; then
-                pip3 install --user claude-statusbar claude-monitor
+                pip3 install --user --upgrade claude-statusbar claude-monitor
             else
-                pip install --user claude-statusbar claude-monitor
+                pip install --user --upgrade claude-statusbar claude-monitor
             fi
             
             # Check PATH
@@ -77,8 +88,8 @@ install_package() {
             export PATH="$HOME/.local/bin:$PATH"
             
             # Install packages with uv
-            uv tool install claude-statusbar
-            uv tool install claude-monitor
+            uv tool install --force claude-statusbar
+            uv tool install --force claude-monitor
             ;;
     esac
 }
@@ -187,8 +198,10 @@ test_installation() {
     echo -e "\n${BLUE}Testing installation...${NC}"
     
     if command -v claude-statusbar &> /dev/null; then
+        local new_version=$(claude-statusbar --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "unknown")
         OUTPUT=$(claude-statusbar 2>&1 || true)
         echo -e "${GREEN}✅ Installation successful!${NC}"
+        echo -e "${GREEN}Installed version: ${new_version}${NC}"
         echo -e "\nCurrent status: $OUTPUT"
     else
         echo -e "${RED}❌ Installation failed${NC}"

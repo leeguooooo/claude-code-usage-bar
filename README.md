@@ -7,7 +7,14 @@
 ## ✨ One-Line Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
+```
+
+> 💡 The `?v=$(date +%s)` parameter ensures you get the latest version without CDN caching issues.
+
+**If you still see old version, try with additional cache-busting:**
+```bash
+curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)&r=$RANDOM" | bash
 ```
 
 This automatically:
@@ -68,6 +75,10 @@ When an update is available, you'll see: `🔄 Upgraded from v1.0.0 to v1.1.0`
 If automatic upgrade fails, you can manually update:
 
 ```bash
+# Re-run the installer (recommended - always gets latest)
+curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
+
+# Or upgrade via package manager:
 # If installed with pip
 pip install --upgrade claude-statusbar
 
