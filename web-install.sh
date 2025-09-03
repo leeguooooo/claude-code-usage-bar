@@ -49,14 +49,15 @@ install_package() {
     case $pm in
         uv)
             echo "Using uv (recommended)..."
-            uv tool install --upgrade --force claude-statusbar
+            uv tool uninstall claude-statusbar 2>/dev/null || true
+            uv tool install claude-statusbar
             # Also install claude-monitor for full functionality
             uv tool install --upgrade --force claude-monitor
             ;;
         pipx)
             echo "Using pipx..."
-            pipx install --force claude-statusbar
-            pipx upgrade claude-statusbar 2>/dev/null || true
+            pipx uninstall claude-statusbar 2>/dev/null || true
+            pipx install claude-statusbar
             pipx install --force claude-monitor
             pipx upgrade claude-monitor 2>/dev/null || true
             ;;
@@ -91,7 +92,8 @@ install_package() {
             export PATH="$HOME/.cargo/bin:$PATH"
             
             # Install packages with uv
-            uv tool install --upgrade --force claude-statusbar
+            uv tool uninstall claude-statusbar 2>/dev/null || true
+            uv tool install claude-statusbar
             uv tool install --upgrade --force claude-monitor
             ;;
     esac
