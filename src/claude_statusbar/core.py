@@ -359,21 +359,34 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
         logging.error(f"Direct analysis failed: {e}")
         return None
 
-def get_current_model() -> str:
-    """Get current Claude model from settings.json"""
+def get_current_model() -> tuple[str, str]:
+    """Get current Claude model and display name from settings.json"""
     try:
         settings_path = Path.home() / '.claude' / 'settings.json'
         if not settings_path.exists():
-            return "unknown"
+            return "unknown", "unknown"
         
         with open(settings_path, 'r', encoding='utf-8') as f:
             settings = json.load(f)
             model = settings.get('model', 'unknown')
             
-            return model
+            # Model display names mapping
+            display_names = {
+                'opusplan': 'Opus 4.1',
+                'opus': 'Opus 3.5',
+                'sonnet': 'Sonnet 3.5',
+                'haiku': 'Haiku 3.5',
+                'claude-3-5-sonnet': 'Sonnet 3.5',
+                'claude-3-5-haiku': 'Haiku 3.5',
+                'claude-3-opus': 'Opus 3.0'
+            }
+            
+            display_name = display_names.get(model, model.title() if model != 'unknown' else 'Unknown')
+            
+            return model, display_name
             
     except Exception:
-        return "unknown"
+        return "unknown", "Unknown"
 
 def calculate_reset_time() -> str:
     """Calculate time until session reset (5-hour rolling window)"""
@@ -516,16 +529,16 @@ def generate_statusbar_text(usage_data: Dict[str, Any]) -> str:
     messages_display = f'📨:{messages_count}/{message_limit}'
     
     # Get current model and reset time
-    current_model = get_current_model()
+    current_model, display_name = get_current_model()
     reset_time = calculate_reset_time()
     
-    # Format text - all using emoji:value format
+    # Format text - integrated model display
     tokens_text = f"🔋:{format_number(total_tokens)}/{format_number(token_limit)}"
     cost_text = f"💰:{cost_usd:.2f}/{cost_limit:.2f}"
-    model_text = f"🤖:{current_model}"
     time_text = f"⌛️:{reset_time}"
+    model_text = f"🤖:{current_model}({display_name})"
     
-    status_text = f"{tokens_text} | {cost_text} | {messages_display} | {model_text} | {time_text}"
+    status_text = f"{tokens_text} | {cost_text} | {messages_display} | {time_text} | {model_text}"
     
     return f"{color}{status_text}{Colors.RESET}"
 
@@ -583,7 +596,8 @@ def main():
         if not usage_data:
             # Final fallback
             reset_time = calculate_reset_time()
-            print(f"🔋 T:0/19k | $:0.00/18 | ⌛️{reset_time} | Usage:0%")
+            current_model, display_name = get_current_model()
+            print(f"🔋:0/19k | 💰:0.00/18.00 | 📨:0/755 | ⌛️:{reset_time} | 🤖:{current_model}({display_name})")
             return
         
         # Generate status bar text
@@ -593,7 +607,8 @@ def main():
     except Exception as e:
         # Basic display on error
         reset_time = calculate_reset_time()
-        print(f"🔋 T:0/19k | $:0.00/18 | ⌛️{reset_time} | ❌")
+        current_model, display_name = get_current_model()
+        print(f"🔋:0/19k | 💰:0.00/18.00 | 📨:0/755 | ⌛️:{reset_time} | 🤖:{current_model}({display_name}) | ❌")
 
 if __name__ == '__main__':
     main()

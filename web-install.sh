@@ -49,21 +49,23 @@ install_package() {
     case $pm in
         uv)
             echo "Using uv (recommended)..."
-            uv tool install --force claude-statusbar
+            uv tool install --upgrade --force claude-statusbar
             # Also install claude-monitor for full functionality
-            uv tool install --force claude-monitor
+            uv tool install --upgrade --force claude-monitor
             ;;
         pipx)
             echo "Using pipx..."
             pipx install --force claude-statusbar
+            pipx upgrade claude-statusbar 2>/dev/null || true
             pipx install --force claude-monitor
+            pipx upgrade claude-monitor 2>/dev/null || true
             ;;
         pip)
             echo "Using pip..."
             if command -v pip3 &> /dev/null; then
-                pip3 install --user --upgrade claude-statusbar claude-monitor
+                pip3 install --user --upgrade --force-reinstall claude-statusbar claude-monitor
             else
-                pip install --user --upgrade claude-statusbar claude-monitor
+                pip install --user --upgrade --force-reinstall claude-statusbar claude-monitor
             fi
             
             # Check PATH
@@ -86,10 +88,11 @@ install_package() {
             
             # Add to PATH for current session
             export PATH="$HOME/.local/bin:$PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
             
             # Install packages with uv
-            uv tool install --force claude-statusbar
-            uv tool install --force claude-monitor
+            uv tool install --upgrade --force claude-statusbar
+            uv tool install --upgrade --force claude-monitor
             ;;
     esac
 }
@@ -160,7 +163,7 @@ try:
 except:
     settings = {}
 
-# Add statusLine configuration
+# Add statusLine configuration - now with integrated model display
 settings['statusLine'] = {
     'type': 'command',
     'command': '$STATUSBAR_CMD',
@@ -170,7 +173,7 @@ settings['statusLine'] = {
 with open('$CLAUDE_SETTINGS', 'w') as f:
     json.dump(settings, f, indent=2)
 
-print('✅ Updated Claude Code settings')
+print('✅ Updated Claude Code settings with integrated display')
 " || {
             echo -e "${YELLOW}⚠️  Failed to update settings with Python${NC}"
             return
@@ -190,7 +193,8 @@ EOF
     fi
     
     echo -e "${GREEN}✅ Claude Code status bar configured!${NC}"
-    echo -e "${YELLOW}📝 Note: Restart Claude Code to see the status bar${NC}"
+    echo -e "${YELLOW}📝 Note: Status now shows integrated format: 🤖:model(Display Name)${NC}"
+    echo -e "${YELLOW}📝 Note: Restart Claude Code to see the updated status bar${NC}"
 }
 
 # Test installation
