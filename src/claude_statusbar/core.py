@@ -360,30 +360,30 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
         return None
 
 def get_current_model() -> tuple[str, str]:
-    """Get current Claude model and display name from settings.json"""
+    """Get current Claude model and display name from stdin or settings"""
     try:
-        settings_path = Path.home() / '.claude' / 'settings.json'
-        if not settings_path.exists():
-            return "unknown", "unknown"
+        # Check if stdin has data from Claude Code
+        if not sys.stdin.isatty():
+            stdin_data = sys.stdin.read()
+            if stdin_data:
+                try:
+                    claude_data = json.loads(stdin_data)
+                    model = claude_data.get('model', {}).get('id', 'unknown')
+                    display_name = claude_data.get('model', {}).get('display_name', 'Unknown')
+                    return model, display_name
+                except (json.JSONDecodeError, TypeError):
+                    pass
         
-        with open(settings_path, 'r', encoding='utf-8') as f:
-            settings = json.load(f)
-            model = settings.get('model', 'unknown')
-            
-            # Model display names mapping
-            display_names = {
-                'opusplan': 'Opus 4.1',
-                'opus': 'Opus 3.5',
-                'sonnet': 'Sonnet 3.5',
-                'haiku': 'Haiku 3.5',
-                'claude-3-5-sonnet': 'Sonnet 3.5',
-                'claude-3-5-haiku': 'Haiku 3.5',
-                'claude-3-opus': 'Opus 3.0'
-            }
-            
-            display_name = display_names.get(model, model.title() if model != 'unknown' else 'Unknown')
-            
-            return model, display_name
+        # Fallback: read model from settings.json
+        settings_path = Path.home() / '.claude' / 'settings.json'
+        if settings_path.exists():
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                model = settings.get('model', 'unknown')
+                # Since we can't get display_name from settings, just return model name
+                return model, model
+        
+        return "unknown", "Unknown"
             
     except Exception:
         return "unknown", "Unknown"
