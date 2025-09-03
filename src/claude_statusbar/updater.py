@@ -12,7 +12,7 @@ from typing import Optional, Tuple
 import logging
 
 # Current version
-CURRENT_VERSION = "1.2.1"
+CURRENT_VERSION = "1.2.2"
 PYPI_URL = "https://pypi.org/pypi/claude-statusbar/json"
 
 def get_latest_version() -> Optional[str]:

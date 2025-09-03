@@ -360,30 +360,32 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
         return None
 
 def get_current_model() -> tuple[str, str]:
-    """Get current Claude model and display name from stdin or settings"""
+    """Get current Claude model from settings.json and display name from stdin"""
     try:
-        # Check if stdin has data from Claude Code
+        # First, get model from settings.json
+        settings_path = Path.home() / '.claude' / 'settings.json'
+        model = "unknown"
+        if settings_path.exists():
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                model = settings.get('model', 'unknown')
+        
+        # Then try to get display name from stdin (Claude Code provides this)
+        display_name = "Unknown"
         if not sys.stdin.isatty():
             stdin_data = sys.stdin.read()
             if stdin_data:
                 try:
                     claude_data = json.loads(stdin_data)
-                    model = claude_data.get('model', {}).get('id', 'unknown')
                     display_name = claude_data.get('model', {}).get('display_name', 'Unknown')
-                    return model, display_name
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    # If stdin parse fails, use model as display name
+                    display_name = model.title() if model != 'unknown' else 'Unknown'
+        else:
+            # No stdin, use model as display name
+            display_name = model.title() if model != 'unknown' else 'Unknown'
         
-        # Fallback: read model from settings.json
-        settings_path = Path.home() / '.claude' / 'settings.json'
-        if settings_path.exists():
-            with open(settings_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-                model = settings.get('model', 'unknown')
-                # Since we can't get display_name from settings, just return model name
-                return model, model
-        
-        return "unknown", "Unknown"
+        return model, display_name
             
     except Exception:
         return "unknown", "Unknown"
