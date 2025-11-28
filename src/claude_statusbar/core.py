@@ -198,14 +198,45 @@ except Exception as e:
 def direct_data_analysis() -> Optional[Dict[str, Any]]:
     """Directly analyze Claude data files, completely independent implementation"""
     try:
-        # Find Claude data directory
-        data_paths = [
-            Path.home() / '.claude' / 'projects',
-            Path.home() / '.config' / 'claude' / 'projects'
-        ]
-        
+        def build_candidate_paths() -> List[Path]:
+            """Collect plausible data directories in priority order."""
+            paths: List[Path] = []
+            
+            # Respect Claude Code env override
+            env_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+            if env_dir:
+                env_path = Path(env_dir).expanduser()
+                if env_path.name == ".claude":
+                    paths.append(env_path)
+                    paths.append(env_path / "projects")
+                else:
+                    paths.append(env_path / ".claude")
+                    paths.append(env_path / ".claude" / "projects")
+            
+            # Running from inside .claude
+            cwd = Path.cwd()
+            if cwd.name == ".claude":
+                paths.append(cwd)
+                paths.append(cwd / "projects")
+            
+            # Standard locations
+            paths.extend([
+                Path.home() / '.claude' / 'projects',
+                Path.home() / '.config' / 'claude' / 'projects',
+                Path.home() / '.claude',
+            ])
+            
+            # Deduplicate while preserving order
+            seen = set()
+            unique_paths: List[Path] = []
+            for p in paths:
+                if p not in seen:
+                    unique_paths.append(p)
+                    seen.add(p)
+            return unique_paths
+
         data_path = None
-        for path in data_paths:
+        for path in build_candidate_paths():
             if path.exists() and path.is_dir():
                 data_path = path
                 break
@@ -390,8 +421,20 @@ def get_current_model() -> tuple[str, str]:
     except Exception:
         return "unknown", "Unknown"
 
-def calculate_reset_time() -> str:
-    """Calculate time until session reset (5-hour rolling window)"""
+def calculate_reset_time(reset_hour: Optional[int] = None) -> str:
+    """Calculate time until session reset (5-hour rolling window or custom hour)"""
+    # If user pins a reset hour, honor it before any external calls
+    if reset_hour is not None and 0 <= reset_hour <= 23:
+        now = datetime.now()
+        target = now.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
+        if target <= now:
+            target = target + timedelta(days=1)
+        diff = target - now
+        total_minutes = int(diff.total_seconds() / 60)
+        hours = total_minutes // 60
+        mins = total_minutes % 60
+        return f"{hours}h {mins:02d}m"
+
     try:
         
         # Try the same method as try_original_analysis to get session data
@@ -501,7 +544,38 @@ def format_number(num: float) -> str:
     else:
         return f"{num:.0f}"
 
-def generate_statusbar_text(usage_data: Dict[str, Any]) -> str:
+PLAN_PRESETS = {
+    # Basic Anthropic-style fallbacks
+    "max5": {"token_limit": 88000, "cost_limit": 35.0, "message_limit": 500},
+    "max20": {"token_limit": 220000, "cost_limit": 140.0, "message_limit": 900},
+    "pro": {"token_limit": 19000, "cost_limit": 18.0, "message_limit": 755},
+    # z.ai subscription estimates (prompt counts mapped to message_limit)
+    "zai-lite": {"token_limit": 400000, "cost_limit": 50.0, "message_limit": 120},
+    "zai-pro": {"token_limit": 2000000, "cost_limit": 150.0, "message_limit": 600},
+    "zai-max": {"token_limit": 8000000, "cost_limit": 600.0, "message_limit": 2400},
+}
+
+def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str]) -> Dict[str, Any]:
+    """Apply plan override to usage data when user specifies a plan."""
+    if not plan_name:
+        return usage_data
+    
+    normalized = plan_name.lower().replace("_", "-").replace(".", "-")
+    preset = PLAN_PRESETS.get(normalized)
+    
+    if preset:
+        usage_data = usage_data.copy()
+        usage_data['token_limit'] = preset['token_limit']
+        usage_data['cost_limit'] = preset['cost_limit']
+        usage_data['message_limit'] = preset['message_limit']
+        usage_data['plan_type'] = normalized
+    else:
+        usage_data = usage_data.copy()
+        usage_data['plan_type'] = normalized
+    
+    return usage_data
+
+def generate_statusbar_text(usage_data: Dict[str, Any], reset_hour: Optional[int] = None) -> str:
     """Generate status bar text"""
     total_tokens = usage_data['total_tokens']
     token_limit = usage_data['token_limit']
@@ -532,7 +606,7 @@ def generate_statusbar_text(usage_data: Dict[str, Any]) -> str:
     
     # Get current model and reset time
     current_model, display_name = get_current_model()
-    reset_time = calculate_reset_time()
+    reset_time = calculate_reset_time(reset_hour=reset_hour)
     
     # Format text - integrated model display
     tokens_text = f"🔋:{format_number(total_tokens)}/{format_number(token_limit)}"
@@ -582,7 +656,29 @@ def check_for_updates():
         # Silently fail - don't interrupt main functionality
         pass
 
-def main():
+def build_json_output(usage_data: Dict[str, Any], reset_time: str, model: str, display_name: str) -> Dict[str, Any]:
+    """Create machine-readable payload."""
+    return {
+        "success": True,
+        "usage": {
+            "total_tokens": usage_data.get("total_tokens", 0),
+            "token_limit": usage_data.get("token_limit", 0),
+            "cost_usd": usage_data.get("cost_usd", 0.0),
+            "cost_limit": usage_data.get("cost_limit", 0.0),
+            "messages_count": usage_data.get("messages_count", 0),
+            "message_limit": usage_data.get("message_limit", 0),
+            "plan_type": usage_data.get("plan_type"),
+            "source": usage_data.get("source", "unknown"),
+        },
+        "meta": {
+            "model": model,
+            "display_name": display_name,
+            "reset_time": reset_time,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        },
+    }
+
+def main(json_output: bool = False, plan: Optional[str] = None, reset_hour: Optional[int] = None):
     """Main function"""
     try:
         # Check for updates (silent, once per day)
@@ -594,23 +690,66 @@ def main():
         # If failed, use direct analysis
         if not usage_data:
             usage_data = direct_data_analysis()
+
+        # Apply plan override if requested
+        if usage_data:
+            usage_data = apply_plan_override(usage_data, plan)
         
         if not usage_data:
             # Final fallback
-            reset_time = calculate_reset_time()
+            reset_time = calculate_reset_time(reset_hour=reset_hour)
             current_model, display_name = get_current_model()
-            print(f"🔋:0/19k | 💰:0.00/18.00 | 📨:0/755 | ⌛️:{reset_time} | 🤖:{current_model}({display_name})")
+            fallback_usage = {
+                "total_tokens": 0,
+                "token_limit": PLAN_PRESETS.get("pro", {}).get("token_limit", 19000),
+                "cost_usd": 0.0,
+                "cost_limit": PLAN_PRESETS.get("pro", {}).get("cost_limit", 18.0),
+                "messages_count": 0,
+                "message_limit": PLAN_PRESETS.get("pro", {}).get("message_limit", 755),
+                "plan_type": plan or "unknown",
+                "source": "fallback",
+            }
+            fallback_usage = apply_plan_override(fallback_usage, plan)
+            if json_output:
+                payload = build_json_output(fallback_usage, reset_time, current_model, display_name)
+                payload["success"] = False
+                payload["error"] = "No usage data found"
+                print(json.dumps(payload))
+            else:
+                tokens_text = f"🔋:0/{format_number(fallback_usage['token_limit'])}"
+                cost_text = f"💰:0.00/{fallback_usage['cost_limit']:.2f}"
+                messages_text = f"📨:0/{fallback_usage['message_limit']}"
+                print(f"{tokens_text} | {cost_text} | {messages_text} | ⌛️:{reset_time} | 🤖:{current_model}({display_name})")
             return
         
         # Generate status bar text
-        status_text = generate_statusbar_text(usage_data)
-        print(status_text)
+        if json_output:
+            current_model, display_name = get_current_model()
+            reset_time = calculate_reset_time(reset_hour=reset_hour)
+            payload = build_json_output(usage_data, reset_time, current_model, display_name)
+            print(json.dumps(payload))
+        else:
+            status_text = generate_statusbar_text(usage_data, reset_hour=reset_hour)
+            print(status_text)
         
     except Exception as e:
         # Basic display on error
-        reset_time = calculate_reset_time()
+        reset_time = calculate_reset_time(reset_hour=reset_hour)
         current_model, display_name = get_current_model()
-        print(f"🔋:0/19k | 💰:0.00/18.00 | 📨:0/755 | ⌛️:{reset_time} | 🤖:{current_model}({display_name}) | ❌")
+        if json_output:
+            payload = {
+                "success": False,
+                "error": str(e),
+                "meta": {
+                    "model": current_model,
+                    "display_name": display_name,
+                    "reset_time": reset_time,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+            print(json.dumps(payload))
+        else:
+            print(f"🔋:0/19k | 💰:0.00/18.00 | 📨:0/755 | ⌛️:{reset_time} | 🤖:{current_model}({display_name}) | ❌")
 
 if __name__ == '__main__':
     main()
