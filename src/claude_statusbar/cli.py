@@ -4,12 +4,14 @@
 import sys
 import os
 import argparse
+from . import __version__
 from .core import main as statusbar_main
+
 
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
-        description='Claude Status Bar Monitor - Lightweight token usage monitor',
+        description="Claude Status Bar Monitor - Lightweight token usage monitor",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -25,40 +27,41 @@ Integration:
   tmux:     set -g status-right '#(claude-statusbar)'
   zsh:      RPROMPT='$(claude-statusbar)'
   i3:       status_command echo "$(claude-statusbar)"
-        """
+        """,
     )
-    
+
     parser.add_argument(
-        '--version', 
-        action='version', 
-        version='%(prog)s 1.3.0'
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
-    
+
     parser.add_argument(
-        '--install-deps',
-        action='store_true',
-        help='Install claude-monitor dependency for full functionality'
+        "--install-deps",
+        action="store_true",
+        help="Install claude-monitor dependency for full functionality",
     )
     parser.add_argument(
-        '--json-output',
-        action='store_true',
-        help='Emit machine-readable JSON instead of colored status line'
+        "--json-output",
+        action="store_true",
+        help="Emit machine-readable JSON instead of colored status line",
     )
     parser.add_argument(
-        '--plan',
+        "--plan",
         type=str,
-        help='Plan override (e.g., pro, max5, max20, zai-lite, zai-pro, zai-max)'
+        help="Plan override (e.g., pro, max5, max20, zai-lite, zai-pro, zai-max)",
     )
     parser.add_argument(
-        '--reset-hour',
+        "--reset-hour",
         type=int,
-        help='Reset hour (0-23) if your quota resets at a fixed local time'
+        help="Reset hour (0-23) if your quota resets at a fixed local time",
     )
-    
+
     args = parser.parse_args()
 
     if sys.version_info < (3, 9):
-        print("claude-statusbar requires Python 3.9+; please upgrade your interpreter.", file=sys.stderr)
+        print(
+            "claude-statusbar requires Python 3.9+; please upgrade your interpreter.",
+            file=sys.stderr,
+        )
         return 1
 
     def env_bool(name: str) -> bool:
@@ -75,12 +78,15 @@ Integration:
             try:
                 reset_hour = int(env_reset)
             except ValueError:
-                print("Ignoring invalid CLAUDE_RESET_HOUR (must be integer 0-23).", file=sys.stderr)
+                print(
+                    "Ignoring invalid CLAUDE_RESET_HOUR (must be integer 0-23).",
+                    file=sys.stderr,
+                )
                 reset_hour = None
     if reset_hour is not None and not (0 <= reset_hour <= 23):
         print("Reset hour must be between 0 and 23.", file=sys.stderr)
         return 1
-    
+
     if args.install_deps:
         print("Installing claude-monitor for full functionality...")
         print("Run one of these commands:")
@@ -88,7 +94,7 @@ Integration:
         print("  pip install claude-monitor")
         print("  pipx install claude-monitor")
         return 0
-    
+
     # Run the status bar
     try:
         statusbar_main(json_output=json_output, plan=plan, reset_hour=reset_hour)
@@ -99,5 +105,6 @@ Integration:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     sys.exit(main())
