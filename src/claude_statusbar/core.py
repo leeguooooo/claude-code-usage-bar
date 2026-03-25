@@ -602,16 +602,19 @@ print("")
     return f"{hours}h {mins:02d}m"
 
 PLAN_PRESETS = {
-    # Base limits from claude-monitor v3.1.0, doubled for 2x activity period
-    "pro":    {"token_limit":  38_000, "cost_limit":  36.0, "message_limit":   500},
-    "max5":   {"token_limit": 176_000, "cost_limit":  70.0, "message_limit": 2_000},
-    "max20":  {"token_limit": 440_000, "cost_limit": 280.0, "message_limit": 4_000},
-    "custom": {"token_limit":  88_000, "cost_limit": 100.0, "message_limit":   500},
+    # Base limits from claude-monitor v3.1.0 (non-doubled)
+    "pro":    {"token_limit":  19_000, "cost_limit":  18.0, "message_limit":   250},
+    "max5":   {"token_limit":  88_000, "cost_limit":  35.0, "message_limit": 1_000},
+    "max20":  {"token_limit": 220_000, "cost_limit": 140.0, "message_limit": 2_000},
+    "custom": {"token_limit":  44_000, "cost_limit":  50.0, "message_limit":   250},
     # z.ai subscription estimates
     "zai-lite": {"token_limit": 400_000, "cost_limit": 50.0, "message_limit": 120},
     "zai-pro":  {"token_limit": 2_000_000, "cost_limit": 150.0, "message_limit": 600},
     "zai-max":  {"token_limit": 8_000_000, "cost_limit": 600.0, "message_limit": 2_400},
 }
+
+# Activity multiplier — Anthropic sometimes runs 2x promotions
+DEFAULT_MULTIPLIER = 1
 
 # Ordered from smallest to largest for auto-detection
 PLAN_TIERS = ["pro", "max5", "max20"]
@@ -620,88 +623,115 @@ CONFIG_DIR = Path.home() / ".cache" / "claude-statusbar"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
-def load_saved_plan() -> Optional[str]:
-    """Load user's saved plan from config file."""
+def load_config() -> Dict[str, Any]:
+    """Load saved config (plan + multiplier)."""
     try:
         if CONFIG_FILE.exists():
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-            return data.get("plan")
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         pass
-    return None
+    return {}
 
 
-def save_plan(plan_name: str) -> None:
-    """Save user's plan choice to config file."""
+def save_config(plan: str, multiplier: int) -> None:
+    """Save plan and multiplier to config file."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps({"plan": plan_name}), encoding="utf-8")
+    CONFIG_FILE.write_text(
+        json.dumps({"plan": plan, "multiplier": multiplier}),
+        encoding="utf-8",
+    )
 
 
-def auto_detect_plan(usage_data: Dict[str, Any]) -> str:
-    """Auto-detect the plan tier based on actual usage without being rate-limited.
+def auto_detect_plan(usage_data: Dict[str, Any]) -> tuple[str, int]:
+    """Auto-detect plan tier and activity multiplier from actual usage.
 
-    If usage exceeds a plan's limits but no rate-limit was hit, the user
-    must be on a higher tier. Walk up the tiers until we find one that fits.
+    Walks up tiers at 1x, then tries 2x if usage exceeds all 1x tiers.
+    Returns (plan_name, multiplier).
     """
     msgs = usage_data.get('messages_count', 0)
     tokens = usage_data.get('total_tokens', 0)
 
-    for tier in PLAN_TIERS:
-        preset = PLAN_PRESETS[tier]
-        # If usage fits within this tier's limits, it's likely the right one
-        if msgs <= preset['message_limit'] and tokens <= preset['token_limit']:
-            return tier
+    for mult in (1, 2):
+        for tier in PLAN_TIERS:
+            preset = PLAN_PRESETS[tier]
+            if (msgs <= preset['message_limit'] * mult and
+                    tokens <= preset['token_limit'] * mult):
+                return tier, mult
 
-    # Usage exceeds all known tiers — use the highest
-    return PLAN_TIERS[-1]
+    return PLAN_TIERS[-1], 2
 
-def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str]) -> Dict[str, Any]:
-    """Apply plan override to usage data when user specifies a plan."""
+def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str],
+                        multiplier: int = 1) -> Dict[str, Any]:
+    """Apply plan limits with activity multiplier."""
     if not plan_name:
         return usage_data
-    
+
     normalized = plan_name.lower().replace("_", "-").replace(".", "-")
     preset = PLAN_PRESETS.get(normalized)
-    
+
+    usage_data = usage_data.copy()
     if preset:
-        usage_data = usage_data.copy()
-        usage_data['token_limit'] = preset['token_limit']
-        usage_data['cost_limit'] = preset['cost_limit']
-        usage_data['message_limit'] = preset['message_limit']
-        usage_data['plan_type'] = normalized
-    else:
-        usage_data = usage_data.copy()
-        usage_data['plan_type'] = normalized
-    
+        usage_data['token_limit'] = preset['token_limit'] * multiplier
+        usage_data['cost_limit'] = preset['cost_limit'] * multiplier
+        usage_data['message_limit'] = preset['message_limit'] * multiplier
+    usage_data['plan_type'] = normalized
+    usage_data['_multiplier'] = multiplier
+
     return usage_data
 
-def resolve_plan(usage_data: Optional[Dict[str, Any]], cli_plan: Optional[str]) -> str:
-    """Determine the effective plan. Priority: CLI flag > saved config > auto-detect."""
+def resolve_plan(usage_data: Optional[Dict[str, Any]], cli_plan: Optional[str]) -> tuple[str, int]:
+    """Determine effective plan and multiplier.
+
+    Priority: CLI flag > saved config > auto-detect.
+    Returns (plan_name, multiplier).
+    """
     if cli_plan:
         normalized = cli_plan.lower().replace("_", "-").replace(".", "-")
+        if normalized in PLAN_PRESETS and usage_data:
+            # Detect multiplier for the specific plan
+            preset = PLAN_PRESETS[normalized]
+            msgs = usage_data.get('messages_count', 0)
+            tokens = usage_data.get('total_tokens', 0)
+            mult = 1
+            if msgs > preset['message_limit'] or tokens > preset['token_limit']:
+                mult = 2  # usage exceeds 1x, must be 2x active
+            save_config(normalized, mult)
+            return normalized, mult
         if normalized in PLAN_PRESETS:
-            save_plan(normalized)
-            return normalized
-        return normalized
+            save_config(normalized, 1)
+            return normalized, 1
+        return normalized, 1
 
-    saved = load_saved_plan()
-    if saved and saved in PLAN_PRESETS:
-        # Re-validate: if usage exceeds saved plan, auto-upgrade
+    cfg = load_config()
+    saved_plan = cfg.get("plan")
+    saved_mult = cfg.get("multiplier", 1)
+
+    if saved_plan and saved_plan in PLAN_PRESETS:
+        # Only upgrade if usage EXCEEDS saved plan at saved multiplier
         if usage_data:
-            detected = auto_detect_plan(usage_data)
-            saved_idx = PLAN_TIERS.index(saved) if saved in PLAN_TIERS else -1
-            detected_idx = PLAN_TIERS.index(detected) if detected in PLAN_TIERS else -1
-            if detected_idx > saved_idx:
-                save_plan(detected)
-                return detected
-        return saved
+            preset = PLAN_PRESETS[saved_plan]
+            msgs = usage_data.get('messages_count', 0)
+            tokens = usage_data.get('total_tokens', 0)
+            eff_msg = preset['message_limit'] * saved_mult
+            eff_tkn = preset['token_limit'] * saved_mult
+            if msgs > eff_msg or tokens > eff_tkn:
+                if saved_mult < 2:
+                    # Bump to x2 before upgrading tier
+                    save_config(saved_plan, 2)
+                    return saved_plan, 2
+                else:
+                    # Already x2, need higher tier
+                    detected_plan, detected_mult = auto_detect_plan(usage_data)
+                    save_config(detected_plan, detected_mult)
+                    return detected_plan, detected_mult
+        return saved_plan, saved_mult
 
     if usage_data:
-        detected = auto_detect_plan(usage_data)
-        save_plan(detected)
-        return detected
+        detected_plan, detected_mult = auto_detect_plan(usage_data)
+        save_config(detected_plan, detected_mult)
+        return detected_plan, detected_mult
 
-    return "custom"
+    return "custom", 1
 
 
 def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -715,14 +745,14 @@ def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     cached = read_cache()
     if cached is not None:
-        effective_plan = resolve_plan(cached, plan)
-        return apply_plan_override(cached, effective_plan)
+        effective_plan, mult = resolve_plan(cached, plan)
+        return apply_plan_override(cached, effective_plan, mult)
 
     stale = read_cache_stale()
     if stale is not None:
         refresh_cache_background()
-        effective_plan = resolve_plan(stale, plan)
-        return apply_plan_override(stale, effective_plan)
+        effective_plan, mult = resolve_plan(stale, plan)
+        return apply_plan_override(stale, effective_plan, mult)
 
     usage_data = try_original_analysis()
     if not usage_data:
@@ -731,8 +761,8 @@ def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
         reset_time = calculate_reset_time()
         usage_data["_reset_time"] = reset_time
         write_cache(usage_data)
-        effective_plan = resolve_plan(usage_data, plan)
-        return apply_plan_override(usage_data, effective_plan)
+        effective_plan, mult = resolve_plan(usage_data, plan)
+        return apply_plan_override(usage_data, effective_plan, mult)
 
     return None
 
@@ -833,7 +863,12 @@ def main(json_output: bool = False, plan: Optional[str] = None,
         reset_time = reset_time.replace(" ", "")
 
         bypass = is_bypass_permissions_active()
-        plan_label = (usage_data.get('plan_type', '') or '').lower() if usage_data else ''
+        if usage_data:
+            plan_name = (usage_data.get('plan_type', '') or '').lower()
+            mult = usage_data.get('_multiplier', 1)
+            plan_label = f"{plan_name}(x{mult})" if mult > 1 else plan_name
+        else:
+            plan_label = ''
 
         if json_output:
             payload = build_json_output(
