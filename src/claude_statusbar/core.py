@@ -997,25 +997,32 @@ def main(json_output: bool = False, plan: Optional[str] = None,
             if detail and usage_data:
                 mult = usage_data.get('_multiplier', 1)
                 promo = "🔥 2x ACTIVE (off-peak)" if mult > 1 else "1x (normal)"
+                tkn_5h = format_number(usage_data.get('total_tokens', 0))
+                tkn_5h_lim = format_number(usage_data.get('token_limit', 0))
+                tkn_7d = format_number(w_tokens)
+                tkn_7d_lim = format_number(w_tkn_limit)
                 print(
                     f"\n"
-                    f"╭─ Detail ─────────────────────────────────────────╮\n"
-                    f"│ 5-hour window                                    │\n"
-                    f"│   Messages:  {msg_count:>6} / {msg_limit:<6}  ({msgs_pct:.0f}%)  {' ':>11}│\n"
-                    f"│   Tokens:    {format_number(usage_data.get('total_tokens', 0)):>6} / {format_number(usage_data.get('token_limit', 0)):<6}               │\n"
-                    f"│   Reset:     {reset_time:<37}│\n"
-                    f"│                                                  │\n"
-                    f"│ 7-day window                                     │\n"
-                    f"│   Messages:  {w_msgs:>6} / {w_msg_limit:<6}  ({w_msg_pct:.0f}%)  {' ':>11}│\n"
-                    f"│   Tokens:    {format_number(w_tokens):>6} / {format_number(w_tkn_limit):<6}  ({w_tkn_pct:.0f}%)  {' ':>11}│\n"
-                    f"│                                                  │\n"
-                    f"│ Plan: {plan_label:<15}  Promo: {promo:<19}│\n"
-                    f"│ Source: {usage_data.get('source', '?'):<10}                                │\n"
-                    f"│                                                  │\n"
-                    f"│ ⚠ Limits are estimates. Anthropic does not       │\n"
-                    f"│   expose official rate-limit numbers via API.    │\n"
-                    f"│   Verify with /stats in Claude Code.            │\n"
-                    f"╰──────────────────────────────────────────────────╯",
+                    f"╭─ Detail ─────────────────────────────────────────────╮\n"
+                    f"│                      actual  limit   source          │\n"
+                    f"│ 5h Messages:  {msg_count:>8}  {msg_limit:>6}   ✅ JSONL / ❓ est   │\n"
+                    f"│ 5h Tokens:    {tkn_5h:>8}  {tkn_5h_lim:>6}   ✅ JSONL / ❓ est   │\n"
+                    f"│ 5h Reset:     {reset_time:<40}│\n"
+                    f"│                                                      │\n"
+                    f"│ 7d Messages:  {w_msgs:>8}  {w_msg_limit:>6}   ✅ JSONL / ❓ est   │\n"
+                    f"│ 7d Tokens:    {tkn_7d:>8}  {tkn_7d_lim:>6}   ✅ JSONL / ❓ est   │\n"
+                    f"│                                                      │\n"
+                    f"│ Plan: {plan_label:<16} Promo: {promo:<20}│\n"
+                    f"│ Data: {usage_data.get('source', '?'):<47}│\n"
+                    f"│                                                      │\n"
+                    f"│ ✅ = actual usage from ~/.claude JSONL files         │\n"
+                    f"│ ❓ = estimated limit (Anthropic does not publish     │\n"
+                    f"│      official numbers). Use /stats to cross-check.  │\n"
+                    f"│                                                      │\n"
+                    f"│ If you get rate-limited before reaching 100%,       │\n"
+                    f"│ limits are too high. Report at:                     │\n"
+                    f"│ github.com/leeguooooo/claude-code-usage-bar/issues  │\n"
+                    f"╰─────────────────────────────────────────────────────╯",
                     file=sys.stderr,
                 )
 
