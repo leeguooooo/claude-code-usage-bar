@@ -14,15 +14,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+from .cache import read_cache, read_cache_stale, write_cache, refresh_cache_background
+from .progress import format_status_line
+
 # Suppress log output
 logging.basicConfig(level=logging.ERROR)
-
-# ANSI color codes
-class Colors:
-    GREEN = '\033[32m'
-    YELLOW = '\033[33m'
-    RED = '\033[31m'
-    RESET = '\033[0m'
 
 def try_original_analysis() -> Optional[Dict[str, Any]]:
     """Try to use the installed claude-monitor package"""
@@ -136,7 +132,7 @@ try:
                 p90_messages = all_messages[min(p90_msg_index, len(all_messages) - 1)]
                 message_limit = max(int(p90_messages * 1.2), 100)  # Similar to cost calculation
             else:
-                message_limit = 755  # Default based on your example
+                message_limit = 250  # Default based on your example
             
             # Apply similar logic to claude-monitor (seems to use a different multiplier)
             cost_limit = max(p90_cost * 1.004, 50.0)  # Adjusted to match observed behavior
@@ -144,7 +140,7 @@ try:
             # Fallback to static limit
             from claude_monitor.core.plans import get_cost_limit
             cost_limit = get_cost_limit('custom')
-            message_limit = 755  # Default
+            message_limit = 250  # Default
     except:
         cost_limit = 90.26  # fallback
     
@@ -158,6 +154,9 @@ try:
     messages_count = current_block.get('sentMessagesCount', len(entries))
     is_active = current_block.get('isActive', current_block.get('is_active', False))
     
+    # Collect models used in current block
+    models = current_block.get('models', [])
+
     output = {
         'total_tokens': total_tokens,
         'token_limit': token_limit,
@@ -168,7 +167,8 @@ try:
         'entries_count': len(entries),
         'is_active': is_active,
         'plan_type': 'CUSTOM',
-        'source': 'original'
+        'source': 'original',
+        'models': models,
     }
     print(json.dumps(output))
 except Exception as e:
@@ -379,7 +379,7 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
             'cost_usd': total_cost,
             'cost_limit': cost_limit,
             'messages_count': len(current_session_data),  # Each entry is a message
-            'message_limit': 755,  # Default fallback
+            'message_limit': 250,  # Default fallback
             'entries_count': len(current_session_data),
             'is_active': True,
             'plan_type': 'CUSTOM' if len(all_sessions) >= 5 else 'AUTO',
@@ -390,36 +390,102 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
         logging.error(f"Direct analysis failed: {e}")
         return None
 
-def get_current_model() -> tuple[str, str]:
-    """Get current Claude model from settings.json and display name from stdin"""
+def parse_stdin_data() -> Dict[str, Any]:
+    """Parse JSON data injected by Claude Code via stdin.
+
+    Claude Code sends rich session data including model, cost, context window,
+    and (for Pro/Max) rate limits.  We extract everything useful so the
+    statusbar can display official numbers without spawning subprocesses.
+    """
+    result: Dict[str, Any] = {}
     try:
-        # First, get model from settings.json
+        if sys.stdin.isatty():
+            return result
+        raw = sys.stdin.read()
+        if not raw:
+            return result
+        data = json.loads(raw)
+
+        # Model
+        model_obj = data.get('model', {})
+        if isinstance(model_obj, dict):
+            result['model_id'] = model_obj.get('id', '')
+            result['display_name'] = model_obj.get('display_name', '')
+
+        # Rate limits (Claude.ai Pro/Max only)
+        rl = data.get('rate_limits', {})
+        fh = rl.get('five_hour', {})
+        if fh:
+            result['rate_limit_pct'] = fh.get('used_percentage', 0)
+            result['rate_limit_resets_at'] = fh.get('resets_at')
+        sd = rl.get('seven_day', {})
+        if sd:
+            result['rate_limit_7d_pct'] = sd.get('used_percentage', 0)
+
+        # Context window
+        cw = data.get('context_window', {})
+        if cw:
+            result['context_used_pct'] = cw.get('used_percentage', 0)
+            result['context_remaining_pct'] = cw.get('remaining_percentage', 100)
+            result['context_window_size'] = cw.get('context_window_size', 0)
+            result['total_input_tokens'] = cw.get('total_input_tokens', 0)
+            result['total_output_tokens'] = cw.get('total_output_tokens', 0)
+
+        # Session cost
+        cost = data.get('cost', {})
+        if cost:
+            result['session_cost_usd'] = cost.get('total_cost_usd', 0.0)
+            result['total_duration_ms'] = cost.get('total_duration_ms', 0)
+            result['lines_added'] = cost.get('total_lines_added', 0)
+            result['lines_removed'] = cost.get('total_lines_removed', 0)
+
+        # Version
+        result['claude_version'] = data.get('version', '')
+
+        # Mark that we have valid stdin data
+        result['_has_stdin'] = True
+
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        pass
+    return result
+
+
+def is_bypass_permissions_active() -> bool:
+    """Detect whether bypass-permissions mode is currently active.
+
+    Claude Code does not expose this via the statusline stdin payload, so we
+    use a best-effort multi-source approach:
+      1. CLAUDE_SKIP_PERMISSIONS env var (set by some wrappers)
+      2. settings.json defaultMode == 'bypassPermissions'
+      3. skipDangerousModePermissionPrompt is True AND any bypass hint found
+    """
+    # 1. Explicit env var
+    env_val = os.environ.get('CLAUDE_SKIP_PERMISSIONS', '').lower()
+    if env_val in ('1', 'true', 'yes'):
+        return True
+
+    # 2. settings.json defaultMode
+    try:
         settings_path = Path.home() / '.claude' / 'settings.json'
-        model = "unknown"
         if settings_path.exists():
             with open(settings_path, 'r', encoding='utf-8') as f:
                 settings = json.load(f)
-                model = settings.get('model', 'unknown')
-        
-        # Then try to get display name from stdin (Claude Code provides this)
-        display_name = "Unknown"
-        if not sys.stdin.isatty():
-            stdin_data = sys.stdin.read()
-            if stdin_data:
-                try:
-                    claude_data = json.loads(stdin_data)
-                    display_name = claude_data.get('model', {}).get('display_name', 'Unknown')
-                except (json.JSONDecodeError, TypeError):
-                    # If stdin parse fails, use model as display name
-                    display_name = model.title() if model != 'unknown' else 'Unknown'
-        else:
-            # No stdin, use model as display name
-            display_name = model.title() if model != 'unknown' else 'Unknown'
-        
-        return model, display_name
-            
+            if settings.get('defaultMode') == 'bypassPermissions':
+                return True
     except Exception:
-        return "unknown", "Unknown"
+        pass
+
+    return False
+
+
+def get_current_model(stdin_data: Optional[Dict[str, Any]] = None) -> tuple[str, str]:
+    """Return (model_id, display_name), using stdin data when available."""
+    sd = stdin_data or {}
+    model = sd.get('model_id') or 'unknown'
+    display_name = sd.get('display_name') or ''
+    if not display_name:
+        display_name = model if model != 'unknown' else 'Unknown'
+    return model, display_name
 
 def calculate_reset_time(reset_hour: Optional[int] = None) -> str:
     """Calculate time until session reset (5-hour rolling window or custom hour)"""
@@ -535,24 +601,16 @@ print("")
     
     return f"{hours}h {mins:02d}m"
 
-def format_number(num: float) -> str:
-    """Format number display"""
-    if num >= 1000000:
-        return f"{num/1000000:.1f}M"
-    elif num >= 1000:
-        return f"{num/1000:.1f}k"
-    else:
-        return f"{num:.0f}"
-
 PLAN_PRESETS = {
-    # Basic Anthropic-style fallbacks
-    "max5": {"token_limit": 88000, "cost_limit": 35.0, "message_limit": 500},
-    "max20": {"token_limit": 220000, "cost_limit": 140.0, "message_limit": 900},
-    "pro": {"token_limit": 19000, "cost_limit": 18.0, "message_limit": 755},
-    # z.ai subscription estimates (prompt counts mapped to message_limit)
-    "zai-lite": {"token_limit": 400000, "cost_limit": 50.0, "message_limit": 120},
-    "zai-pro": {"token_limit": 2000000, "cost_limit": 150.0, "message_limit": 600},
-    "zai-max": {"token_limit": 8000000, "cost_limit": 600.0, "message_limit": 2400},
+    # Synced with claude-monitor v3.1.0 PLAN_LIMITS
+    "pro": {"token_limit": 19_000, "cost_limit": 18.0, "message_limit": 250},
+    "max5": {"token_limit": 88_000, "cost_limit": 35.0, "message_limit": 1_000},
+    "max20": {"token_limit": 220_000, "cost_limit": 140.0, "message_limit": 2_000},
+    "custom": {"token_limit": 44_000, "cost_limit": 50.0, "message_limit": 250},
+    # z.ai subscription estimates
+    "zai-lite": {"token_limit": 400_000, "cost_limit": 50.0, "message_limit": 120},
+    "zai-pro": {"token_limit": 2_000_000, "cost_limit": 150.0, "message_limit": 600},
+    "zai-max": {"token_limit": 8_000_000, "cost_limit": 600.0, "message_limit": 2_400},
 }
 
 def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str]) -> Dict[str, Any]:
@@ -575,48 +633,34 @@ def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str]) ->
     
     return usage_data
 
-def generate_statusbar_text(usage_data: Dict[str, Any], reset_hour: Optional[int] = None) -> str:
-    """Generate status bar text"""
-    total_tokens = usage_data['total_tokens']
-    token_limit = usage_data['token_limit']
-    cost_usd = usage_data['cost_usd']
-    cost_limit = usage_data['cost_limit']
-    messages_count = usage_data.get('messages_count', 0)
-    message_limit = usage_data.get('message_limit', 755)
-    plan_type = usage_data['plan_type']
-    source = usage_data.get('source', 'unknown')
-    
-    # Calculate percentage - use cost as primary metric
-    cost_percentage = (cost_usd / cost_limit) * 100 if cost_limit > 0 else 0
-    token_percentage = (total_tokens / token_limit) * 100 if token_limit > 0 else 0
-    message_percentage = (messages_count / message_limit) * 100 if message_limit > 0 else 0
-    
-    # Choose color based on cost percentage (main metric)
-    if cost_percentage >= 90:
-        color = Colors.RED
-    elif cost_percentage >= 70:
-        color = Colors.RED
-    elif cost_percentage >= 30:
-        color = Colors.YELLOW
-    else:
-        color = Colors.GREEN
-    
-    # Messages display without percentage
-    messages_display = f'📨:{messages_count}/{message_limit}'
-    
-    # Get current model and reset time
-    current_model, display_name = get_current_model()
-    reset_time = calculate_reset_time(reset_hour=reset_hour)
-    
-    # Format text - integrated model display
-    tokens_text = f"🔋:{format_number(total_tokens)}/{format_number(token_limit)}"
-    cost_text = f"💰:{cost_usd:.2f}/{cost_limit:.2f}"
-    time_text = f"⌛️:{reset_time}"
-    model_text = f"🤖:{current_model}({display_name})"
-    
-    status_text = f"{tokens_text} | {cost_text} | {messages_display} | {time_text} | {model_text}"
-    
-    return f"{color}{status_text}{Colors.RESET}"
+def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Get usage data, using cache when fresh.
+
+    1. Fresh cache (<30s) -> return immediately
+    2. Stale cache -> return stale data, spawn background refresh
+    3. No cache -> synchronous fetch (cold start)
+
+    Plan overrides are applied AFTER cache read (never stored in cache).
+    """
+    cached = read_cache()
+    if cached is not None:
+        return apply_plan_override(cached, plan)
+
+    stale = read_cache_stale()
+    if stale is not None:
+        refresh_cache_background()
+        return apply_plan_override(stale, plan)
+
+    usage_data = try_original_analysis()
+    if not usage_data:
+        usage_data = direct_data_analysis()
+    if usage_data:
+        reset_time = calculate_reset_time()
+        usage_data["_reset_time"] = reset_time
+        write_cache(usage_data)
+        return apply_plan_override(usage_data, plan)
+
+    return None
 
 def check_for_updates():
     """Check for updates once per day"""
@@ -678,78 +722,77 @@ def build_json_output(usage_data: Dict[str, Any], reset_time: str, model: str, d
         },
     }
 
-def main(json_output: bool = False, plan: Optional[str] = None, reset_hour: Optional[int] = None):
-    """Main function"""
-    try:
-        # Check for updates (silent, once per day)
-        check_for_updates()
-        
-        # First try original project analysis
-        usage_data = try_original_analysis()
-        
-        # If failed, use direct analysis
-        if not usage_data:
-            usage_data = direct_data_analysis()
 
-        # Apply plan override if requested
+def main(json_output: bool = False, plan: Optional[str] = None,
+         reset_hour: Optional[int] = None, use_color: bool = True):
+    """Main function"""
+    stdin_data = parse_stdin_data()
+
+    try:
+        if not json_output:
+            check_for_updates()
+
+        usage_data = fetch_usage_data(plan=plan)
+
+        model_id, display_name = get_current_model(stdin_data)
+        if model_id == 'unknown' and usage_data:
+            data_models = usage_data.get('models', [])
+            if data_models:
+                model_id = data_models[0]
+                display_name = model_id
+
         if usage_data:
-            usage_data = apply_plan_override(usage_data, plan)
-        
-        if not usage_data:
-            # Final fallback
+            msg_count = usage_data.get('messages_count', 0)
+            msg_limit = usage_data.get('message_limit', 250)
+            tkn_total = usage_data.get('total_tokens', 0)
+            tkn_limit = usage_data.get('token_limit', 44000)
+            msgs_pct = (msg_count / msg_limit * 100) if msg_limit > 0 else None
+            tkns_pct = (tkn_total / tkn_limit * 100) if tkn_limit > 0 else None
+        else:
+            msgs_pct = None
+            tkns_pct = None
+
+        if usage_data and usage_data.get('_reset_time'):
+            reset_time = usage_data['_reset_time']
+        else:
             reset_time = calculate_reset_time(reset_hour=reset_hour)
-            current_model, display_name = get_current_model()
-            fallback_usage = {
-                "total_tokens": 0,
-                "token_limit": PLAN_PRESETS.get("pro", {}).get("token_limit", 19000),
-                "cost_usd": 0.0,
-                "cost_limit": PLAN_PRESETS.get("pro", {}).get("cost_limit", 18.0),
-                "messages_count": 0,
-                "message_limit": PLAN_PRESETS.get("pro", {}).get("message_limit", 755),
-                "plan_type": plan or "unknown",
-                "source": "fallback",
-            }
-            fallback_usage = apply_plan_override(fallback_usage, plan)
-            if json_output:
-                payload = build_json_output(fallback_usage, reset_time, current_model, display_name)
-                payload["success"] = False
-                payload["error"] = "No usage data found"
-                print(json.dumps(payload))
-            else:
-                tokens_text = f"🔋:0/{format_number(fallback_usage['token_limit'])}"
-                cost_text = f"💰:0.00/{fallback_usage['cost_limit']:.2f}"
-                messages_text = f"📨:0/{fallback_usage['message_limit']}"
-                print(f"{tokens_text} | {cost_text} | {messages_text} | ⌛️:{reset_time} | 🤖:{current_model}({display_name})")
-            return
-        
-        # Generate status bar text
+        reset_time = reset_time.replace(" ", "")
+
+        bypass = is_bypass_permissions_active()
+
         if json_output:
-            current_model, display_name = get_current_model()
-            reset_time = calculate_reset_time(reset_hour=reset_hour)
-            payload = build_json_output(usage_data, reset_time, current_model, display_name)
+            payload = build_json_output(
+                usage_data or {}, reset_time, model_id, display_name
+            )
+            payload["meta"]["bypass_permissions"] = bypass
+            if stdin_data.get('_has_stdin'):
+                payload["stdin"] = {
+                    "session_cost_usd": stdin_data.get("session_cost_usd", 0),
+                    "context_used_pct": stdin_data.get("context_used_pct", 0),
+                }
             print(json.dumps(payload))
         else:
-            status_text = generate_statusbar_text(usage_data, reset_hour=reset_hour)
-            print(status_text)
-        
+            print(format_status_line(
+                msgs_pct=msgs_pct,
+                tkns_pct=tkns_pct,
+                reset_time=reset_time,
+                model=display_name if display_name != 'Unknown' else model_id,
+                bypass=bypass,
+                use_color=use_color,
+            ))
+
     except Exception as e:
-        # Basic display on error
-        reset_time = calculate_reset_time(reset_hour=reset_hour)
-        current_model, display_name = get_current_model()
+        reset_time = calculate_reset_time(reset_hour=reset_hour).replace(" ", "")
+        _, display_name = get_current_model(stdin_data)
+        bypass = is_bypass_permissions_active()
         if json_output:
-            payload = {
-                "success": False,
-                "error": str(e),
-                "meta": {
-                    "model": current_model,
-                    "display_name": display_name,
-                    "reset_time": reset_time,
-                    "generated_at": datetime.now(timezone.utc).isoformat(),
-                },
-            }
-            print(json.dumps(payload))
+            print(json.dumps({"success": False, "error": str(e)}))
         else:
-            print(f"🔋:0/19k | 💰:0.00/18.00 | 📨:0/755 | ⌛️:{reset_time} | 🤖:{current_model}({display_name}) | ❌")
+            print(format_status_line(
+                msgs_pct=None, tkns_pct=None,
+                reset_time=reset_time, model=display_name,
+                bypass=bypass, use_color=use_color,
+            ))
 
 if __name__ == '__main__':
     main()
