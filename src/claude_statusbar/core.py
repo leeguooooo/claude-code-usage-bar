@@ -914,14 +914,23 @@ def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
     return None
 
 def check_for_updates():
-    """Check for updates once per day"""
+    """Check for updates once per day.
+
+    Disabled by setting env CLAUDE_STATUSBAR_NO_UPDATE=1 or
+    passing --no-auto-update on the CLI.
+    """
+    # Respect opt-out
+    env_val = os.environ.get('CLAUDE_STATUSBAR_NO_UPDATE', '').lower()
+    if env_val in ('1', 'true', 'yes'):
+        return
+
     try:
         from datetime import datetime
-        
+
         # Check if we should run update check
         last_check_file = Path.home() / '.claude-statusbar-last-check'
         now = datetime.now()
-        
+
         should_check = True
         if last_check_file.exists():
             try:
@@ -933,20 +942,20 @@ def check_for_updates():
                         should_check = False
             except:
                 pass
-        
+
         if should_check:
             # Run update check in background
             from .updater import check_and_upgrade
             success, message = check_and_upgrade()
-            
+
             # Update last check time
             with open(last_check_file, 'w') as f:
                 f.write(now.isoformat())
-            
+
             # If upgrade was successful, notify user
             if success:
                 print(f"🔄 {message}", file=sys.stderr)
-                
+
     except Exception:
         # Silently fail - don't interrupt main functionality
         pass

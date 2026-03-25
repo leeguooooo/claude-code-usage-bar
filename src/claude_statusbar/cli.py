@@ -64,6 +64,11 @@ Integration:
         action="store_true",
         help="Show detailed breakdown of usage data and limits",
     )
+    parser.add_argument(
+        "--no-auto-update",
+        action="store_true",
+        help="Disable automatic update checks (or set CLAUDE_STATUSBAR_NO_UPDATE=1)",
+    )
 
     args = parser.parse_args()
 
@@ -104,6 +109,9 @@ Integration:
         print("  pip install claude-monitor")
         print("  pipx install claude-monitor")
         return 0
+
+    if args.no_auto_update:
+        os.environ['CLAUDE_STATUSBAR_NO_UPDATE'] = '1'
 
     # Run the status bar
     use_color = not (args.no_color or env_bool("NO_COLOR"))
