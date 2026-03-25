@@ -952,6 +952,16 @@ def main(json_output: bool = False, plan: Optional[str] = None,
 
             model = display_name if display_name != 'Unknown' else model_id
 
+            # Plan label from saved config
+            cfg = load_config()
+            saved_plan = cfg.get('plan', '')
+            # 2x indicator from official schedule
+            promo = is_2x_active()
+            if saved_plan:
+                plan_label = f"{saved_plan}🔥x2" if promo else saved_plan
+            else:
+                plan_label = "🔥x2" if promo else ""
+
             if json_output:
                 print(json.dumps({
                     "success": True, "source": "official",
@@ -960,12 +970,14 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                         "seven_day": {"used_percentage": weekly_pct},
                     },
                     "meta": {"model": model_id, "display_name": display_name,
-                             "reset_time": reset_time, "bypass": bypass},
+                             "reset_time": reset_time, "bypass": bypass,
+                             "plan": saved_plan, "promo_2x": promo},
                 }))
             else:
                 print(format_status_line(
                     msgs_pct=msgs_pct, tkns_pct=None,
                     reset_time=reset_time, model=model,
+                    plan=plan_label,
                     weekly_pct=weekly_pct, bypass=bypass,
                     use_color=use_color,
                 ))
