@@ -49,15 +49,13 @@ install_package() {
     case $pm in
         uv)
             echo "Using uv (recommended)..."
-            uv tool uninstall claude-statusbar 2>/dev/null || true
-            uv tool install claude-statusbar
+            uv tool install --upgrade --force-reinstall claude-statusbar
             # Also install claude-monitor for full functionality
             uv tool install --upgrade --force claude-monitor
             ;;
         pipx)
             echo "Using pipx..."
-            pipx uninstall claude-statusbar 2>/dev/null || true
-            pipx install claude-statusbar
+            pipx install --force claude-statusbar
             pipx install --force claude-monitor
             pipx upgrade claude-monitor 2>/dev/null || true
             ;;
@@ -92,8 +90,7 @@ install_package() {
             export PATH="$HOME/.cargo/bin:$PATH"
             
             # Install packages with uv
-            uv tool uninstall claude-statusbar 2>/dev/null || true
-            uv tool install claude-statusbar
+            uv tool install --upgrade --force-reinstall claude-statusbar
             uv tool install --upgrade --force claude-monitor
             ;;
     esac
@@ -195,8 +192,7 @@ EOF
     fi
     
     echo -e "${GREEN}✅ Claude Code status bar configured!${NC}"
-    echo -e "${YELLOW}📝 Note: Status now shows integrated format: 🤖:model(Display Name)${NC}"
-    echo -e "${YELLOW}📝 Note: Restart Claude Code to see the updated status bar${NC}"
+    echo -e "${YELLOW}📝 Restart Claude Code to see the updated status bar${NC}"
 }
 
 # Test installation
