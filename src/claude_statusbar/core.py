@@ -1061,20 +1061,49 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                     bypass=bypass, use_color=use_color,
                 ))
         else:
-            # No official data — show upgrade prompt
+            # No rate_limits yet — could be session start or old Claude Code
             model = display_name if display_name != 'Unknown' else model_id
             version = stdin_data.get('claude_version', '') if stdin_data.get('_has_stdin') else ''
 
-            if json_output:
-                print(json.dumps({
-                    "success": False,
-                    "error": "No rate_limits in stdin. Upgrade Claude Code to >= 2.1.80 and restart session.",
-                    "meta": {"model": model_id, "display_name": display_name,
-                             "claude_version": version, "bypass": bypass},
-                }))
+            if stdin_data.get('_has_stdin'):
+                # Have stdin but no rate_limits — session just started, show placeholders
+                ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
+                ctx_size = stdin_data.get('context_window_size', 0)
+                if ctx_size > 0:
+                    model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
+
+                promo_label = get_promo_label()
+                cfg = load_config()
+                saved_plan = cfg.get('plan', '')
+                if saved_plan and promo_label:
+                    plan_label = f"{saved_plan} {promo_label}"
+                elif promo_label:
+                    plan_label = promo_label
+                else:
+                    plan_label = saved_plan
+
+                if json_output:
+                    print(json.dumps({
+                        "success": True, "source": "waiting",
+                        "meta": {"model": model_id, "display_name": display_name,
+                                 "claude_version": version, "bypass": bypass},
+                    }))
+                else:
+                    print(format_status_line(
+                        msgs_pct=None, tkns_pct=None,
+                        reset_time="--", model=model,
+                        plan=plan_label, weekly_pct=None,
+                        bypass=bypass, use_color=use_color,
+                    ))
             else:
-                if version:
-                    print(f"⚠ Upgrade Claude Code (now {version}, need ≥2.1.80) & restart session | {model}")
+                # No stdin at all — not running inside Claude Code statusLine
+                if json_output:
+                    print(json.dumps({
+                        "success": False,
+                        "error": "No stdin data. Run inside Claude Code statusLine.",
+                        "meta": {"model": model_id, "display_name": display_name,
+                                 "bypass": bypass},
+                    }))
                 else:
                     print(f"⚠ Run inside Claude Code statusLine for rate-limit data | {model}")
 
