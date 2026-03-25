@@ -931,146 +931,61 @@ def main(json_output: bool = False, plan: Optional[str] = None,
         if not json_output:
             check_for_updates()
 
-        # ── Data source priority: stdin rate_limits (official) > claude-monitor (estimated) ──
-        has_official_rates = bool(stdin_data.get('rate_limit_pct') is not None or
-                                  stdin_data.get('rate_limit_7d_pct') is not None)
+        has_official = (stdin_data.get('rate_limit_pct') is not None or
+                        stdin_data.get('rate_limit_7d_pct') is not None)
 
-        if has_official_rates:
-            # 🎯 Official data from Anthropic API headers (v2.1.80+)
-            msgs_pct = stdin_data.get('rate_limit_pct')      # 5h used_percentage
-            weekly_pct = stdin_data.get('rate_limit_7d_pct')  # 7d used_percentage
-            data_source = "official"
+        model_id, display_name = get_current_model(stdin_data)
+        bypass = is_bypass_permissions_active()
 
-            # Reset time from stdin resets_at (epoch seconds)
+        if has_official:
+            # ✅ Official data from Anthropic API headers (Claude Code ≥ v2.1.80)
+            msgs_pct = stdin_data.get('rate_limit_pct')
+            weekly_pct = stdin_data.get('rate_limit_7d_pct')
+
             resets_at = stdin_data.get('rate_limit_resets_at')
             if resets_at:
-                now = datetime.now(timezone.utc)
-                diff = datetime.fromtimestamp(resets_at, tz=timezone.utc) - now
+                diff = datetime.fromtimestamp(resets_at, tz=timezone.utc) - datetime.now(timezone.utc)
                 total_min = max(0, int(diff.total_seconds() / 60))
                 reset_time = f"{total_min // 60}h{total_min % 60:02d}m"
             else:
                 reset_time = "--"
 
-            plan_label = ""  # Official data — no need to show estimated plan
-            usage_data = None  # Not needed for display
-            w_tokens = w_msgs = w_tkn_limit = w_msg_limit = 0
-            w_tkn_pct = w_msg_pct = 0
-            msg_count = msg_limit = 0
+            model = display_name if display_name != 'Unknown' else model_id
+
+            if json_output:
+                print(json.dumps({
+                    "success": True, "source": "official",
+                    "rate_limits": {
+                        "five_hour": {"used_percentage": msgs_pct},
+                        "seven_day": {"used_percentage": weekly_pct},
+                    },
+                    "meta": {"model": model_id, "display_name": display_name,
+                             "reset_time": reset_time, "bypass": bypass},
+                }))
+            else:
+                print(format_status_line(
+                    msgs_pct=msgs_pct, tkns_pct=None,
+                    reset_time=reset_time, model=model,
+                    weekly_pct=weekly_pct, bypass=bypass,
+                    use_color=use_color,
+                ))
         else:
-            # 📊 Estimated data from claude-monitor / JSONL (fallback)
-            usage_data = fetch_usage_data(plan=plan)
-            data_source = "estimated"
+            # No official data — show upgrade prompt
+            model = display_name if display_name != 'Unknown' else model_id
+            version = stdin_data.get('claude_version', '') if stdin_data.get('_has_stdin') else ''
 
-            if usage_data:
-                msg_count = usage_data.get('messages_count', 0)
-                msg_limit = usage_data.get('message_limit', 250)
-                msgs_pct = (msg_count / msg_limit * 100) if msg_limit > 0 else None
-
-                w_tokens = usage_data.get('weekly_tokens', 0)
-                w_msgs = usage_data.get('weekly_msgs', 0)
-                w_tkn_limit = usage_data.get('weekly_token_limit', 0)
-                w_msg_limit = usage_data.get('weekly_msg_limit', 0)
-                w_tkn_pct = (w_tokens / w_tkn_limit * 100) if w_tkn_limit > 0 else 0
-                w_msg_pct = (w_msgs / w_msg_limit * 100) if w_msg_limit > 0 else 0
-                weekly_pct = max(w_tkn_pct, w_msg_pct) if (w_tkn_limit or w_msg_limit) else None
+            if json_output:
+                print(json.dumps({
+                    "success": False,
+                    "error": "No rate_limits in stdin. Upgrade Claude Code to >= 2.1.80 and restart session.",
+                    "meta": {"model": model_id, "display_name": display_name,
+                             "claude_version": version, "bypass": bypass},
+                }))
             else:
-                msgs_pct = None
-                weekly_pct = None
-                msg_count = msg_limit = 0
-                w_tokens = w_msgs = w_tkn_limit = w_msg_limit = 0
-                w_tkn_pct = w_msg_pct = 0
-
-            if usage_data and usage_data.get('_reset_time'):
-                reset_time = usage_data['_reset_time']
-            else:
-                reset_time = calculate_reset_time(reset_hour=reset_hour)
-            reset_time = reset_time.replace(" ", "")
-
-            if usage_data:
-                plan_name = (usage_data.get('plan_type', '') or '').lower()
-                mult = usage_data.get('_multiplier', 1)
-                plan_label = f"{plan_name}🔥x{mult}" if mult > 1 else plan_name
-            else:
-                plan_label = ''
-
-        model_id, display_name = get_current_model(stdin_data)
-        if model_id == 'unknown' and usage_data:
-            data_models = usage_data.get('models', [])
-            if data_models:
-                model_id = data_models[0]
-                display_name = model_id
-
-        bypass = is_bypass_permissions_active()
-
-        if json_output:
-            payload = build_json_output(
-                usage_data or {}, reset_time, model_id, display_name
-            )
-            payload["meta"]["bypass_permissions"] = bypass
-            if stdin_data.get('_has_stdin'):
-                payload["stdin"] = {
-                    "session_cost_usd": stdin_data.get("session_cost_usd", 0),
-                    "context_used_pct": stdin_data.get("context_used_pct", 0),
-                }
-            print(json.dumps(payload))
-        else:
-            print(format_status_line(
-                msgs_pct=msgs_pct,
-                tkns_pct=None,
-                reset_time=reset_time,
-                model=display_name if display_name != 'Unknown' else model_id,
-                plan=plan_label,
-                weekly_pct=weekly_pct,
-                bypass=bypass,
-                use_color=use_color,
-            ))
-
-            if detail and has_official_rates:
-                print(
-                    f"\n"
-                    f"╭─ Detail ─────────────────────────────────────────────╮\n"
-                    f"│ Data source: ✅ Official (Anthropic API headers)     │\n"
-                    f"│                                                      │\n"
-                    f"│ 5h used:  {msgs_pct:>5.1f}%   (from API response)         │\n"
-                    f"│ 7d used:  {weekly_pct or 0:>5.1f}%   (from API response)         │\n"
-                    f"│ Reset:    {reset_time:<43}│\n"
-                    f"│                                                      │\n"
-                    f"│ These numbers come directly from Anthropic's         │\n"
-                    f"│ servers. They are accurate.                          │\n"
-                    f"╰─────────────────────────────────────────────────────╯",
-                    file=sys.stderr,
-                )
-            elif detail and usage_data:
-                mult = usage_data.get('_multiplier', 1)
-                promo = "🔥 2x ACTIVE (off-peak)" if mult > 1 else "1x (normal)"
-                tkn_5h = format_number(usage_data.get('total_tokens', 0))
-                tkn_5h_lim = format_number(usage_data.get('token_limit', 0))
-                tkn_7d = format_number(w_tokens)
-                tkn_7d_lim = format_number(w_tkn_limit)
-                print(
-                    f"\n"
-                    f"╭─ Detail ─────────────────────────────────────────────╮\n"
-                    f"│                      actual  limit   source          │\n"
-                    f"│ 5h Messages:  {msg_count:>8}  {msg_limit:>6}   ✅ JSONL / ❓ est   │\n"
-                    f"│ 5h Tokens:    {tkn_5h:>8}  {tkn_5h_lim:>6}   ✅ JSONL / ❓ est   │\n"
-                    f"│ 5h Reset:     {reset_time:<40}│\n"
-                    f"│                                                      │\n"
-                    f"│ 7d Messages:  {w_msgs:>8}  {w_msg_limit:>6}   ✅ JSONL / ❓ est   │\n"
-                    f"│ 7d Tokens:    {tkn_7d:>8}  {tkn_7d_lim:>6}   ✅ JSONL / ❓ est   │\n"
-                    f"│                                                      │\n"
-                    f"│ Plan: {plan_label:<16} Promo: {promo:<20}│\n"
-                    f"│ Data: {usage_data.get('source', '?'):<47}│\n"
-                    f"│                                                      │\n"
-                    f"│ ✅ = actual usage from ~/.claude JSONL files         │\n"
-                    f"│ ❓ = estimated limit (Anthropic does not publish     │\n"
-                    f"│      official numbers). Use /stats to cross-check.  │\n"
-                    f"│                                                      │\n"
-                    f"│ If you get rate-limited before reaching 100%,       │\n"
-                    f"│ limits are too high. Report at:                     │\n"
-                    f"│ github.com/leeguooooo/claude-code-usage-bar/issues  │\n"
-                    f"╰─────────────────────────────────────────────────────╯",
-                    file=sys.stderr,
-                )
+                if version:
+                    print(f"⚠ Upgrade Claude Code (now {version}, need ≥2.1.80) & restart session | {model}")
+                else:
+                    print(f"⚠ Run inside Claude Code statusLine for rate-limit data | {model}")
 
     except Exception as e:
         reset_time = calculate_reset_time(reset_hour=reset_hour).replace(" ", "")
