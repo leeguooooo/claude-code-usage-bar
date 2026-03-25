@@ -49,7 +49,7 @@ install_package() {
     case $pm in
         uv)
             echo "Using uv (recommended)..."
-            uv tool install --upgrade --force-reinstall claude-statusbar
+            uv tool install --upgrade --force-reinstall --refresh claude-statusbar
             # Also install claude-monitor for full functionality
             uv tool install --upgrade --force claude-monitor
             ;;
@@ -90,7 +90,7 @@ install_package() {
             export PATH="$HOME/.cargo/bin:$PATH"
             
             # Install packages with uv
-            uv tool install --upgrade --force-reinstall claude-statusbar
+            uv tool install --upgrade --force-reinstall --refresh claude-statusbar
             uv tool install --upgrade --force claude-monitor
             ;;
     esac
