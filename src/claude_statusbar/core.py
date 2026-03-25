@@ -157,6 +157,28 @@ try:
     # Collect models used in current block
     models = current_block.get('models', [])
 
+    # 7-day totals across ALL non-gap blocks
+    from datetime import datetime, timedelta, timezone
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    weekly_tokens = 0
+    weekly_msgs = 0
+    weekly_cost = 0.0
+    for b in blocks:
+        if b.get('isGap', False):
+            continue
+        start = b.get('startTime', '')
+        if isinstance(start, str) and start:
+            if start.endswith('Z'):
+                start = start[:-1] + '+00:00'
+            try:
+                bt = datetime.fromisoformat(start)
+                if bt >= week_ago:
+                    weekly_tokens += b.get('totalTokens', 0) or 0
+                    weekly_msgs += b.get('sentMessagesCount', 0) or 0
+                    weekly_cost += b.get('costUSD', 0.0) or 0.0
+            except:
+                pass
+
     output = {
         'total_tokens': total_tokens,
         'token_limit': token_limit,
@@ -169,6 +191,9 @@ try:
         'plan_type': 'CUSTOM',
         'source': 'original',
         'models': models,
+        'weekly_tokens': weekly_tokens,
+        'weekly_msgs': weekly_msgs,
+        'weekly_cost': weekly_cost,
     }
     print(json.dumps(output))
 except Exception as e:
@@ -602,15 +627,23 @@ print("")
     return f"{hours}h {mins:02d}m"
 
 PLAN_PRESETS = {
-    # Base limits from claude-monitor v3.1.0 (non-doubled)
-    "pro":    {"token_limit":  19_000, "cost_limit":  18.0, "message_limit":   250},
-    "max5":   {"token_limit":  88_000, "cost_limit":  35.0, "message_limit": 1_000},
-    "max20":  {"token_limit": 220_000, "cost_limit": 140.0, "message_limit": 2_000},
-    "custom": {"token_limit":  44_000, "cost_limit":  50.0, "message_limit":   250},
+    # Base limits per 5-hour window (from claude-monitor v3.1.0)
+    # weekly_* = estimated 7-day rolling window limits
+    "pro":    {"token_limit":  19_000, "cost_limit":  18.0, "message_limit":   250,
+               "weekly_token_limit": 190_000, "weekly_msg_limit": 2_500},
+    "max5":   {"token_limit":  88_000, "cost_limit":  35.0, "message_limit": 1_000,
+               "weekly_token_limit": 880_000, "weekly_msg_limit": 10_000},
+    "max20":  {"token_limit": 220_000, "cost_limit": 140.0, "message_limit": 2_000,
+               "weekly_token_limit": 2_200_000, "weekly_msg_limit": 20_000},
+    "custom": {"token_limit":  44_000, "cost_limit":  50.0, "message_limit":   250,
+               "weekly_token_limit": 440_000, "weekly_msg_limit": 2_500},
     # z.ai subscription estimates
-    "zai-lite": {"token_limit": 400_000, "cost_limit": 50.0, "message_limit": 120},
-    "zai-pro":  {"token_limit": 2_000_000, "cost_limit": 150.0, "message_limit": 600},
-    "zai-max":  {"token_limit": 8_000_000, "cost_limit": 600.0, "message_limit": 2_400},
+    "zai-lite": {"token_limit": 400_000, "cost_limit": 50.0, "message_limit": 120,
+                 "weekly_token_limit": 4_000_000, "weekly_msg_limit": 1_200},
+    "zai-pro":  {"token_limit": 2_000_000, "cost_limit": 150.0, "message_limit": 600,
+                 "weekly_token_limit": 20_000_000, "weekly_msg_limit": 6_000},
+    "zai-max":  {"token_limit": 8_000_000, "cost_limit": 600.0, "message_limit": 2_400,
+                 "weekly_token_limit": 80_000_000, "weekly_msg_limit": 24_000},
 }
 
 # Activity multiplier — Anthropic sometimes runs 2x promotions
@@ -674,6 +707,8 @@ def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str],
         usage_data['token_limit'] = preset['token_limit'] * multiplier
         usage_data['cost_limit'] = preset['cost_limit'] * multiplier
         usage_data['message_limit'] = preset['message_limit'] * multiplier
+        usage_data['weekly_token_limit'] = preset.get('weekly_token_limit', 0) * multiplier
+        usage_data['weekly_msg_limit'] = preset.get('weekly_msg_limit', 0) * multiplier
     usage_data['plan_type'] = normalized
     usage_data['_multiplier'] = multiplier
 
@@ -867,13 +902,19 @@ def main(json_output: bool = False, plan: Optional[str] = None,
         if usage_data:
             msg_count = usage_data.get('messages_count', 0)
             msg_limit = usage_data.get('message_limit', 250)
-            tkn_total = usage_data.get('total_tokens', 0)
-            tkn_limit = usage_data.get('token_limit', 44000)
             msgs_pct = (msg_count / msg_limit * 100) if msg_limit > 0 else None
-            tkns_pct = (tkn_total / tkn_limit * 100) if tkn_limit > 0 else None
+
+            # 7-day weekly percentage (use whichever dimension is higher)
+            w_tokens = usage_data.get('weekly_tokens', 0)
+            w_msgs = usage_data.get('weekly_msgs', 0)
+            w_tkn_limit = usage_data.get('weekly_token_limit', 0)
+            w_msg_limit = usage_data.get('weekly_msg_limit', 0)
+            w_tkn_pct = (w_tokens / w_tkn_limit * 100) if w_tkn_limit > 0 else 0
+            w_msg_pct = (w_msgs / w_msg_limit * 100) if w_msg_limit > 0 else 0
+            weekly_pct = max(w_tkn_pct, w_msg_pct) if (w_tkn_limit or w_msg_limit) else None
         else:
             msgs_pct = None
-            tkns_pct = None
+            weekly_pct = None
 
         if usage_data and usage_data.get('_reset_time'):
             reset_time = usage_data['_reset_time']
@@ -903,10 +944,11 @@ def main(json_output: bool = False, plan: Optional[str] = None,
         else:
             print(format_status_line(
                 msgs_pct=msgs_pct,
-                tkns_pct=tkns_pct,
+                tkns_pct=None,
                 reset_time=reset_time,
                 model=display_name if display_name != 'Unknown' else model_id,
                 plan=plan_label,
+                weekly_pct=weekly_pct,
                 bypass=bypass,
                 use_color=use_color,
             ))
@@ -921,6 +963,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
             print(format_status_line(
                 msgs_pct=None, tkns_pct=None,
                 reset_time=reset_time, model=display_name,
+                weekly_pct=None,
                 bypass=bypass, use_color=use_color,
             ))
 

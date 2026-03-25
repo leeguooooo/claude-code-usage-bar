@@ -49,59 +49,52 @@ def colorize(text: str, color: str, use_color: bool = True) -> str:
     return f"{color}{text}{RESET}"
 
 
+def _build_dimension(label: str, pct: Optional[float],
+                      overall_color: str, use_color: bool) -> str:
+    """Build one progress bar dimension: [████░░░░░░] label XX%"""
+    if pct is not None:
+        bar = build_bar(pct)
+        text = "100%+" if pct > 100 else f"{pct:.0f}%"
+        bar_color = color_for_percent(pct)
+    else:
+        bar = EMPTY * 10
+        text = "--%"
+        bar_color = GREEN
+    return (
+        f"{colorize('[' + bar + ']', bar_color, use_color)}"
+        f" {colorize(label + ' ' + text, overall_color, use_color)}"
+    )
+
+
 def format_status_line(
     msgs_pct: Optional[float],
     tkns_pct: Optional[float],
     reset_time: str,
     model: str,
     plan: str = "",
+    weekly_pct: Optional[float] = None,
     bypass: bool = False,
     use_color: bool = True,
 ) -> str:
     """Build the complete status bar string.
 
-    Each progress bar is colored independently. Surrounding text (labels,
-    separators, timer, model) uses the highest severity color.
+    Shows 5-hour window (msgs + tkns) and optionally 7-day weekly window.
+    Each progress bar is colored independently. Surrounding text uses
+    the highest severity color across all dimensions.
     """
-    # Overall color for text/separators = max severity
-    overall_color = color_for_percent(max(msgs_pct or 0, tkns_pct or 0))
+    # Overall color = max severity across all dimensions
+    all_pcts = [p for p in (msgs_pct, tkns_pct, weekly_pct) if p is not None]
+    overall_color = color_for_percent(max(all_pcts) if all_pcts else 0)
 
-    # Messages bar
-    if msgs_pct is not None:
-        m_bar = build_bar(msgs_pct)
-        m_label = "100%+" if msgs_pct > 100 else f"{msgs_pct:.0f}%"
-        m_color = color_for_percent(msgs_pct)
-    else:
-        m_bar = EMPTY * 10
-        m_label = "--%"
-        m_color = GREEN
+    parts = [
+        _build_dimension("5h", msgs_pct, overall_color, use_color),
+        _build_dimension("7d", weekly_pct, overall_color, use_color),
+    ]
 
-    # Tokens bar
-    if tkns_pct is not None:
-        t_bar = build_bar(tkns_pct)
-        t_label = "100%+" if tkns_pct > 100 else f"{tkns_pct:.0f}%"
-        t_color = color_for_percent(tkns_pct)
-    else:
-        t_bar = EMPTY * 10
-        t_label = "--%"
-        t_color = GREEN
-
-    # Build parts: bar colored by its own severity, label by overall
-    msgs_part = (
-        f"{colorize('[' + m_bar + ']', m_color, use_color)}"
-        f" {colorize('msgs ' + m_label, overall_color, use_color)}"
-    )
-    tkns_part = (
-        f"{colorize('[' + t_bar + ']', t_color, use_color)}"
-        f" {colorize('tkns ' + t_label, overall_color, use_color)}"
-    )
-    time_part = colorize(f"⏰{reset_time}", overall_color, use_color)
-    model_part = colorize(model, overall_color, use_color)
-
-    parts = [msgs_part, tkns_part, time_part]
+    parts.append(colorize(f"⏰{reset_time}", overall_color, use_color))
     if plan:
         parts.append(colorize(plan, overall_color, use_color))
-    parts.append(model_part)
+    parts.append(colorize(model, overall_color, use_color))
     if bypass:
         parts.append(colorize("⚠️BYPASS", RED, use_color))
 
