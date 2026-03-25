@@ -59,6 +59,11 @@ Integration:
         action="store_true",
         help="Disable ANSI color codes in output",
     )
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="Show detailed breakdown of usage data and limits",
+    )
 
     args = parser.parse_args()
 
@@ -103,7 +108,8 @@ Integration:
     # Run the status bar
     use_color = not (args.no_color or env_bool("NO_COLOR"))
     try:
-        statusbar_main(json_output=json_output, plan=plan, reset_hour=reset_hour, use_color=use_color)
+        statusbar_main(json_output=json_output, plan=plan, reset_hour=reset_hour,
+                        use_color=use_color, detail=args.detail)
         return 0
     except KeyboardInterrupt:
         return 130

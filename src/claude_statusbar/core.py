@@ -912,8 +912,18 @@ def build_json_output(usage_data: Dict[str, Any], reset_time: str, model: str, d
     }
 
 
+def format_number(num: float) -> str:
+    """Format number for detail display."""
+    if num >= 1_000_000:
+        return f"{num/1_000_000:.1f}M"
+    elif num >= 1_000:
+        return f"{num/1_000:.1f}k"
+    return f"{num:.0f}"
+
+
 def main(json_output: bool = False, plan: Optional[str] = None,
-         reset_hour: Optional[int] = None, use_color: bool = True):
+         reset_hour: Optional[int] = None, use_color: bool = True,
+         detail: bool = False):
     """Main function"""
     stdin_data = parse_stdin_data()
 
@@ -983,6 +993,31 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 bypass=bypass,
                 use_color=use_color,
             ))
+
+            if detail and usage_data:
+                mult = usage_data.get('_multiplier', 1)
+                promo = "🔥 2x ACTIVE (off-peak)" if mult > 1 else "1x (normal)"
+                print(
+                    f"\n"
+                    f"╭─ Detail ─────────────────────────────────────────╮\n"
+                    f"│ 5-hour window                                    │\n"
+                    f"│   Messages:  {msg_count:>6} / {msg_limit:<6}  ({msgs_pct:.0f}%)  {' ':>11}│\n"
+                    f"│   Tokens:    {format_number(usage_data.get('total_tokens', 0)):>6} / {format_number(usage_data.get('token_limit', 0)):<6}               │\n"
+                    f"│   Reset:     {reset_time:<37}│\n"
+                    f"│                                                  │\n"
+                    f"│ 7-day window                                     │\n"
+                    f"│   Messages:  {w_msgs:>6} / {w_msg_limit:<6}  ({w_msg_pct:.0f}%)  {' ':>11}│\n"
+                    f"│   Tokens:    {format_number(w_tokens):>6} / {format_number(w_tkn_limit):<6}  ({w_tkn_pct:.0f}%)  {' ':>11}│\n"
+                    f"│                                                  │\n"
+                    f"│ Plan: {plan_label:<15}  Promo: {promo:<19}│\n"
+                    f"│ Source: {usage_data.get('source', '?'):<10}                                │\n"
+                    f"│                                                  │\n"
+                    f"│ ⚠ Limits are estimates. Anthropic does not       │\n"
+                    f"│   expose official rate-limit numbers via API.    │\n"
+                    f"│   Verify with /stats in Claude Code.            │\n"
+                    f"╰──────────────────────────────────────────────────╯",
+                    file=sys.stderr,
+                )
 
     except Exception as e:
         reset_time = calculate_reset_time(reset_hour=reset_hour).replace(" ", "")
