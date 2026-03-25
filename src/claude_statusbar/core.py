@@ -5,6 +5,7 @@ Resolves dependency issues, ensuring operation in any environment
 """
 
 import json
+import re
 import sys
 import logging
 import os
@@ -1067,6 +1068,8 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
                 ctx_size = stdin_data.get('context_window_size', 0)
                 if ctx_size > 0:
+                    # Strip redundant size suffix like "(1M context)" from display_name
+                    model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
                     model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
                 print(format_status_line(
@@ -1086,6 +1089,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
                 ctx_size = stdin_data.get('context_window_size', 0)
                 if ctx_size > 0:
+                    model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
                     model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
                 promo_label = get_promo_label()
