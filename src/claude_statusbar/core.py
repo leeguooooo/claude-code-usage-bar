@@ -1047,12 +1047,13 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                              "promo_label": promo_label},
                 }))
             else:
+                ctx_pct = stdin_data.get('context_used_pct')
                 print(format_status_line(
                     msgs_pct=msgs_pct, tkns_pct=None,
                     reset_time=reset_time, model=model,
                     plan=plan_label,
-                    weekly_pct=weekly_pct, bypass=bypass,
-                    use_color=use_color,
+                    weekly_pct=weekly_pct, ctx_pct=ctx_pct,
+                    bypass=bypass, use_color=use_color,
                 ))
         else:
             # No official data — show upgrade prompt

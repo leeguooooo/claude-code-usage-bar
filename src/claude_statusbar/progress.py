@@ -73,22 +73,24 @@ def format_status_line(
     model: str,
     plan: str = "",
     weekly_pct: Optional[float] = None,
+    ctx_pct: Optional[float] = None,
     bypass: bool = False,
     use_color: bool = True,
 ) -> str:
     """Build the complete status bar string.
 
-    Shows 5-hour window (msgs + tkns) and optionally 7-day weekly window.
+    Shows 5-hour window, 7-day weekly window, and context window usage.
     Each progress bar is colored independently. Surrounding text uses
     the highest severity color across all dimensions.
     """
-    # Overall color = max severity across all dimensions
+    # Overall color = max severity across all dimensions (ctx excluded — it's per-session)
     all_pcts = [p for p in (msgs_pct, tkns_pct, weekly_pct) if p is not None]
     overall_color = color_for_percent(max(all_pcts) if all_pcts else 0)
 
     parts = [
         _build_dimension("5h", msgs_pct, overall_color, use_color),
         _build_dimension("7d", weekly_pct, overall_color, use_color),
+        _build_dimension("ctx", ctx_pct, overall_color, use_color),
     ]
 
     parts.append(colorize(f"⏰{reset_time}", overall_color, use_color))
