@@ -90,7 +90,6 @@ def format_status_line(
     parts = [
         _build_dimension("5h", msgs_pct, overall_color, use_color),
         _build_dimension("7d", weekly_pct, overall_color, use_color),
-        _build_dimension("ctx", ctx_pct, overall_color, use_color),
     ]
 
     parts.append(colorize(f"⏰{reset_time}", overall_color, use_color))

@@ -1047,12 +1047,17 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                              "promo_label": promo_label},
                 }))
             else:
-                ctx_pct = stdin_data.get('context_used_pct')
+                # Append context window usage to model name: Opus 4.6(10k/1M)
+                ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
+                ctx_size = stdin_data.get('context_window_size', 0)
+                if ctx_size > 0:
+                    model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
+
                 print(format_status_line(
                     msgs_pct=msgs_pct, tkns_pct=None,
                     reset_time=reset_time, model=model,
                     plan=plan_label,
-                    weekly_pct=weekly_pct, ctx_pct=ctx_pct,
+                    weekly_pct=weekly_pct,
                     bypass=bypass, use_color=use_color,
                 ))
         else:
