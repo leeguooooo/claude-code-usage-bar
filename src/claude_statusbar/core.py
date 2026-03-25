@@ -646,11 +646,46 @@ PLAN_PRESETS = {
                  "weekly_token_limit": 80_000_000, "weekly_msg_limit": 24_000},
 }
 
-# Activity multiplier — Anthropic sometimes runs 2x promotions
-DEFAULT_MULTIPLIER = 1
-
 # Ordered from smallest to largest for auto-detection
 PLAN_TIERS = ["pro", "max5", "max20"]
+
+# ── 2x activity promotion rules ─────────────────────────────
+# Anthropic March 2026 promotion: 2x usage during off-peak hours.
+# Off-peak bonus usage is NOT charged against weekly limits.
+# Rules:
+#   - Weekdays: 2x outside 8AM-2PM ET (peak hours = no bonus)
+#   - Weekends: 2x all day
+#   - Promotion ends: 2026-03-28
+PROMO_END = datetime(2026, 3, 28, tzinfo=timezone.utc)
+PEAK_START_ET = 8   # 8 AM Eastern
+PEAK_END_ET = 14    # 2 PM Eastern
+ET_UTC_OFFSET = -4  # EDT (Eastern Daylight Time, March)
+
+
+def is_2x_active() -> bool:
+    """Check if Anthropic's 2x activity promotion is currently active.
+
+    Returns True during off-peak hours before the promotion end date.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Promotion expired?
+    if now >= PROMO_END:
+        return False
+
+    # Convert to ET for peak-hour check
+    et_hour = (now.hour + ET_UTC_OFFSET) % 24
+    weekday = now.weekday()  # 0=Mon, 6=Sun
+
+    # Weekends: always 2x
+    if weekday >= 5:
+        return True
+
+    # Weekdays: 2x outside 8AM-2PM ET
+    if et_hour < PEAK_START_ET or et_hour >= PEAK_END_ET:
+        return True
+
+    return False
 
 CONFIG_DIR = Path.home() / ".cache" / "claude-statusbar"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -675,23 +710,29 @@ def save_config(plan: str, multiplier: int) -> None:
     )
 
 
-def auto_detect_plan(usage_data: Dict[str, Any]) -> tuple[str, int]:
-    """Auto-detect plan tier and activity multiplier from actual usage.
+def get_current_multiplier() -> int:
+    """Get the current activity multiplier based on promotion schedule."""
+    return 2 if is_2x_active() else 1
 
-    Walks up tiers at 1x, then tries 2x if usage exceeds all 1x tiers.
+
+def auto_detect_plan(usage_data: Dict[str, Any]) -> tuple[str, int]:
+    """Auto-detect plan tier from actual usage.
+
+    Multiplier is determined by the official promotion schedule, not guessed
+    from usage. Walks up tiers with the current multiplier until usage fits.
     Returns (plan_name, multiplier).
     """
     msgs = usage_data.get('messages_count', 0)
     tokens = usage_data.get('total_tokens', 0)
+    mult = get_current_multiplier()
 
-    for mult in (1, 2):
-        for tier in PLAN_TIERS:
-            preset = PLAN_PRESETS[tier]
-            if (msgs <= preset['message_limit'] * mult and
-                    tokens <= preset['token_limit'] * mult):
-                return tier, mult
+    for tier in PLAN_TIERS:
+        preset = PLAN_PRESETS[tier]
+        if (msgs <= preset['message_limit'] * mult and
+                tokens <= preset['token_limit'] * mult):
+            return tier, mult
 
-    return PLAN_TIERS[-1], 2
+    return PLAN_TIERS[-1], mult
 
 def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str],
                         multiplier: int = 1) -> Dict[str, Any]:
@@ -722,27 +763,23 @@ def resolve_plan(usage_data: Optional[Dict[str, Any]], cli_plan: Optional[str]) 
     """
     if cli_plan:
         normalized = cli_plan.lower().replace("_", "-").replace(".", "-")
-        if normalized in PLAN_PRESETS and usage_data:
-            # Detect multiplier for the specific plan
-            preset = PLAN_PRESETS[normalized]
-            msgs = usage_data.get('messages_count', 0)
-            tokens = usage_data.get('total_tokens', 0)
-            mult = 1
-            if msgs > preset['message_limit'] or tokens > preset['token_limit']:
-                mult = 2  # usage exceeds 1x, must be 2x active
+        mult = get_current_multiplier()
+        if normalized in PLAN_PRESETS:
             save_config(normalized, mult)
             return normalized, mult
-        if normalized in PLAN_PRESETS:
-            save_config(normalized, 1)
-            return normalized, 1
-        return normalized, 1
+        return normalized, mult
 
     cfg = load_config()
     saved_plan = cfg.get("plan")
     saved_mult = cfg.get("multiplier", 1)
 
     if saved_plan and saved_plan in PLAN_PRESETS:
-        # Only upgrade if usage EXCEEDS saved plan at saved multiplier
+        # Always use current time-based multiplier (promotion may have started/ended)
+        current_mult = get_current_multiplier()
+        if current_mult != saved_mult:
+            save_config(saved_plan, current_mult)
+            saved_mult = current_mult
+        # Upgrade tier if usage exceeds saved plan at current multiplier
         if usage_data:
             preset = PLAN_PRESETS[saved_plan]
             msgs = usage_data.get('messages_count', 0)
@@ -750,15 +787,9 @@ def resolve_plan(usage_data: Optional[Dict[str, Any]], cli_plan: Optional[str]) 
             eff_msg = preset['message_limit'] * saved_mult
             eff_tkn = preset['token_limit'] * saved_mult
             if msgs > eff_msg or tokens > eff_tkn:
-                if saved_mult < 2:
-                    # Bump to x2 before upgrading tier
-                    save_config(saved_plan, 2)
-                    return saved_plan, 2
-                else:
-                    # Already x2, need higher tier
-                    detected_plan, detected_mult = auto_detect_plan(usage_data)
-                    save_config(detected_plan, detected_mult)
-                    return detected_plan, detected_mult
+                detected_plan, detected_mult = auto_detect_plan(usage_data)
+                save_config(detected_plan, detected_mult)
+                return detected_plan, detected_mult
         return saved_plan, saved_mult
 
     if usage_data:
