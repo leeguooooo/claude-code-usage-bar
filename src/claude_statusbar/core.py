@@ -430,15 +430,16 @@ def parse_stdin_data() -> Dict[str, Any]:
         if not raw:
             return result
 
-        # Debug: dump raw stdin to file for diagnosis
         debug_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
-        try:
-            debug_file.parent.mkdir(parents=True, exist_ok=True)
-            debug_file.write_text(raw, encoding="utf-8")
-        except OSError:
-            pass
-
         data = json.loads(raw)
+
+        # Only cache stdin when it contains rate_limits (avoid overwriting with empty data)
+        if data.get('rate_limits', {}).get('five_hour'):
+            try:
+                debug_file.parent.mkdir(parents=True, exist_ok=True)
+                debug_file.write_text(raw, encoding="utf-8")
+            except OSError:
+                pass
 
         # Model
         model_obj = data.get('model', {})
@@ -455,6 +456,21 @@ def parse_stdin_data() -> Dict[str, Any]:
         sd = rl.get('seven_day', {})
         if sd:
             result['rate_limit_7d_pct'] = sd.get('used_percentage', 0)
+
+        # Fallback: load rate_limits from previous session's cached stdin
+        if not fh and not sd:
+            try:
+                cached = json.loads(debug_file.read_text(encoding="utf-8"))
+                cached_rl = cached.get('rate_limits', {})
+                cached_fh = cached_rl.get('five_hour', {})
+                cached_sd = cached_rl.get('seven_day', {})
+                if cached_fh:
+                    result['rate_limit_pct'] = cached_fh.get('used_percentage', 0)
+                    result['rate_limit_resets_at'] = cached_fh.get('resets_at')
+                if cached_sd:
+                    result['rate_limit_7d_pct'] = cached_sd.get('used_percentage', 0)
+            except (OSError, json.JSONDecodeError, TypeError):
+                pass
 
         # Context window
         cw = data.get('context_window', {})
