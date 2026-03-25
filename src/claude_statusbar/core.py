@@ -602,16 +602,58 @@ print("")
     return f"{hours}h {mins:02d}m"
 
 PLAN_PRESETS = {
-    # Synced with claude-monitor v3.1.0 PLAN_LIMITS
-    "pro": {"token_limit": 19_000, "cost_limit": 18.0, "message_limit": 250},
-    "max5": {"token_limit": 88_000, "cost_limit": 35.0, "message_limit": 1_000},
-    "max20": {"token_limit": 220_000, "cost_limit": 140.0, "message_limit": 2_000},
-    "custom": {"token_limit": 44_000, "cost_limit": 50.0, "message_limit": 250},
+    # Base limits from claude-monitor v3.1.0, doubled for 2x activity period
+    "pro":    {"token_limit":  38_000, "cost_limit":  36.0, "message_limit":   500},
+    "max5":   {"token_limit": 176_000, "cost_limit":  70.0, "message_limit": 2_000},
+    "max20":  {"token_limit": 440_000, "cost_limit": 280.0, "message_limit": 4_000},
+    "custom": {"token_limit":  88_000, "cost_limit": 100.0, "message_limit":   500},
     # z.ai subscription estimates
     "zai-lite": {"token_limit": 400_000, "cost_limit": 50.0, "message_limit": 120},
-    "zai-pro": {"token_limit": 2_000_000, "cost_limit": 150.0, "message_limit": 600},
-    "zai-max": {"token_limit": 8_000_000, "cost_limit": 600.0, "message_limit": 2_400},
+    "zai-pro":  {"token_limit": 2_000_000, "cost_limit": 150.0, "message_limit": 600},
+    "zai-max":  {"token_limit": 8_000_000, "cost_limit": 600.0, "message_limit": 2_400},
 }
+
+# Ordered from smallest to largest for auto-detection
+PLAN_TIERS = ["pro", "max5", "max20"]
+
+CONFIG_DIR = Path.home() / ".cache" / "claude-statusbar"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+
+
+def load_saved_plan() -> Optional[str]:
+    """Load user's saved plan from config file."""
+    try:
+        if CONFIG_FILE.exists():
+            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            return data.get("plan")
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def save_plan(plan_name: str) -> None:
+    """Save user's plan choice to config file."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps({"plan": plan_name}), encoding="utf-8")
+
+
+def auto_detect_plan(usage_data: Dict[str, Any]) -> str:
+    """Auto-detect the plan tier based on actual usage without being rate-limited.
+
+    If usage exceeds a plan's limits but no rate-limit was hit, the user
+    must be on a higher tier. Walk up the tiers until we find one that fits.
+    """
+    msgs = usage_data.get('messages_count', 0)
+    tokens = usage_data.get('total_tokens', 0)
+
+    for tier in PLAN_TIERS:
+        preset = PLAN_PRESETS[tier]
+        # If usage fits within this tier's limits, it's likely the right one
+        if msgs <= preset['message_limit'] and tokens <= preset['token_limit']:
+            return tier
+
+    # Usage exceeds all known tiers — use the highest
+    return PLAN_TIERS[-1]
 
 def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str]) -> Dict[str, Any]:
     """Apply plan override to usage data when user specifies a plan."""
@@ -633,6 +675,35 @@ def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str]) ->
     
     return usage_data
 
+def resolve_plan(usage_data: Optional[Dict[str, Any]], cli_plan: Optional[str]) -> str:
+    """Determine the effective plan. Priority: CLI flag > saved config > auto-detect."""
+    if cli_plan:
+        normalized = cli_plan.lower().replace("_", "-").replace(".", "-")
+        if normalized in PLAN_PRESETS:
+            save_plan(normalized)
+            return normalized
+        return normalized
+
+    saved = load_saved_plan()
+    if saved and saved in PLAN_PRESETS:
+        # Re-validate: if usage exceeds saved plan, auto-upgrade
+        if usage_data:
+            detected = auto_detect_plan(usage_data)
+            saved_idx = PLAN_TIERS.index(saved) if saved in PLAN_TIERS else -1
+            detected_idx = PLAN_TIERS.index(detected) if detected in PLAN_TIERS else -1
+            if detected_idx > saved_idx:
+                save_plan(detected)
+                return detected
+        return saved
+
+    if usage_data:
+        detected = auto_detect_plan(usage_data)
+        save_plan(detected)
+        return detected
+
+    return "custom"
+
+
 def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Get usage data, using cache when fresh.
 
@@ -640,16 +711,18 @@ def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
     2. Stale cache -> return stale data, spawn background refresh
     3. No cache -> synchronous fetch (cold start)
 
-    Plan overrides are applied AFTER cache read (never stored in cache).
+    Plan is resolved via: CLI flag > saved config > auto-detect.
     """
     cached = read_cache()
     if cached is not None:
-        return apply_plan_override(cached, plan)
+        effective_plan = resolve_plan(cached, plan)
+        return apply_plan_override(cached, effective_plan)
 
     stale = read_cache_stale()
     if stale is not None:
         refresh_cache_background()
-        return apply_plan_override(stale, plan)
+        effective_plan = resolve_plan(stale, plan)
+        return apply_plan_override(stale, effective_plan)
 
     usage_data = try_original_analysis()
     if not usage_data:
@@ -658,7 +731,8 @@ def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
         reset_time = calculate_reset_time()
         usage_data["_reset_time"] = reset_time
         write_cache(usage_data)
-        return apply_plan_override(usage_data, plan)
+        effective_plan = resolve_plan(usage_data, plan)
+        return apply_plan_override(usage_data, effective_plan)
 
     return None
 
@@ -759,6 +833,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
         reset_time = reset_time.replace(" ", "")
 
         bypass = is_bypass_permissions_active()
+        plan_label = (usage_data.get('plan_type', '') or '').lower() if usage_data else ''
 
         if json_output:
             payload = build_json_output(
@@ -777,6 +852,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 tkns_pct=tkns_pct,
                 reset_time=reset_time,
                 model=display_name if display_name != 'Unknown' else model_id,
+                plan=plan_label,
                 bypass=bypass,
                 use_color=use_color,
             ))

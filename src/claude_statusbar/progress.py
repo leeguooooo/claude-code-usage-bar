@@ -54,6 +54,7 @@ def format_status_line(
     tkns_pct: Optional[float],
     reset_time: str,
     model: str,
+    plan: str = "",
     bypass: bool = False,
     use_color: bool = True,
 ) -> str:
@@ -97,7 +98,10 @@ def format_status_line(
     time_part = colorize(f"⏰{reset_time}", overall_color, use_color)
     model_part = colorize(model, overall_color, use_color)
 
-    parts = [msgs_part, tkns_part, time_part, model_part]
+    parts = [msgs_part, tkns_part, time_part]
+    if plan:
+        parts.append(colorize(plan, overall_color, use_color))
+    parts.append(model_part)
     if bypass:
         parts.append(colorize("⚠️BYPASS", RED, use_color))
 
