@@ -926,7 +926,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
         if usage_data:
             plan_name = (usage_data.get('plan_type', '') or '').lower()
             mult = usage_data.get('_multiplier', 1)
-            plan_label = f"{plan_name}(x{mult})" if mult > 1 else plan_name
+            plan_label = f"{plan_name}🔥x{mult}" if mult > 1 else plan_name
         else:
             plan_label = ''
 
