@@ -54,6 +54,11 @@ Integration:
         type=int,
         help="Reset hour (0-23) if your quota resets at a fixed local time",
     )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color codes in output",
+    )
 
     args = parser.parse_args()
 
@@ -96,8 +101,9 @@ Integration:
         return 0
 
     # Run the status bar
+    use_color = not (args.no_color or env_bool("NO_COLOR"))
     try:
-        statusbar_main(json_output=json_output, plan=plan, reset_hour=reset_hour)
+        statusbar_main(json_output=json_output, plan=plan, reset_hour=reset_hour, use_color=use_color)
         return 0
     except KeyboardInterrupt:
         return 130
