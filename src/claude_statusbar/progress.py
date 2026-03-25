@@ -25,3 +25,25 @@ def build_bar(percent: float, width: int = 10) -> str:
     if percent > 0 and filled == 0:
         filled = 1
     return FILL * filled + EMPTY * (width - filled)
+
+
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+RESET = "\033[0m"
+
+
+def color_for_percent(percent: float) -> str:
+    """Return ANSI color code based on threshold."""
+    if percent >= 70:
+        return RED
+    if percent >= 30:
+        return YELLOW
+    return GREEN
+
+
+def colorize(text: str, color: str, use_color: bool = True) -> str:
+    """Wrap text in ANSI color codes. No-op when use_color is False."""
+    if not use_color:
+        return text
+    return f"{color}{text}{RESET}"
