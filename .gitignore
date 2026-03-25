@@ -35,8 +35,8 @@ dist/
 src/*.egg-info/
 .eggs/
 
-# Test and draft files
-test_*.py
+# Test and draft files (root-level scratch test files only)
+/test_*.py
 *_draft.md
 *_example.json
 setup_*.py
