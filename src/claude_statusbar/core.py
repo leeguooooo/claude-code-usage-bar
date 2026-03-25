@@ -729,6 +729,25 @@ def resolve_plan(usage_data: Optional[Dict[str, Any]], cli_plan: Optional[str]) 
     if usage_data:
         detected_plan, detected_mult = auto_detect_plan(usage_data)
         save_config(detected_plan, detected_mult)
+        # First run — show setup hint on stderr (won't affect statusline stdout)
+        print(
+            "\n"
+            "╭─ claude-statusbar setup ────────────────────────╮\n"
+            "│ Auto-detected: {:<34}│\n"
+            "│                                                 │\n"
+            "│ If this is wrong, set your plan once:           │\n"
+            "│   cs --plan pro     # Pro $20/mo                │\n"
+            "│   cs --plan max5    # Max $100/mo               │\n"
+            "│   cs --plan max20   # Max $200/mo               │\n"
+            "│                                                 │\n"
+            "│ Your choice is saved automatically.             │\n"
+            "╰─────────────────────────────────────────────────╯"
+            .format(
+                f"{detected_plan}(x{detected_mult})" if detected_mult > 1
+                else detected_plan
+            ),
+            file=sys.stderr,
+        )
         return detected_plan, detected_mult
 
     return "custom", 1
