@@ -708,12 +708,12 @@ def is_2x_active() -> bool:
 
 
 def get_promo_label() -> str:
-    """Build a compact promo label with local-time window info.
+    """Build a compact promo label showing the current time window.
 
     Examples (in JST, UTC+9):
-      🔥x2 →1x@21:00        # currently 2x, peak starts at 21:00 local
-      🔥x2 all day           # weekend, 2x all day
-      1x →🔥x2@03:00         # currently peak, 2x resumes at 03:00 local
+      🔥x2[03:00~21:00]     # weekday off-peak, showing 2x window
+      1x[21:00~03:00]        # weekday peak, showing 1x window
+      🔥x2[all day]          # weekend
       (empty)                 # promo expired
     """
     now_utc = datetime.now(timezone.utc)
@@ -736,36 +736,18 @@ def get_promo_label() -> str:
         m = int((local_h - h) * 60)
         return f"{h:02d}:{m:02d}"
 
-    # Check if next weekday (for weekend → Monday transition)
-    if weekday >= 5:
-        # Weekend: 2x all day
-        # Check if Sunday and peak starts tomorrow (Monday)
-        if weekday == 6:  # Sunday
-            peak_local = utc_hour_to_local(PEAK_START_UTC)
-            return f"🔥x2 →1x@Mon{peak_local}"
-        else:  # Saturday
-            return "🔥x2 all wknd"
+    peak_start_local = utc_hour_to_local(PEAK_START_UTC)
+    peak_end_local = utc_hour_to_local(PEAK_END_UTC)
 
-    # Weekday logic
+    if weekday >= 5:
+        return "🔥x2[all day]"
+
     in_peak = PEAK_START_ET <= et_hour < PEAK_END_ET
 
     if in_peak:
-        # Currently 1x, show when 2x resumes
-        resume_local = utc_hour_to_local(PEAK_END_UTC)
-        return f"1x →🔥x2@{resume_local}"
+        return f"1x[{peak_start_local}~{peak_end_local}]"
     else:
-        # Currently 2x, show when peak (1x) starts
-        if et_hour < PEAK_START_ET:
-            # Before peak today
-            peak_local = utc_hour_to_local(PEAK_START_UTC)
-            return f"🔥x2 →1x@{peak_local}"
-        else:
-            # After peak, 2x until next day's peak (or weekend)
-            if weekday == 4:  # Friday after peak → weekend
-                return "🔥x2 →Mon"
-            else:
-                peak_local = utc_hour_to_local(PEAK_START_UTC)
-                return f"🔥x2 →1x@tmr{peak_local}"
+        return f"🔥x2[{peak_end_local}~{peak_start_local}]"
 
 CONFIG_DIR = Path.home() / ".cache" / "claude-statusbar"
 CONFIG_FILE = CONFIG_DIR / "config.json"
