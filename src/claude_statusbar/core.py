@@ -429,6 +429,15 @@ def parse_stdin_data() -> Dict[str, Any]:
         raw = sys.stdin.read()
         if not raw:
             return result
+
+        # Debug: dump raw stdin to file for diagnosis
+        debug_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
+        try:
+            debug_file.parent.mkdir(parents=True, exist_ok=True)
+            debug_file.write_text(raw, encoding="utf-8")
+        except OSError:
+            pass
+
         data = json.loads(raw)
 
         # Model
@@ -656,10 +665,20 @@ PLAN_TIERS = ["pro", "max5", "max20"]
 #   - Weekdays: 2x outside 8AM-2PM ET (peak hours = no bonus)
 #   - Weekends: 2x all day
 #   - Promotion ends: 2026-03-28
-PROMO_END = datetime(2026, 3, 28, tzinfo=timezone.utc)
+PROMO_END = datetime(2026, 3, 29, 7, tzinfo=timezone.utc)  # 3/28 11:59 PM PT = 3/29 07:00 UTC
 PEAK_START_ET = 8   # 8 AM Eastern
 PEAK_END_ET = 14    # 2 PM Eastern
 ET_UTC_OFFSET = -4  # EDT (Eastern Daylight Time, March)
+
+
+def _et_to_utc(et_hour: int) -> int:
+    """Convert an ET hour to UTC hour."""
+    return (et_hour - ET_UTC_OFFSET) % 24
+
+
+# Peak window in UTC
+PEAK_START_UTC = _et_to_utc(PEAK_START_ET)  # 8 AM ET -> 12 UTC
+PEAK_END_UTC = _et_to_utc(PEAK_END_ET)      # 2 PM ET -> 18 UTC
 
 
 def is_2x_active() -> bool:
@@ -686,6 +705,67 @@ def is_2x_active() -> bool:
         return True
 
     return False
+
+
+def get_promo_label() -> str:
+    """Build a compact promo label with local-time window info.
+
+    Examples (in JST, UTC+9):
+      🔥x2 →1x@21:00        # currently 2x, peak starts at 21:00 local
+      🔥x2 all day           # weekend, 2x all day
+      1x →🔥x2@03:00         # currently peak, 2x resumes at 03:00 local
+      (empty)                 # promo expired
+    """
+    now_utc = datetime.now(timezone.utc)
+
+    if now_utc >= PROMO_END:
+        return ""
+
+    et_hour = (now_utc.hour + ET_UTC_OFFSET) % 24
+    weekday = now_utc.weekday()  # 0=Mon, 6=Sun
+
+    # Get local timezone offset for display
+    local_now = datetime.now().astimezone()
+    local_offset = local_now.utcoffset()
+    offset_hours = local_offset.total_seconds() / 3600 if local_offset else 0
+
+    def utc_hour_to_local(utc_h: int) -> str:
+        """Convert UTC hour to local time string HH:MM."""
+        local_h = (utc_h + offset_hours) % 24
+        h = int(local_h)
+        m = int((local_h - h) * 60)
+        return f"{h:02d}:{m:02d}"
+
+    # Check if next weekday (for weekend → Monday transition)
+    if weekday >= 5:
+        # Weekend: 2x all day
+        # Check if Sunday and peak starts tomorrow (Monday)
+        if weekday == 6:  # Sunday
+            peak_local = utc_hour_to_local(PEAK_START_UTC)
+            return f"🔥x2 →1x@Mon{peak_local}"
+        else:  # Saturday
+            return "🔥x2 all wknd"
+
+    # Weekday logic
+    in_peak = PEAK_START_ET <= et_hour < PEAK_END_ET
+
+    if in_peak:
+        # Currently 1x, show when 2x resumes
+        resume_local = utc_hour_to_local(PEAK_END_UTC)
+        return f"1x →🔥x2@{resume_local}"
+    else:
+        # Currently 2x, show when peak (1x) starts
+        if et_hour < PEAK_START_ET:
+            # Before peak today
+            peak_local = utc_hour_to_local(PEAK_START_UTC)
+            return f"🔥x2 →1x@{peak_local}"
+        else:
+            # After peak, 2x until next day's peak (or weekend)
+            if weekday == 4:  # Friday after peak → weekend
+                return "🔥x2 →Mon"
+            else:
+                peak_local = utc_hour_to_local(PEAK_START_UTC)
+                return f"🔥x2 →1x@tmr{peak_local}"
 
 CONFIG_DIR = Path.home() / ".cache" / "claude-statusbar"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -952,15 +1032,16 @@ def main(json_output: bool = False, plan: Optional[str] = None,
 
             model = display_name if display_name != 'Unknown' else model_id
 
-            # Plan label from saved config
+            # Plan label from saved config + promo window
             cfg = load_config()
             saved_plan = cfg.get('plan', '')
-            # 2x indicator from official schedule
-            promo = is_2x_active()
-            if saved_plan:
-                plan_label = f"{saved_plan}🔥x2" if promo else saved_plan
+            promo_label = get_promo_label()
+            if saved_plan and promo_label:
+                plan_label = f"{saved_plan} {promo_label}"
+            elif promo_label:
+                plan_label = promo_label
             else:
-                plan_label = "🔥x2" if promo else ""
+                plan_label = saved_plan
 
             if json_output:
                 print(json.dumps({
@@ -971,7 +1052,8 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                     },
                     "meta": {"model": model_id, "display_name": display_name,
                              "reset_time": reset_time, "bypass": bypass,
-                             "plan": saved_plan, "promo_2x": promo},
+                             "plan": saved_plan, "promo_2x": is_2x_active(),
+                             "promo_label": promo_label},
                 }))
             else:
                 print(format_status_line(
