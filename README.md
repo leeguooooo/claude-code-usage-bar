@@ -1,111 +1,114 @@
 # Claude Status Bar
 
-🔋 Lightweight status bar for Claude AI token usage in your terminal.
+Lightweight Claude Code status bar monitor — see your rate limits, context window, and promo status at a glance.
 
 ![Claude Code Status Bar](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/img.png)
 
-## ✨ One-Line Install
+## What it shows
+
+```
+[███████░░░] 5h 68% | [█░░░░░░░░░] 7d 5% | ⏰0h21m | max5 🔥x2[03:00~21:00] | Opus 4.6(13.4k/1.0M)
+```
+
+| Segment | Meaning |
+|---------|---------|
+| `5h 68%` | 5-hour rate limit usage (official Anthropic data) |
+| `7d 5%` | 7-day rate limit usage (official Anthropic data) |
+| `⏰0h21m` | Time until 5h window resets |
+| `max5` | Your plan tier |
+| `🔥x2[03:00~21:00]` | 2x promo active, showing local time window |
+| `Opus 4.6(13.4k/1.0M)` | Model + context window usage (used/total) |
+
+Colors: green (<30%) | yellow (30-70%) | red (>70%)
+
+## Install
+
+### One-line install (recommended)
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
 ```
 
-> 💡 The `?v=$(date +%s)` parameter ensures you get the latest version without CDN caching issues.
+This installs the package, configures Claude Code statusLine, and sets up aliases. Restart Claude Code to see it.
 
-**If you still see old version, try with additional cache-busting:**
+### Package managers
+
 ```bash
-curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)&r=$RANDOM" | bash
+pip install claude-statusbar     # pip
+uv tool install claude-statusbar # uv
+pipx install claude-statusbar    # pipx
 ```
 
-This automatically:
-- ✅ Installs the package
-- ✅ Configures Claude Code status bar
-- ✅ Sets up shell aliases
-- ✅ Just restart Claude Code and you're done!
+Then add to `~/.claude/settings.json`:
 
-> 💡 **After installation:** Restart Claude Code and say something to see your usage!
-
-## 📦 Alternative Install Methods
-
-```bash
-# PyPI
-pip install claude-statusbar
-
-# uv (fast)
-uv tool install claude-statusbar
-
-# pipx (isolated)
-pipx install claude-statusbar
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "cs"
+  }
+}
 ```
 
-## 🚀 Usage
+## Usage
 
 ```bash
-claude-statusbar  # or cs for short
+cs                  # show status bar (shortest alias)
+cs --json-output    # machine-readable JSON
+cs --plan max5      # set your plan (pro / max5 / max20)
+cs --no-color       # disable ANSI colors
+cs --no-auto-update # disable auto-update checks
 ```
 
-Output: `🔋 T:48.0k/133.3k | $:59.28/90.26 | 🤖opusplan | ⏱️31m | Usage:16.5%`
+### Plan tiers
 
-- **T**: Token usage (current/limit)
-- **$**: Cost in USD (dynamic P90 limits)
-- **🤖**: Current Claude model
-- **⏱️**: Time until reset
-- **Usage %**: Cost-based percentage, color-coded (🟢 <30% | 🟡 30-70% | 🔴 >70%)
+Set once, saved automatically:
 
-## 🔧 Integrations
-
-**tmux status bar:**
 ```bash
-set -g status-right '#(claude-statusbar)'
+cs --plan pro     # Pro $20/mo
+cs --plan max5    # Max $100/mo
+cs --plan max20   # Max $200/mo
 ```
 
-**zsh prompt:**
+### Environment variables
+
+| Variable | Effect |
+|----------|--------|
+| `CLAUDE_STATUSBAR_NO_UPDATE=1` | Disable automatic update checks |
+| `CLAUDE_PLAN=max5` | Set plan tier |
+| `NO_COLOR=1` | Disable ANSI colors |
+
+## 2x Promo Time Window
+
+During Anthropic's 2x usage promotion, the status bar shows the bonus window in your **local timezone**:
+
+| Time | Status |
+|------|--------|
+| Weekday off-peak | `🔥x2[03:00~21:00]` (example in JST) |
+| Weekday peak | `1x[21:00~03:00]` |
+| Weekend | `🔥x2[all day]` |
+| Promo expired | *(hidden)* |
+
+Peak hours: 8AM-2PM ET (weekdays only). Weekends are always 2x.
+
+## Data source
+
+All rate limit data comes directly from **Anthropic's official API headers** via Claude Code's statusLine stdin injection (requires Claude Code >= v2.1.80). No estimation or guessing.
+
+## Upgrading
+
+Auto-updates once per day. To upgrade manually:
+
 ```bash
-RPROMPT='$(claude-statusbar)'
-```
-
-## 🔄 Upgrading
-
-### Automatic Updates (Recommended)
-The tool automatically checks for updates once per day and upgrades itself. No action needed! 🎉
-
-When an update is available, you'll see: `🔄 Upgraded from v1.0.0 to v1.1.0`
-
-### Manual Upgrade
-If automatic upgrade fails, you can manually update:
-
-```bash
-# Re-run the installer (recommended - always gets latest)
-curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
-
-# Or upgrade via package manager:
-# If installed with pip
 pip install --upgrade claude-statusbar
-
-# If installed with pipx  
-pipx upgrade claude-statusbar
-
-# If installed with uv
-uv tool upgrade claude-statusbar
 ```
 
-**Note:** After upgrading, restart Claude Code to use the new version.
+To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
 
-## 💖 Support
-
-If you find this tool helpful, consider:
-- ⭐ Star this repo
-- 💖 Sponsor via GitHub
-- 🐛 Report issues
-
-## 📄 License
+## License
 
 MIT
 
-## ⭐ Star History
+## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=leeguooooo/claude-code-usage-bar&type=Date)](https://star-history.com/#leeguooooo/claude-code-usage-bar&Date)
-
----
-
-*Built on [Claude Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) by [@Maciek-roboblog](https://github.com/Maciek-roboblog)*
