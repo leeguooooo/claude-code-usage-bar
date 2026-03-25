@@ -931,7 +931,67 @@ def main(json_output: bool = False, plan: Optional[str] = None,
         if not json_output:
             check_for_updates()
 
-        usage_data = fetch_usage_data(plan=plan)
+        # ── Data source priority: stdin rate_limits (official) > claude-monitor (estimated) ──
+        has_official_rates = bool(stdin_data.get('rate_limit_pct') is not None or
+                                  stdin_data.get('rate_limit_7d_pct') is not None)
+
+        if has_official_rates:
+            # 🎯 Official data from Anthropic API headers (v2.1.80+)
+            msgs_pct = stdin_data.get('rate_limit_pct')      # 5h used_percentage
+            weekly_pct = stdin_data.get('rate_limit_7d_pct')  # 7d used_percentage
+            data_source = "official"
+
+            # Reset time from stdin resets_at (epoch seconds)
+            resets_at = stdin_data.get('rate_limit_resets_at')
+            if resets_at:
+                now = datetime.now(timezone.utc)
+                diff = datetime.fromtimestamp(resets_at, tz=timezone.utc) - now
+                total_min = max(0, int(diff.total_seconds() / 60))
+                reset_time = f"{total_min // 60}h{total_min % 60:02d}m"
+            else:
+                reset_time = "--"
+
+            plan_label = ""  # Official data — no need to show estimated plan
+            usage_data = None  # Not needed for display
+            w_tokens = w_msgs = w_tkn_limit = w_msg_limit = 0
+            w_tkn_pct = w_msg_pct = 0
+            msg_count = msg_limit = 0
+        else:
+            # 📊 Estimated data from claude-monitor / JSONL (fallback)
+            usage_data = fetch_usage_data(plan=plan)
+            data_source = "estimated"
+
+            if usage_data:
+                msg_count = usage_data.get('messages_count', 0)
+                msg_limit = usage_data.get('message_limit', 250)
+                msgs_pct = (msg_count / msg_limit * 100) if msg_limit > 0 else None
+
+                w_tokens = usage_data.get('weekly_tokens', 0)
+                w_msgs = usage_data.get('weekly_msgs', 0)
+                w_tkn_limit = usage_data.get('weekly_token_limit', 0)
+                w_msg_limit = usage_data.get('weekly_msg_limit', 0)
+                w_tkn_pct = (w_tokens / w_tkn_limit * 100) if w_tkn_limit > 0 else 0
+                w_msg_pct = (w_msgs / w_msg_limit * 100) if w_msg_limit > 0 else 0
+                weekly_pct = max(w_tkn_pct, w_msg_pct) if (w_tkn_limit or w_msg_limit) else None
+            else:
+                msgs_pct = None
+                weekly_pct = None
+                msg_count = msg_limit = 0
+                w_tokens = w_msgs = w_tkn_limit = w_msg_limit = 0
+                w_tkn_pct = w_msg_pct = 0
+
+            if usage_data and usage_data.get('_reset_time'):
+                reset_time = usage_data['_reset_time']
+            else:
+                reset_time = calculate_reset_time(reset_hour=reset_hour)
+            reset_time = reset_time.replace(" ", "")
+
+            if usage_data:
+                plan_name = (usage_data.get('plan_type', '') or '').lower()
+                mult = usage_data.get('_multiplier', 1)
+                plan_label = f"{plan_name}🔥x{mult}" if mult > 1 else plan_name
+            else:
+                plan_label = ''
 
         model_id, display_name = get_current_model(stdin_data)
         if model_id == 'unknown' and usage_data:
@@ -940,36 +1000,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 model_id = data_models[0]
                 display_name = model_id
 
-        if usage_data:
-            msg_count = usage_data.get('messages_count', 0)
-            msg_limit = usage_data.get('message_limit', 250)
-            msgs_pct = (msg_count / msg_limit * 100) if msg_limit > 0 else None
-
-            # 7-day weekly percentage (use whichever dimension is higher)
-            w_tokens = usage_data.get('weekly_tokens', 0)
-            w_msgs = usage_data.get('weekly_msgs', 0)
-            w_tkn_limit = usage_data.get('weekly_token_limit', 0)
-            w_msg_limit = usage_data.get('weekly_msg_limit', 0)
-            w_tkn_pct = (w_tokens / w_tkn_limit * 100) if w_tkn_limit > 0 else 0
-            w_msg_pct = (w_msgs / w_msg_limit * 100) if w_msg_limit > 0 else 0
-            weekly_pct = max(w_tkn_pct, w_msg_pct) if (w_tkn_limit or w_msg_limit) else None
-        else:
-            msgs_pct = None
-            weekly_pct = None
-
-        if usage_data and usage_data.get('_reset_time'):
-            reset_time = usage_data['_reset_time']
-        else:
-            reset_time = calculate_reset_time(reset_hour=reset_hour)
-        reset_time = reset_time.replace(" ", "")
-
         bypass = is_bypass_permissions_active()
-        if usage_data:
-            plan_name = (usage_data.get('plan_type', '') or '').lower()
-            mult = usage_data.get('_multiplier', 1)
-            plan_label = f"{plan_name}🔥x{mult}" if mult > 1 else plan_name
-        else:
-            plan_label = ''
 
         if json_output:
             payload = build_json_output(
@@ -994,7 +1025,22 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 use_color=use_color,
             ))
 
-            if detail and usage_data:
+            if detail and has_official_rates:
+                print(
+                    f"\n"
+                    f"╭─ Detail ─────────────────────────────────────────────╮\n"
+                    f"│ Data source: ✅ Official (Anthropic API headers)     │\n"
+                    f"│                                                      │\n"
+                    f"│ 5h used:  {msgs_pct:>5.1f}%   (from API response)         │\n"
+                    f"│ 7d used:  {weekly_pct or 0:>5.1f}%   (from API response)         │\n"
+                    f"│ Reset:    {reset_time:<43}│\n"
+                    f"│                                                      │\n"
+                    f"│ These numbers come directly from Anthropic's         │\n"
+                    f"│ servers. They are accurate.                          │\n"
+                    f"╰─────────────────────────────────────────────────────╯",
+                    file=sys.stderr,
+                )
+            elif detail and usage_data:
                 mult = usage_data.get('_multiplier', 1)
                 promo = "🔥 2x ACTIVE (off-peak)" if mult > 1 else "1x (normal)"
                 tkn_5h = format_number(usage_data.get('total_tokens', 0))
