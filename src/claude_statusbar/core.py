@@ -457,6 +457,7 @@ def parse_stdin_data() -> Dict[str, Any]:
         sd = rl.get('seven_day', {})
         if sd:
             result['rate_limit_7d_pct'] = sd.get('used_percentage', 0)
+            result['rate_limit_7d_resets_at'] = sd.get('resets_at')
 
         # Fallback: load rate_limits from previous session's cached stdin
         if not fh and not sd:
@@ -470,6 +471,7 @@ def parse_stdin_data() -> Dict[str, Any]:
                     result['rate_limit_resets_at'] = cached_fh.get('resets_at')
                 if cached_sd:
                     result['rate_limit_7d_pct'] = cached_sd.get('used_percentage', 0)
+                    result['rate_limit_7d_resets_at'] = cached_sd.get('resets_at')
             except (OSError, json.JSONDecodeError, TypeError):
                 pass
 
@@ -1038,6 +1040,20 @@ def main(json_output: bool = False, plan: Optional[str] = None,
             else:
                 reset_time = "--"
 
+            resets_at_7d = stdin_data.get('rate_limit_7d_resets_at')
+            if resets_at_7d:
+                diff_7d = datetime.fromtimestamp(resets_at_7d, tz=timezone.utc) - datetime.now(timezone.utc)
+                total_sec_7d = max(0, int(diff_7d.total_seconds()))
+                days_7d = total_sec_7d // 86400
+                hours_7d = (total_sec_7d % 86400) // 3600
+                mins_7d = (total_sec_7d % 3600) // 60
+                if days_7d > 0:
+                    reset_time_7d = f"{days_7d}d{hours_7d:02d}h"
+                else:
+                    reset_time_7d = f"{hours_7d}h{mins_7d:02d}m"
+            else:
+                reset_time_7d = ""
+
             model = display_name if display_name != 'Unknown' else model_id
 
             # Plan label from saved config + promo window
@@ -1055,11 +1071,11 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 print(json.dumps({
                     "success": True, "source": "official",
                     "rate_limits": {
-                        "five_hour": {"used_percentage": msgs_pct},
-                        "seven_day": {"used_percentage": weekly_pct},
+                        "five_hour": {"used_percentage": msgs_pct, "reset_time": reset_time},
+                        "seven_day": {"used_percentage": weekly_pct, "reset_time": reset_time_7d},
                     },
                     "meta": {"model": model_id, "display_name": display_name,
-                             "reset_time": reset_time, "bypass": bypass,
+                             "reset_time": reset_time, "reset_time_7d": reset_time_7d, "bypass": bypass,
                              "plan": saved_plan, "promo_2x": is_2x_active(),
                              "promo_label": promo_label},
                 }))
@@ -1077,6 +1093,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                     reset_time=reset_time, model=model,
                     plan=plan_label,
                     weekly_pct=weekly_pct,
+                    reset_time_7d=reset_time_7d,
                     bypass=bypass, use_color=use_color,
                 ))
         else:

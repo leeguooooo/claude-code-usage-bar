@@ -73,6 +73,7 @@ def format_status_line(
     model: str,
     plan: str = "",
     weekly_pct: Optional[float] = None,
+    reset_time_7d: str = "",
     ctx_pct: Optional[float] = None,
     bypass: bool = False,
     use_color: bool = True,
@@ -89,8 +90,13 @@ def format_status_line(
 
     parts = [
         _build_dimension("5h", msgs_pct, overall_color, use_color),
-        _build_dimension("7d", weekly_pct, overall_color, use_color),
     ]
+
+    # 7d dimension with optional countdown
+    dim_7d = _build_dimension("7d", weekly_pct, overall_color, use_color)
+    if reset_time_7d:
+        dim_7d += colorize(f" ⏰{reset_time_7d}", overall_color, use_color)
+    parts.append(dim_7d)
 
     parts.append(colorize(f"⏰{reset_time}", overall_color, use_color))
     if plan:
