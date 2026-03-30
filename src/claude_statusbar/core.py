@@ -1036,7 +1036,11 @@ def main(json_output: bool = False, plan: Optional[str] = None,
             if resets_at:
                 diff = datetime.fromtimestamp(resets_at, tz=timezone.utc) - datetime.now(timezone.utc)
                 total_min = max(0, int(diff.total_seconds() / 60))
-                reset_time = f"{total_min // 60}h{total_min % 60:02d}m"
+                hours, mins = total_min // 60, total_min % 60
+                if hours > 0:
+                    reset_time = f"{hours}h{mins:02d}m"
+                else:
+                    reset_time = f"{mins}m"
             else:
                 reset_time = "--"
 
@@ -1049,8 +1053,10 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 mins_7d = (total_sec_7d % 3600) // 60
                 if days_7d > 0:
                     reset_time_7d = f"{days_7d}d{hours_7d:02d}h"
-                else:
+                elif hours_7d > 0:
                     reset_time_7d = f"{hours_7d}h{mins_7d:02d}m"
+                else:
+                    reset_time_7d = f"{mins_7d}m"
             else:
                 reset_time_7d = ""
 

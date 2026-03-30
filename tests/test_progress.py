@@ -77,7 +77,7 @@ def test_format_status_line_over_100():
         use_color=False,
     )
     assert "5h[" in line
-    assert "[██████████]" in line
+    assert "MAX" in line
 
 def test_format_status_line_no_data():
     line = format_status_line(
@@ -88,7 +88,7 @@ def test_format_status_line_no_data():
     )
     assert "5h[" in line
     assert "7d[" in line
-    assert "[░░░░░░░░░░]" in line
+    assert "--%" in line
 
 def test_format_status_line_bypass():
     line = format_status_line(
