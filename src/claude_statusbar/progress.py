@@ -51,18 +51,16 @@ def colorize(text: str, color: str, use_color: bool = True) -> str:
 
 def _build_dimension(label: str, pct: Optional[float],
                       overall_color: str, use_color: bool) -> str:
-    """Build one progress bar dimension: [████░░░░░░] label XX%"""
+    """Build one progress bar dimension: label[████░░░░░░]"""
     if pct is not None:
         bar = build_bar(pct)
-        text = "100%+" if pct > 100 else f"{pct:.0f}%"
         bar_color = color_for_percent(pct)
     else:
         bar = EMPTY * 10
-        text = "--%"
         bar_color = GREEN
     return (
+        f"{colorize(label, overall_color, use_color)}"
         f"{colorize('[' + bar + ']', bar_color, use_color)}"
-        f" {colorize(label + ' ' + text, overall_color, use_color)}"
     )
 
 
@@ -88,17 +86,16 @@ def format_status_line(
     all_pcts = [p for p in (msgs_pct, tkns_pct, weekly_pct) if p is not None]
     overall_color = color_for_percent(max(all_pcts) if all_pcts else 0)
 
-    parts = [
-        _build_dimension("5h", msgs_pct, overall_color, use_color),
-    ]
+    # 5h dimension with its reset time
+    dim_5h = _build_dimension("5h", msgs_pct, overall_color, use_color)
+    dim_5h += colorize(f"⏰{reset_time}", overall_color, use_color)
+    parts = [dim_5h]
 
-    # 7d dimension with optional countdown
+    # 7d dimension with its reset time
     dim_7d = _build_dimension("7d", weekly_pct, overall_color, use_color)
     if reset_time_7d:
-        dim_7d += colorize(f" ⏰{reset_time_7d}", overall_color, use_color)
+        dim_7d += colorize(f"⏰{reset_time_7d}", overall_color, use_color)
     parts.append(dim_7d)
-
-    parts.append(colorize(f"⏰{reset_time}", overall_color, use_color))
     if plan:
         parts.append(colorize(plan, overall_color, use_color))
     parts.append(colorize(model, overall_color, use_color))

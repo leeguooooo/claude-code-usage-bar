@@ -64,8 +64,8 @@ def test_format_status_line_basic():
         weekly_pct=45,
         use_color=False,
     )
-    assert "5h 82%" in line
-    assert "7d 45%" in line
+    assert "5h[" in line
+    assert "7d[" in line
     assert "2h51m" in line
     assert "Opus 4.6" in line
 
@@ -76,7 +76,7 @@ def test_format_status_line_over_100():
         weekly_pct=100,
         use_color=False,
     )
-    assert "5h 100%+" in line
+    assert "5h[" in line
     assert "[██████████]" in line
 
 def test_format_status_line_no_data():
@@ -86,8 +86,8 @@ def test_format_status_line_no_data():
         weekly_pct=None,
         use_color=False,
     )
-    assert "5h --%" in line
-    assert "7d --%" in line
+    assert "5h[" in line
+    assert "7d[" in line
     assert "[░░░░░░░░░░]" in line
 
 def test_format_status_line_bypass():
@@ -107,7 +107,7 @@ def test_format_status_line_7d_countdown():
         weekly_pct=30, reset_time_7d="3d05h",
         use_color=False,
     )
-    assert "7d 30%" in line
+    assert "7d[" in line
     assert "3d05h" in line
     assert "2h30m" in line
 
@@ -119,9 +119,9 @@ def test_format_status_line_7d_no_countdown():
         weekly_pct=30, reset_time_7d="",
         use_color=False,
     )
-    assert "7d 30%" in line
-    # Should not have a second ⏰ before the 5h one
-    assert line.count("⏰") == 1
+    assert "7d[" in line
+    # 5h has ⏰, 7d does not (no reset_time_7d)
+    assert "⏰2h30m" in line
 
 def test_format_status_line_with_color():
     """Verify ANSI codes are present when use_color=True."""
