@@ -442,6 +442,9 @@ def parse_stdin_data() -> Dict[str, Any]:
             except OSError:
                 pass
 
+        # Session ID
+        result['session_id'] = data.get('session_id', '')
+
         # Model
         model_obj = data.get('model', {})
         if isinstance(model_obj, dict):
@@ -932,8 +935,8 @@ def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
 
     return None
 
-def check_for_updates():
-    """Check for updates once per day.
+def check_for_updates(session_id: str = ''):
+    """Check for updates once per new session.
 
     Disabled by setting env CLAUDE_STATUSBAR_NO_UPDATE=1 or
     passing --no-auto-update on the CLI.
@@ -944,34 +947,31 @@ def check_for_updates():
         return
 
     try:
-        from datetime import datetime
+        cache_dir = Path.home() / '.cache' / 'claude-statusbar'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        last_session_file = cache_dir / 'last_update_session'
 
-        # Check if we should run update check
-        last_check_file = Path.home() / '.claude-statusbar-last-check'
-        now = datetime.now()
-
+        # Only check when session changes
         should_check = True
-        if last_check_file.exists():
+        if session_id and last_session_file.exists():
             try:
-                with open(last_check_file, 'r') as f:
-                    last_check_str = f.read().strip()
-                    last_check = datetime.fromisoformat(last_check_str)
-                    # Check once per day
-                    if (now - last_check).days < 1:
-                        should_check = False
-            except:
+                last_session = last_session_file.read_text().strip()
+                if last_session == session_id:
+                    should_check = False
+            except OSError:
                 pass
 
         if should_check:
-            # Run update check in background
             from .updater import check_and_upgrade
             success, message = check_and_upgrade()
 
-            # Update last check time
-            with open(last_check_file, 'w') as f:
-                f.write(now.isoformat())
+            # Record current session
+            if session_id:
+                try:
+                    last_session_file.write_text(session_id)
+                except OSError:
+                    pass
 
-            # If upgrade was successful, notify user
             if success:
                 print(f"🔄 {message}", file=sys.stderr)
 
@@ -1019,7 +1019,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
 
     try:
         if not json_output:
-            check_for_updates()
+            check_for_updates(stdin_data.get('session_id', ''))
 
         has_official = (stdin_data.get('rate_limit_pct') is not None or
                         stdin_data.get('rate_limit_7d_pct') is not None)
