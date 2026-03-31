@@ -1,6 +1,7 @@
 """Progress bar rendering for the status bar. Pure functions, no I/O."""
 
 from typing import Optional
+from claude_statusbar import __version__
 
 FILL = "█"
 EMPTY = "░"
@@ -18,6 +19,7 @@ BG_RED = "\033[41m"
 BG_GRAY = "\033[100m"  # bright black (dark gray)
 FG_WHITE = "\033[97m"
 FG_BLACK = "\033[30m"
+DIM = "\033[2m"  # dim/faint text
 
 
 def build_bar(percent: float, width: int = 10) -> str:
@@ -149,6 +151,13 @@ def format_status_line(
     parts.append(colorize(model, overall_color, use_color))
     if bypass:
         parts.append(colorize("⚠️BYPASS", RED, use_color))
+
+    # Version tag — dim and subtle, floated to the right
+    ver = f"v{__version__}"
+    if use_color:
+        parts.append(f"{DIM}{ver}{RESET}")
+    else:
+        parts.append(ver)
 
     separator = colorize(" | ", overall_color, use_color)
     return separator.join(parts)
