@@ -1087,8 +1087,12 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                 }))
             else:
                 # Append context window usage to model name: Opus 4.6(10k/1M)
-                ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
                 ctx_size = stdin_data.get('context_window_size', 0)
+                ctx_pct = stdin_data.get('context_used_pct', 0)
+                if ctx_pct and ctx_size:
+                    ctx_used = int(ctx_size * ctx_pct / 100)
+                else:
+                    ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
                 if ctx_size > 0:
                     # Strip redundant size suffix like "(1M context)" from display_name
                     model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
@@ -1109,8 +1113,12 @@ def main(json_output: bool = False, plan: Optional[str] = None,
 
             if stdin_data.get('_has_stdin'):
                 # Have stdin but no rate_limits — session just started, show placeholders
-                ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
                 ctx_size = stdin_data.get('context_window_size', 0)
+                ctx_pct = stdin_data.get('context_used_pct', 0)
+                if ctx_pct and ctx_size:
+                    ctx_used = int(ctx_size * ctx_pct / 100)
+                else:
+                    ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
                 if ctx_size > 0:
                     model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
                     model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
