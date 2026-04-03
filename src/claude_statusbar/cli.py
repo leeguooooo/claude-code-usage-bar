@@ -20,7 +20,6 @@ Examples:
   cs                        # Shortest alias
   
   claude-statusbar --json-output
-  claude-statusbar --plan zai-pro
   claude-statusbar --reset-hour 14
   
 Integration:
@@ -45,11 +44,6 @@ Integration:
         help="Emit machine-readable JSON instead of colored status line",
     )
     parser.add_argument(
-        "--plan",
-        type=str,
-        help="Plan override (e.g., pro, max5, max20, zai-lite, zai-pro, zai-max)",
-    )
-    parser.add_argument(
         "--reset-hour",
         type=int,
         help="Reset hour (0-23) if your quota resets at a fixed local time",
@@ -69,6 +63,11 @@ Integration:
         action="store_true",
         help="Disable automatic update checks (or set CLAUDE_STATUSBAR_NO_UPDATE=1)",
     )
+    parser.add_argument(
+        "--pet-name",
+        type=str,
+        help="Set a custom name for the status bar pet (default: random per session)",
+    )
 
     args = parser.parse_args()
 
@@ -83,8 +82,6 @@ Integration:
         val = os.environ.get(name)
         return val is not None and val.lower() in ("1", "true", "yes", "y", "on")
 
-    # Prefer CLI, fall back to env
-    plan = args.plan or os.environ.get("CLAUDE_PLAN")
     json_output = args.json_output or env_bool("CLAUDE_STATUSBAR_JSON")
     reset_hour = args.reset_hour
     if reset_hour is None:
@@ -116,8 +113,10 @@ Integration:
     # Run the status bar
     use_color = not (args.no_color or env_bool("NO_COLOR"))
     try:
-        statusbar_main(json_output=json_output, plan=plan, reset_hour=reset_hour,
-                        use_color=use_color, detail=args.detail)
+        pet_name = args.pet_name or os.environ.get("CLAUDE_PET_NAME")
+        statusbar_main(json_output=json_output, reset_hour=reset_hour,
+                        use_color=use_color, detail=args.detail,
+                        pet_name=pet_name)
         return 0
     except KeyboardInterrupt:
         return 130

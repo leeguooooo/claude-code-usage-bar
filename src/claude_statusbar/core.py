@@ -657,284 +657,6 @@ print("")
     
     return f"{hours}h {mins:02d}m"
 
-PLAN_PRESETS = {
-    # Base limits per 5-hour window (from claude-monitor v3.1.0)
-    # weekly_* = estimated 7-day rolling window limits
-    "pro":    {"token_limit":  19_000, "cost_limit":  18.0, "message_limit":   250,
-               "weekly_token_limit": 190_000, "weekly_msg_limit": 2_500},
-    "max5":   {"token_limit":  88_000, "cost_limit":  35.0, "message_limit": 1_000,
-               "weekly_token_limit": 880_000, "weekly_msg_limit": 10_000},
-    "max20":  {"token_limit": 220_000, "cost_limit": 140.0, "message_limit": 2_000,
-               "weekly_token_limit": 2_200_000, "weekly_msg_limit": 20_000},
-    "custom": {"token_limit":  44_000, "cost_limit":  50.0, "message_limit":   250,
-               "weekly_token_limit": 440_000, "weekly_msg_limit": 2_500},
-    # z.ai subscription estimates
-    "zai-lite": {"token_limit": 400_000, "cost_limit": 50.0, "message_limit": 120,
-                 "weekly_token_limit": 4_000_000, "weekly_msg_limit": 1_200},
-    "zai-pro":  {"token_limit": 2_000_000, "cost_limit": 150.0, "message_limit": 600,
-                 "weekly_token_limit": 20_000_000, "weekly_msg_limit": 6_000},
-    "zai-max":  {"token_limit": 8_000_000, "cost_limit": 600.0, "message_limit": 2_400,
-                 "weekly_token_limit": 80_000_000, "weekly_msg_limit": 24_000},
-}
-
-# Ordered from smallest to largest for auto-detection
-PLAN_TIERS = ["pro", "max5", "max20"]
-
-# ── 2x activity promotion rules ─────────────────────────────
-# Anthropic March 2026 promotion: 2x usage during off-peak hours.
-# Off-peak bonus usage is NOT charged against weekly limits.
-# Rules:
-#   - Weekdays: 2x outside 8AM-2PM ET (peak hours = no bonus)
-#   - Weekends: 2x all day
-#   - Promotion ends: 2026-03-28
-PROMO_END = datetime(2026, 3, 29, 7, tzinfo=timezone.utc)  # 3/28 11:59 PM PT = 3/29 07:00 UTC
-PEAK_START_ET = 8   # 8 AM Eastern
-PEAK_END_ET = 14    # 2 PM Eastern
-ET_UTC_OFFSET = -4  # EDT (Eastern Daylight Time, March)
-
-
-def _et_to_utc(et_hour: int) -> int:
-    """Convert an ET hour to UTC hour."""
-    return (et_hour - ET_UTC_OFFSET) % 24
-
-
-# Peak window in UTC
-PEAK_START_UTC = _et_to_utc(PEAK_START_ET)  # 8 AM ET -> 12 UTC
-PEAK_END_UTC = _et_to_utc(PEAK_END_ET)      # 2 PM ET -> 18 UTC
-
-
-def is_2x_active() -> bool:
-    """Check if Anthropic's 2x activity promotion is currently active.
-
-    Returns True during off-peak hours before the promotion end date.
-    """
-    now = datetime.now(timezone.utc)
-
-    # Promotion expired?
-    if now >= PROMO_END:
-        return False
-
-    # Convert to ET for peak-hour check
-    et_hour = (now.hour + ET_UTC_OFFSET) % 24
-    weekday = now.weekday()  # 0=Mon, 6=Sun
-
-    # Weekends: always 2x
-    if weekday >= 5:
-        return True
-
-    # Weekdays: 2x outside 8AM-2PM ET
-    if et_hour < PEAK_START_ET or et_hour >= PEAK_END_ET:
-        return True
-
-    return False
-
-
-def get_promo_label() -> str:
-    """Build a compact promo label showing the current time window.
-
-    Examples (in JST, UTC+9):
-      🔥x2[03:00~21:00]     # weekday off-peak, showing 2x window
-      1x[21:00~03:00]        # weekday peak, showing 1x window
-      🔥x2[all day]          # weekend
-      (empty)                 # promo expired
-    """
-    now_utc = datetime.now(timezone.utc)
-
-    if now_utc >= PROMO_END:
-        return ""
-
-    et_hour = (now_utc.hour + ET_UTC_OFFSET) % 24
-    weekday = now_utc.weekday()  # 0=Mon, 6=Sun
-
-    # Get local timezone offset for display
-    local_now = datetime.now().astimezone()
-    local_offset = local_now.utcoffset()
-    offset_hours = local_offset.total_seconds() / 3600 if local_offset else 0
-
-    def utc_hour_to_local(utc_h: int) -> str:
-        """Convert UTC hour to local time string HH:MM."""
-        local_h = (utc_h + offset_hours) % 24
-        h = int(local_h)
-        m = int((local_h - h) * 60)
-        return f"{h:02d}:{m:02d}"
-
-    peak_start_local = utc_hour_to_local(PEAK_START_UTC)
-    peak_end_local = utc_hour_to_local(PEAK_END_UTC)
-
-    if weekday >= 5:
-        return "🔥x2[all day]"
-
-    in_peak = PEAK_START_ET <= et_hour < PEAK_END_ET
-
-    if in_peak:
-        return f"1x[{peak_start_local}~{peak_end_local}]"
-    else:
-        return f"🔥x2[{peak_end_local}~{peak_start_local}]"
-
-CONFIG_DIR = Path.home() / ".cache" / "claude-statusbar"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-
-
-def load_config() -> Dict[str, Any]:
-    """Load saved config (plan + multiplier)."""
-    try:
-        if CONFIG_FILE.exists():
-            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        pass
-    return {}
-
-
-def save_config(plan: str, multiplier: int) -> None:
-    """Save plan and multiplier to config file."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(
-        json.dumps({"plan": plan, "multiplier": multiplier}),
-        encoding="utf-8",
-    )
-
-
-def get_current_multiplier() -> int:
-    """Get the current activity multiplier based on promotion schedule."""
-    return 2 if is_2x_active() else 1
-
-
-def auto_detect_plan(usage_data: Dict[str, Any]) -> tuple[str, int]:
-    """Auto-detect plan tier from actual usage.
-
-    Multiplier is determined by the official promotion schedule, not guessed
-    from usage. Walks up tiers with the current multiplier until usage fits.
-    Returns (plan_name, multiplier).
-    """
-    msgs = usage_data.get('messages_count', 0)
-    tokens = usage_data.get('total_tokens', 0)
-    mult = get_current_multiplier()
-
-    for tier in PLAN_TIERS:
-        preset = PLAN_PRESETS[tier]
-        if (msgs <= preset['message_limit'] * mult and
-                tokens <= preset['token_limit'] * mult):
-            return tier, mult
-
-    return PLAN_TIERS[-1], mult
-
-def apply_plan_override(usage_data: Dict[str, Any], plan_name: Optional[str],
-                        multiplier: int = 1) -> Dict[str, Any]:
-    """Apply plan limits with activity multiplier."""
-    if not plan_name:
-        return usage_data
-
-    normalized = plan_name.lower().replace("_", "-").replace(".", "-")
-    preset = PLAN_PRESETS.get(normalized)
-
-    usage_data = usage_data.copy()
-    if preset:
-        usage_data['token_limit'] = preset['token_limit'] * multiplier
-        usage_data['cost_limit'] = preset['cost_limit'] * multiplier
-        usage_data['message_limit'] = preset['message_limit'] * multiplier
-        usage_data['weekly_token_limit'] = preset.get('weekly_token_limit', 0) * multiplier
-        usage_data['weekly_msg_limit'] = preset.get('weekly_msg_limit', 0) * multiplier
-    usage_data['plan_type'] = normalized
-    usage_data['_multiplier'] = multiplier
-
-    return usage_data
-
-def resolve_plan(usage_data: Optional[Dict[str, Any]], cli_plan: Optional[str]) -> tuple[str, int]:
-    """Determine effective plan and multiplier.
-
-    Priority: CLI flag > saved config > auto-detect.
-    Returns (plan_name, multiplier).
-    """
-    if cli_plan:
-        normalized = cli_plan.lower().replace("_", "-").replace(".", "-")
-        mult = get_current_multiplier()
-        if normalized in PLAN_PRESETS:
-            save_config(normalized, mult)
-            return normalized, mult
-        return normalized, mult
-
-    cfg = load_config()
-    saved_plan = cfg.get("plan")
-    saved_mult = cfg.get("multiplier", 1)
-
-    if saved_plan and saved_plan in PLAN_PRESETS:
-        # Always use current time-based multiplier (promotion may have started/ended)
-        current_mult = get_current_multiplier()
-        if current_mult != saved_mult:
-            save_config(saved_plan, current_mult)
-            saved_mult = current_mult
-        # Upgrade tier if usage exceeds saved plan at current multiplier
-        if usage_data:
-            preset = PLAN_PRESETS[saved_plan]
-            msgs = usage_data.get('messages_count', 0)
-            tokens = usage_data.get('total_tokens', 0)
-            eff_msg = preset['message_limit'] * saved_mult
-            eff_tkn = preset['token_limit'] * saved_mult
-            if msgs > eff_msg or tokens > eff_tkn:
-                detected_plan, detected_mult = auto_detect_plan(usage_data)
-                save_config(detected_plan, detected_mult)
-                return detected_plan, detected_mult
-        return saved_plan, saved_mult
-
-    if usage_data:
-        detected_plan, detected_mult = auto_detect_plan(usage_data)
-        save_config(detected_plan, detected_mult)
-        # First run — show setup hint on stderr (won't affect statusline stdout)
-        print(
-            "\n"
-            "╭─ claude-statusbar setup ────────────────────────╮\n"
-            "│ Auto-detected: {:<34}│\n"
-            "│                                                 │\n"
-            "│ If this is wrong, set your plan once:           │\n"
-            "│   cs --plan pro     # Pro $20/mo                │\n"
-            "│   cs --plan max5    # Max $100/mo               │\n"
-            "│   cs --plan max20   # Max $200/mo               │\n"
-            "│                                                 │\n"
-            "│ Your choice is saved automatically.             │\n"
-            "╰─────────────────────────────────────────────────╯"
-            .format(
-                f"{detected_plan}(x{detected_mult})" if detected_mult > 1
-                else detected_plan
-            ),
-            file=sys.stderr,
-        )
-        return detected_plan, detected_mult
-
-    return "custom", 1
-
-
-def fetch_usage_data(plan: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Get usage data, using cache when fresh.
-
-    1. Fresh cache (<30s) -> return immediately
-    2. Stale cache -> return stale data, spawn background refresh
-    3. No cache -> synchronous fetch (cold start)
-
-    Plan is resolved via: CLI flag > saved config > auto-detect.
-    """
-    cached = read_cache()
-    if cached is not None:
-        effective_plan, mult = resolve_plan(cached, plan)
-        return apply_plan_override(cached, effective_plan, mult)
-
-    stale = read_cache_stale()
-    if stale is not None:
-        refresh_cache_background()
-        effective_plan, mult = resolve_plan(stale, plan)
-        return apply_plan_override(stale, effective_plan, mult)
-
-    usage_data = try_original_analysis()
-    if not usage_data:
-        usage_data = direct_data_analysis()
-    if usage_data:
-        reset_time = calculate_reset_time()
-        usage_data["_reset_time"] = reset_time
-        write_cache(usage_data)
-        effective_plan, mult = resolve_plan(usage_data, plan)
-        return apply_plan_override(usage_data, effective_plan, mult)
-
-    return None
-
 def check_for_updates(session_id: str = ''):
     """Check for updates once per new session.
 
@@ -1011,10 +733,11 @@ def format_number(num: float) -> str:
     return f"{num:.0f}"
 
 
-def main(json_output: bool = False, plan: Optional[str] = None,
+def main(json_output: bool = False,
          reset_hour: Optional[int] = None, use_color: bool = True,
-         detail: bool = False):
+         detail: bool = False, pet_name: Optional[str] = None):
     """Main function"""
+    from .pet import format_pet, get_countdown_emoji
     stdin_data = parse_stdin_data()
 
     try:
@@ -1036,6 +759,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
             if resets_at:
                 diff = datetime.fromtimestamp(resets_at, tz=timezone.utc) - datetime.now(timezone.utc)
                 total_min = max(0, int(diff.total_seconds() / 60))
+                minutes_to_reset = total_min
                 hours, mins = total_min // 60, total_min % 60
                 if hours > 0:
                     reset_time = f"{hours}h{mins:02d}m"
@@ -1043,6 +767,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                     reset_time = f"{mins}m"
             else:
                 reset_time = "--"
+                minutes_to_reset = None
 
             resets_at_7d = stdin_data.get('rate_limit_7d_resets_at')
             if resets_at_7d:
@@ -1062,17 +787,6 @@ def main(json_output: bool = False, plan: Optional[str] = None,
 
             model = display_name if display_name != 'Unknown' else model_id
 
-            # Plan label from saved config + promo window
-            cfg = load_config()
-            saved_plan = cfg.get('plan', '')
-            promo_label = get_promo_label()
-            if saved_plan and promo_label:
-                plan_label = f"{saved_plan} {promo_label}"
-            elif promo_label:
-                plan_label = promo_label
-            else:
-                plan_label = saved_plan
-
             if json_output:
                 print(json.dumps({
                     "success": True, "source": "official",
@@ -1082,8 +796,7 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                     },
                     "meta": {"model": model_id, "display_name": display_name,
                              "reset_time": reset_time, "reset_time_7d": reset_time_7d, "bypass": bypass,
-                             "plan": saved_plan, "promo_2x": is_2x_active(),
-                             "promo_label": promo_label},
+                             },
                 }))
             else:
                 # Append context window usage to model name: Opus 4.6(10k/1M)
@@ -1098,13 +811,20 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                     model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
                     model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
+                session_id = stdin_data.get('session_id', '')
+                current_hour = datetime.now().hour
+                pet_pct = msgs_pct if msgs_pct is not None else 0
+                pet_text = format_pet(pet_pct, current_hour, session_id,
+                                      minutes_to_reset, pet_name)
+                countdown = get_countdown_emoji(minutes_to_reset)
+
                 print(format_status_line(
                     msgs_pct=msgs_pct, tkns_pct=None,
                     reset_time=reset_time, model=model,
-                    plan=plan_label,
                     weekly_pct=weekly_pct,
                     reset_time_7d=reset_time_7d,
                     bypass=bypass, use_color=use_color,
+                    pet_text=pet_text, countdown_emoji=countdown,
                 ))
         else:
             # No rate_limits yet — could be session start or old Claude Code
@@ -1123,16 +843,6 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                     model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
                     model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
-                promo_label = get_promo_label()
-                cfg = load_config()
-                saved_plan = cfg.get('plan', '')
-                if saved_plan and promo_label:
-                    plan_label = f"{saved_plan} {promo_label}"
-                elif promo_label:
-                    plan_label = promo_label
-                else:
-                    plan_label = saved_plan
-
                 if json_output:
                     print(json.dumps({
                         "success": True, "source": "waiting",
@@ -1140,11 +850,16 @@ def main(json_output: bool = False, plan: Optional[str] = None,
                                  "claude_version": version, "bypass": bypass},
                     }))
                 else:
+                    session_id = stdin_data.get('session_id', '')
+                    current_hour = datetime.now().hour
+                    pet_text = format_pet(0, current_hour, session_id,
+                                          None, pet_name)
                     print(format_status_line(
                         msgs_pct=None, tkns_pct=None,
                         reset_time="--", model=model,
-                        plan=plan_label, weekly_pct=None,
+                        weekly_pct=None,
                         bypass=bypass, use_color=use_color,
+                        pet_text=pet_text,
                     ))
             else:
                 # No stdin at all — not running inside Claude Code statusLine
@@ -1165,11 +880,14 @@ def main(json_output: bool = False, plan: Optional[str] = None,
         if json_output:
             print(json.dumps({"success": False, "error": str(e)}))
         else:
+            current_hour = datetime.now().hour
+            pet_text = format_pet(0, current_hour, '', None, pet_name)
             print(format_status_line(
                 msgs_pct=None, tkns_pct=None,
                 reset_time=reset_time, model=display_name,
                 weekly_pct=None,
                 bypass=bypass, use_color=use_color,
+                pet_text=pet_text,
             ))
 
 if __name__ == '__main__':

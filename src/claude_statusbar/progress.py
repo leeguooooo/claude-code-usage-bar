@@ -119,12 +119,13 @@ def format_status_line(
     tkns_pct: Optional[float],
     reset_time: str,
     model: str,
-    plan: str = "",
     weekly_pct: Optional[float] = None,
     reset_time_7d: str = "",
     ctx_pct: Optional[float] = None,
     bypass: bool = False,
     use_color: bool = True,
+    pet_text: str = "",
+    countdown_emoji: str = "",
 ) -> str:
     """Build the complete status bar string.
 
@@ -136,9 +137,9 @@ def format_status_line(
     all_pcts = [p for p in (msgs_pct, tkns_pct, weekly_pct) if p is not None]
     overall_color = color_for_percent(max(all_pcts) if all_pcts else 0)
 
-    # 5h dimension with its reset time
+    # 5h dimension with its reset time + countdown emoji
     dim_5h = _build_dimension("5h", msgs_pct, overall_color, use_color)
-    dim_5h += colorize(f"⏰{reset_time}", overall_color, use_color)
+    dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", overall_color, use_color)
     parts = [dim_5h]
 
     # 7d dimension with its reset time
@@ -146,18 +147,12 @@ def format_status_line(
     if reset_time_7d:
         dim_7d += colorize(f"⏰{reset_time_7d}", overall_color, use_color)
     parts.append(dim_7d)
-    if plan:
-        parts.append(colorize(plan, overall_color, use_color))
     parts.append(colorize(model, overall_color, use_color))
     if bypass:
         parts.append(colorize("⚠️BYPASS", RED, use_color))
 
-    # Version tag — dim and subtle, floated to the right
-    ver = f"v{__version__}"
-    if use_color:
-        parts.append(f"{DIM}{ver}{RESET}")
-    else:
-        parts.append(ver)
+    if pet_text:
+        parts.append(colorize(pet_text, overall_color, use_color))
 
     separator = colorize(" | ", overall_color, use_color)
     return separator.join(parts)
