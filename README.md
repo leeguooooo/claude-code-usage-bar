@@ -60,6 +60,8 @@ cs --no-color       # disable ANSI colors
 cs --no-auto-update # disable auto-update checks
 ```
 
+`--plan` is kept for legacy compatibility and now shows a deprecation notice; plan tier is auto-detected from current Claude usage headers.
+
 ### Plan tiers
 
 Set once, saved automatically:

@@ -59,6 +59,14 @@ Integration:
         help="Show detailed breakdown of usage data and limits",
     )
     parser.add_argument(
+        "--plan",
+        type=str,
+        help=(
+            "(Deprecated) Kept for compatibility with older scripts. "
+            "Plan tier is now derived from official rate-limit headers."
+        ),
+    )
+    parser.add_argument(
         "--no-auto-update",
         action="store_true",
         help="Disable automatic update checks (or set CLAUDE_STATUSBAR_NO_UPDATE=1)",
@@ -106,6 +114,11 @@ Integration:
         print("  pip install claude-monitor")
         print("  pipx install claude-monitor")
         return 0
+
+    if args.plan is not None:
+        # Compatibility shim for scripts that still pass --plan.
+        # Current implementation no longer needs a local plan override.
+        os.environ["CLAUDE_PLAN"] = args.plan
 
     if args.no_auto_update:
         os.environ['CLAUDE_STATUSBAR_NO_UPDATE'] = '1'
