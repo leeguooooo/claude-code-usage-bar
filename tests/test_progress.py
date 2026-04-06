@@ -30,7 +30,15 @@ def test_bar_boundary_values():
     assert build_bar(45, 10) == "█████░░░░░"   # int(4.5+0.5)=5
     assert build_bar(99, 10) == "██████████"    # int(9.9+0.5)=10
 
-from claude_statusbar.progress import color_for_percent, colorize, GREEN, YELLOW, RED, RESET
+from claude_statusbar.progress import (
+    color_for_percent,
+    colorize,
+    normalize_thresholds,
+    GREEN,
+    YELLOW,
+    RED,
+    RESET,
+)
 
 def test_color_safe():
     assert color_for_percent(20) == GREEN
@@ -46,6 +54,19 @@ def test_color_boundary_30():
 
 def test_color_boundary_70():
     assert color_for_percent(70) == RED
+
+def test_color_custom_thresholds():
+    assert color_for_percent(39, warning_threshold=40, critical_threshold=80) == GREEN
+    assert color_for_percent(40, warning_threshold=40, critical_threshold=80) == YELLOW
+    assert color_for_percent(80, warning_threshold=40, critical_threshold=80) == RED
+
+def test_normalize_thresholds_rejects_invalid_ranges():
+    try:
+        normalize_thresholds(80, 40)
+    except ValueError as exc:
+        assert "warning < critical" in str(exc)
+    else:
+        raise AssertionError("Expected invalid thresholds to raise ValueError")
 
 def test_colorize():
     result = colorize("hello", RED)

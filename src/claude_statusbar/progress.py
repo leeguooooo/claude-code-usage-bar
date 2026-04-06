@@ -21,6 +21,33 @@ FG_WHITE = "\033[97m"
 FG_BLACK = "\033[30m"
 DIM = "\033[2m"  # dim/faint text
 
+DEFAULT_WARNING_THRESHOLD = 30.0
+DEFAULT_CRITICAL_THRESHOLD = 70.0
+
+
+def normalize_thresholds(
+    warning_threshold: Optional[float] = None,
+    critical_threshold: Optional[float] = None,
+) -> tuple[float, float]:
+    """Validate and normalize warning/critical thresholds."""
+    warning = (
+        DEFAULT_WARNING_THRESHOLD
+        if warning_threshold is None
+        else float(warning_threshold)
+    )
+    critical = (
+        DEFAULT_CRITICAL_THRESHOLD
+        if critical_threshold is None
+        else float(critical_threshold)
+    )
+
+    if not 0 <= warning < critical <= 100:
+        raise ValueError(
+            "Thresholds must satisfy 0 <= warning < critical <= 100."
+        )
+
+    return warning, critical
+
 
 def build_bar(percent: float, width: int = 10) -> str:
     """Render a plain progress bar (used when color is off)."""
@@ -31,7 +58,13 @@ def build_bar(percent: float, width: int = 10) -> str:
     return FILL * filled + EMPTY * (width - filled)
 
 
-def build_battery_bar(percent: float, width: int = 10, use_color: bool = True) -> str:
+def build_battery_bar(
+    percent: float,
+    width: int = 10,
+    use_color: bool = True,
+    warning_threshold: Optional[float] = None,
+    critical_threshold: Optional[float] = None,
+) -> str:
     """Render an iPhone-style battery bar with percentage embedded via background colors.
 
     Each character gets a colored background (filled) or gray background (empty),
@@ -62,7 +95,11 @@ def build_battery_bar(percent: float, width: int = 10, use_color: bool = True) -
         return result
 
     # Color mode: use background colors per character
-    bg_fill = bg_for_percent(percent)
+    bg_fill = bg_for_percent(
+        percent,
+        warning_threshold=warning_threshold,
+        critical_threshold=critical_threshold,
+    )
     result = ""
     for i, ch in enumerate(padded):
         if i < filled:
@@ -73,20 +110,30 @@ def build_battery_bar(percent: float, width: int = 10, use_color: bool = True) -
     return result
 
 
-def color_for_percent(percent: float) -> str:
+def color_for_percent(
+    percent: float,
+    warning_threshold: Optional[float] = None,
+    critical_threshold: Optional[float] = None,
+) -> str:
     """Return ANSI foreground color code based on threshold."""
-    if percent >= 70:
+    warning, critical = normalize_thresholds(warning_threshold, critical_threshold)
+    if percent >= critical:
         return RED
-    if percent >= 30:
+    if percent >= warning:
         return YELLOW
     return GREEN
 
 
-def bg_for_percent(percent: float) -> str:
+def bg_for_percent(
+    percent: float,
+    warning_threshold: Optional[float] = None,
+    critical_threshold: Optional[float] = None,
+) -> str:
     """Return ANSI background color code based on threshold."""
-    if percent >= 70:
+    warning, critical = normalize_thresholds(warning_threshold, critical_threshold)
+    if percent >= critical:
         return BG_RED
-    if percent >= 30:
+    if percent >= warning:
         return BG_YELLOW
     return BG_GREEN
 
@@ -99,10 +146,17 @@ def colorize(text: str, color: str, use_color: bool = True) -> str:
 
 
 def _build_dimension(label: str, pct: Optional[float],
-                      overall_color: str, use_color: bool) -> str:
+                      overall_color: str, use_color: bool,
+                      warning_threshold: Optional[float],
+                      critical_threshold: Optional[float]) -> str:
     """Build one progress bar dimension: label[battery_bar]"""
     if pct is not None:
-        bar = build_battery_bar(pct, use_color=use_color)
+        bar = build_battery_bar(
+            pct,
+            use_color=use_color,
+            warning_threshold=warning_threshold,
+            critical_threshold=critical_threshold,
+        )
     else:
         if use_color:
             bar = f"{BG_GRAY}{FG_WHITE}" + "--%".center(10) + RESET
@@ -126,6 +180,8 @@ def format_status_line(
     use_color: bool = True,
     pet_text: str = "",
     countdown_emoji: str = "",
+    warning_threshold: Optional[float] = None,
+    critical_threshold: Optional[float] = None,
 ) -> str:
     """Build the complete status bar string.
 
@@ -135,15 +191,36 @@ def format_status_line(
     """
     # Overall color = max severity across all dimensions (ctx excluded — it's per-session)
     all_pcts = [p for p in (msgs_pct, tkns_pct, weekly_pct) if p is not None]
-    overall_color = color_for_percent(max(all_pcts) if all_pcts else 0)
+    warning_threshold, critical_threshold = normalize_thresholds(
+        warning_threshold, critical_threshold
+    )
+    overall_color = color_for_percent(
+        max(all_pcts) if all_pcts else 0,
+        warning_threshold=warning_threshold,
+        critical_threshold=critical_threshold,
+    )
 
     # 5h dimension with its reset time + countdown emoji
-    dim_5h = _build_dimension("5h", msgs_pct, overall_color, use_color)
+    dim_5h = _build_dimension(
+        "5h",
+        msgs_pct,
+        overall_color,
+        use_color,
+        warning_threshold,
+        critical_threshold,
+    )
     dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", overall_color, use_color)
     parts = [dim_5h]
 
     # 7d dimension with its reset time
-    dim_7d = _build_dimension("7d", weekly_pct, overall_color, use_color)
+    dim_7d = _build_dimension(
+        "7d",
+        weekly_pct,
+        overall_color,
+        use_color,
+        warning_threshold,
+        critical_threshold,
+    )
     if reset_time_7d:
         dim_7d += colorize(f"⏰{reset_time_7d}", overall_color, use_color)
     parts.append(dim_7d)

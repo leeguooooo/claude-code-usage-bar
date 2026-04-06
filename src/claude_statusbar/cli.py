@@ -6,6 +6,7 @@ import os
 import argparse
 from . import __version__
 from .core import main as statusbar_main
+from .progress import normalize_thresholds
 
 
 def main():
@@ -76,6 +77,21 @@ Integration:
         type=str,
         help="Set a custom name for the status bar pet (default: random per session)",
     )
+    parser.add_argument(
+        "--hide-pet",
+        action="store_true",
+        help="Hide the status bar pet (or set CLAUDE_STATUSBAR_HIDE_PET=1)",
+    )
+    parser.add_argument(
+        "--warning-threshold",
+        type=float,
+        help="Usage percentage that switches from green to yellow (default: 30)",
+    )
+    parser.add_argument(
+        "--critical-threshold",
+        type=float,
+        help="Usage percentage that switches from yellow to red (default: 70)",
+    )
 
     args = parser.parse_args()
 
@@ -89,6 +105,19 @@ Integration:
     def env_bool(name: str) -> bool:
         val = os.environ.get(name)
         return val is not None and val.lower() in ("1", "true", "yes", "y", "on")
+
+    def env_float(name: str) -> float | None:
+        val = os.environ.get(name)
+        if val is None or val == "":
+            return None
+        try:
+            return float(val)
+        except ValueError:
+            print(
+                f"Ignoring invalid {name} (must be a number between 0 and 100).",
+                file=sys.stderr,
+            )
+            return None
 
     json_output = args.json_output or env_bool("CLAUDE_STATUSBAR_JSON")
     reset_hour = args.reset_hour
@@ -125,11 +154,32 @@ Integration:
 
     # Run the status bar
     use_color = not (args.no_color or env_bool("NO_COLOR"))
+    show_pet = not (args.hide_pet or env_bool("CLAUDE_STATUSBAR_HIDE_PET"))
+    try:
+        warning_threshold, critical_threshold = normalize_thresholds(
+            args.warning_threshold
+            if args.warning_threshold is not None
+            else env_float("CLAUDE_STATUSBAR_WARNING_THRESHOLD"),
+            args.critical_threshold
+            if args.critical_threshold is not None
+            else env_float("CLAUDE_STATUSBAR_CRITICAL_THRESHOLD"),
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
     try:
         pet_name = args.pet_name or os.environ.get("CLAUDE_PET_NAME")
-        statusbar_main(json_output=json_output, reset_hour=reset_hour,
-                        use_color=use_color, detail=args.detail,
-                        pet_name=pet_name)
+        statusbar_main(
+            json_output=json_output,
+            reset_hour=reset_hour,
+            use_color=use_color,
+            detail=args.detail,
+            pet_name=pet_name,
+            show_pet=show_pet,
+            warning_threshold=warning_threshold,
+            critical_threshold=critical_threshold,
+        )
         return 0
     except KeyboardInterrupt:
         return 130

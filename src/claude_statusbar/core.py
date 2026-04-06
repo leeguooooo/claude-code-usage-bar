@@ -13,7 +13,7 @@ import subprocess
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 from .cache import read_cache, read_cache_stale, write_cache, refresh_cache_background
 from .progress import format_status_line
@@ -735,7 +735,9 @@ def format_number(num: float) -> str:
 
 def main(json_output: bool = False,
          reset_hour: Optional[int] = None, use_color: bool = True,
-         detail: bool = False, pet_name: Optional[str] = None):
+         detail: bool = False, pet_name: Optional[str] = None,
+         show_pet: bool = True,
+         warning_threshold: float = 30.0, critical_threshold: float = 70.0):
     """Main function"""
     from .pet import format_pet, get_countdown_emoji
     stdin_data = parse_stdin_data()
@@ -813,9 +815,12 @@ def main(json_output: bool = False,
 
                 session_id = stdin_data.get('session_id', '')
                 current_hour = datetime.now().hour
-                pet_pct = msgs_pct if msgs_pct is not None else 0
-                pet_text = format_pet(pet_pct, current_hour, session_id,
-                                      minutes_to_reset, pet_name)
+                pet_text = ""
+                if show_pet:
+                    pet_pct = msgs_pct if msgs_pct is not None else 0
+                    pet_text = format_pet(
+                        pet_pct, current_hour, session_id, minutes_to_reset, pet_name
+                    )
                 countdown = get_countdown_emoji(minutes_to_reset)
 
                 print(format_status_line(
@@ -825,6 +830,8 @@ def main(json_output: bool = False,
                     reset_time_7d=reset_time_7d,
                     bypass=bypass, use_color=use_color,
                     pet_text=pet_text, countdown_emoji=countdown,
+                    warning_threshold=warning_threshold,
+                    critical_threshold=critical_threshold,
                 ))
         else:
             # No rate_limits yet — could be session start or old Claude Code
@@ -852,14 +859,17 @@ def main(json_output: bool = False,
                 else:
                     session_id = stdin_data.get('session_id', '')
                     current_hour = datetime.now().hour
-                    pet_text = format_pet(0, current_hour, session_id,
-                                          None, pet_name)
+                    pet_text = ""
+                    if show_pet:
+                        pet_text = format_pet(0, current_hour, session_id, None, pet_name)
                     print(format_status_line(
                         msgs_pct=None, tkns_pct=None,
                         reset_time="--", model=model,
                         weekly_pct=None,
                         bypass=bypass, use_color=use_color,
                         pet_text=pet_text,
+                        warning_threshold=warning_threshold,
+                        critical_threshold=critical_threshold,
                     ))
             else:
                 # No stdin at all — not running inside Claude Code statusLine
@@ -881,13 +891,17 @@ def main(json_output: bool = False,
             print(json.dumps({"success": False, "error": str(e)}))
         else:
             current_hour = datetime.now().hour
-            pet_text = format_pet(0, current_hour, '', None, pet_name)
+            pet_text = ""
+            if show_pet:
+                pet_text = format_pet(0, current_hour, '', None, pet_name)
             print(format_status_line(
                 msgs_pct=None, tkns_pct=None,
                 reset_time=reset_time, model=display_name,
                 weekly_pct=None,
                 bypass=bypass, use_color=use_color,
                 pet_text=pet_text,
+                warning_threshold=warning_threshold,
+                critical_threshold=critical_threshold,
             ))
 
 if __name__ == '__main__':

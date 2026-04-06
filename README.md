@@ -57,6 +57,8 @@ cs                  # show status bar (shortest alias)
 cs --json-output    # machine-readable JSON
 cs --plan max5      # set your plan (pro / max5 / max20)
 cs --no-color       # disable ANSI colors
+cs --hide-pet       # hide the ASCII pet
+cs --warning-threshold 40 --critical-threshold 85
 cs --no-auto-update # disable auto-update checks
 ```
 
@@ -77,6 +79,9 @@ cs --plan max20   # Max $200/mo
 | Variable | Effect |
 |----------|--------|
 | `CLAUDE_STATUSBAR_NO_UPDATE=1` | Disable automatic update checks |
+| `CLAUDE_STATUSBAR_HIDE_PET=1` | Hide the status bar pet |
+| `CLAUDE_STATUSBAR_WARNING_THRESHOLD=40` | Switch from green to yellow at 40% |
+| `CLAUDE_STATUSBAR_CRITICAL_THRESHOLD=85` | Switch from yellow to red at 85% |
 | `CLAUDE_PLAN=max5` | Set plan tier |
 | `NO_COLOR=1` | Disable ANSI colors |
 
