@@ -5,10 +5,12 @@ Auto-updater for claude-statusbar
 
 import json
 import logging
+import shutil
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Optional, Tuple
 
 import importlib.metadata as metadata
@@ -66,12 +68,42 @@ def compare_versions(current: str, latest: str) -> bool:
         return False
 
 
+def detect_install_channel(
+    executable: str | Path | None = None,
+) -> str:
+    """Infer how claude-statusbar is currently installed."""
+    resolved = Path(executable or sys.executable).expanduser().resolve()
+    parts = resolved.parts
+
+    if "uv" in parts and "tools" in parts and DIST_NAME in parts:
+        return "uv"
+
+    if "pipx" in parts and "venvs" in parts and DIST_NAME in parts:
+        return "pipx"
+
+    return "pip"
+
+
+def get_upgrade_command(
+    executable: str | Path | None = None,
+) -> list[str]:
+    """Return the most appropriate self-upgrade command for this install."""
+    channel = detect_install_channel(executable)
+
+    if channel == "uv" and shutil.which("uv"):
+        return ["uv", "tool", "install", "--upgrade", DIST_NAME]
+
+    if channel == "pipx" and shutil.which("pipx"):
+        return ["pipx", "upgrade", DIST_NAME]
+
+    return [sys.executable, "-m", "pip", "install", "--upgrade", DIST_NAME]
+
+
 def auto_upgrade() -> bool:
     """Attempt automatic upgrade"""
     try:
-        # Try pip upgrade
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "claude-statusbar"],
+            get_upgrade_command(),
             capture_output=True,
             text=True,
         )
@@ -79,14 +111,23 @@ def auto_upgrade() -> bool:
         if result.returncode == 0:
             return True
 
-        # Try pipx upgrade if pip fails
+        # Fallback to pipx when the preferred path fails and pipx is available
         try:
             result = subprocess.run(
                 ["pipx", "upgrade", "claude-statusbar"], capture_output=True, text=True
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                return True
         except FileNotFoundError:
             pass
+
+        # Final fallback: plain pip in the current interpreter
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", DIST_NAME],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
 
     except Exception as e:
         logging.error(f"Upgrade failed: {e}")

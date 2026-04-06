@@ -132,8 +132,18 @@ configure_claude_statusbar() {
     # Claude settings file path
     CLAUDE_SETTINGS="$HOME/.claude/settings.json"
     
-    # Get the installed claude-statusbar command path
-    STATUSBAR_CMD=$(which claude-statusbar 2>/dev/null)
+    # Prefer the canonical uv tool binary path over ~/.local/bin symlinks.
+    local uv_tool_cmd="$HOME/.local/share/uv/tools/claude-statusbar/bin/claude-statusbar"
+    local legacy_uv_tool_cmd="$HOME/.uv/tools/claude-statusbar/bin/claude-statusbar"
+    local STATUSBAR_CMD=""
+
+    if [ -x "$uv_tool_cmd" ]; then
+        STATUSBAR_CMD="$uv_tool_cmd"
+    elif [ -x "$legacy_uv_tool_cmd" ]; then
+        STATUSBAR_CMD="$legacy_uv_tool_cmd"
+    else
+        STATUSBAR_CMD=$(which claude-statusbar 2>/dev/null)
+    fi
     
     if [ -z "$STATUSBAR_CMD" ]; then
         echo -e "${YELLOW}⚠️  claude-statusbar command not found in PATH${NC}"
