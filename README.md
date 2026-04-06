@@ -1,25 +1,25 @@
 # Claude Status Bar
 
-Lightweight Claude Code status bar monitor — see your rate limits, context window, and promo status at a glance.
+Lightweight Claude Code status bar monitor for the built-in `statusLine` hook.
 
-![Claude Code Status Bar](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/img.png)
+It shows your current Claude.ai rate-limit usage, reset timers, context window usage, and an optional ASCII pet in a compact single-line format.
 
 ## What it shows
 
 ```
-[███████░░░] 5h 68% | [█░░░░░░░░░] 7d 5% | ⏰0h21m | max5 🔥x2[03:00~21:00] | Opus 4.6(13.4k/1.0M)
+5h[███38%░░░░]⏰2h14m | 7d[███87%███░]⏰3d05h | Opus 4.6(90.0k/1.0M) | ᓚᘏᗢ Giga:working!
 ```
 
 | Segment | Meaning |
 |---------|---------|
-| `5h 68%` | 5-hour rate limit usage (official Anthropic data) |
-| `7d 5%` | 7-day rate limit usage (official Anthropic data) |
-| `⏰0h21m` | Time until 5h window resets |
-| `max5` | Your plan tier |
-| `🔥x2[03:00~21:00]` | 2x promo active, showing local time window |
-| `Opus 4.6(13.4k/1.0M)` | Model + context window usage (used/total) |
+| `5h[███38%░░░░]` | 5-hour rate-limit usage |
+| `⏰2h14m` | Time until the 5-hour window resets |
+| `7d[███87%███░]` | 7-day rate-limit usage |
+| `⏰3d05h` | Time until the 7-day window resets |
+| `Opus 4.6(90.0k/1.0M)` | Model name plus current context usage |
+| `ᓚᘏᗢ Giga:working!` | Optional status-bar pet |
 
-Colors: green (<30%) | yellow (30-70%) | red (>70%)
+Colors default to green / yellow / red at `30%` and `70%`, and can be customized.
 
 ## Install
 
@@ -55,24 +55,13 @@ Then add to `~/.claude/settings.json`:
 ```bash
 cs                  # show status bar (shortest alias)
 cs --json-output    # machine-readable JSON
-cs --plan max5      # set your plan (pro / max5 / max20)
 cs --no-color       # disable ANSI colors
 cs --hide-pet       # hide the ASCII pet
 cs --warning-threshold 40 --critical-threshold 85
 cs --no-auto-update # disable auto-update checks
 ```
 
-`--plan` is kept for legacy compatibility and now shows a deprecation notice; plan tier is auto-detected from current Claude usage headers.
-
-### Plan tiers
-
-Set once, saved automatically:
-
-```bash
-cs --plan pro     # Pro $20/mo
-cs --plan max5    # Max $100/mo
-cs --plan max20   # Max $200/mo
-```
+`--plan` still exists for older scripts, but it is deprecated and no longer changes the status line output.
 
 ### Environment variables
 
@@ -82,25 +71,25 @@ cs --plan max20   # Max $200/mo
 | `CLAUDE_STATUSBAR_HIDE_PET=1` | Hide the status bar pet |
 | `CLAUDE_STATUSBAR_WARNING_THRESHOLD=40` | Switch from green to yellow at 40% |
 | `CLAUDE_STATUSBAR_CRITICAL_THRESHOLD=85` | Switch from yellow to red at 85% |
-| `CLAUDE_PLAN=max5` | Set plan tier |
 | `NO_COLOR=1` | Disable ANSI colors |
 
-## 2x Promo Time Window
+`CLAUDE_PLAN` is still accepted for legacy compatibility, but it no longer changes the rendered status line.
 
-During Anthropic's 2x usage promotion, the status bar shows the bonus window in your **local timezone**:
+### JSON output
 
-| Time | Status |
-|------|--------|
-| Weekday off-peak | `🔥x2[03:00~21:00]` (example in JST) |
-| Weekday peak | `1x[21:00~03:00]` |
-| Weekend | `🔥x2[all day]` |
-| Promo expired | *(hidden)* |
+Use `--json-output` if you want a machine-readable payload instead of the formatted status line:
 
-Peak hours: 8AM-2PM ET (weekdays only). Weekends are always 2x.
+```bash
+cs --json-output
+```
 
 ## Data source
 
-All rate limit data comes directly from **Anthropic's official API headers** via Claude Code's statusLine stdin injection (requires Claude Code >= v2.1.80). No estimation or guessing.
+Rate-limit data comes directly from **Anthropic's official API headers** exposed to Claude Code status-line commands through stdin.
+
+Context-window usage comes from the same stdin payload that Claude Code sends to custom `statusLine` commands.
+
+Requires Claude Code `v2.1.80+`.
 
 ## Upgrading
 
