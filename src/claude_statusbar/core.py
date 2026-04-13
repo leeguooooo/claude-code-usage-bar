@@ -740,11 +740,14 @@ def main(json_output: bool = False,
          warning_threshold: float = 30.0, critical_threshold: float = 70.0):
     """Main function"""
     from .pet import format_pet, get_countdown_emoji
+    from .setup import ensure_statusline_configured
     stdin_data = parse_stdin_data()
 
     try:
         if not json_output:
             check_for_updates(stdin_data.get('session_id', ''))
+            # Silently restore statusLine config if a Claude Code upgrade wiped it
+            ensure_statusline_configured()
 
         has_official = (stdin_data.get('rate_limit_pct') is not None or
                         stdin_data.get('rate_limit_7d_pct') is not None)

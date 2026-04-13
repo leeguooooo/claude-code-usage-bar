@@ -35,6 +35,11 @@ Integration:
     )
 
     parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="Configure ~/.claude/settings.json to show the status bar in Claude Code",
+    )
+    parser.add_argument(
         "--install-deps",
         action="store_true",
         help="Install claude-monitor dependency for full functionality",
@@ -135,6 +140,10 @@ Integration:
     if reset_hour is not None and not (0 <= reset_hour <= 23):
         print("Reset hour must be between 0 and 23.", file=sys.stderr)
         return 1
+
+    if args.setup:
+        from .setup import run_setup
+        return run_setup(verbose=True)
 
     if args.install_deps:
         print("Installing claude-monitor for full functionality...")
