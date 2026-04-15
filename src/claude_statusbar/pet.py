@@ -34,8 +34,10 @@ STATUS_TEXTS = {
     "panic":    ["help!!", "oh no!!", "critical!!", "mayday!!", "SOS!!"],
     "hype":     ["almost there!", "reset hype!!", "HERE IT COMES!", "so close!", "any moment!"],
     "refreshed": ["refreshed~", "brand new!", "recharged!", "lets go!", "reset!"],
-    "studying": ["studying!", "practicing~", "learning!", "drilling~", "writing!"],
-    "leveling": ["level up!!", "band up!!", "progress!!", "improving!!", "nice gain!!"],
+    "studying": ["studying!", "practicing~", "learning!", "drilling~", "writing!",
+                 "/language-review?", "check progress~", "run /language-review!"],
+    "leveling": ["level up!!", "band up!!", "progress!!", "improving!!", "nice gain!!",
+                 "run /language-review!", "see your stats!!"],
 }
 
 # Cat faces for coaching moods
