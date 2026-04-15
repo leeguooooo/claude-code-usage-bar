@@ -34,11 +34,14 @@ STATUS_TEXTS = {
     "panic":    ["help!!", "oh no!!", "critical!!", "mayday!!", "SOS!!"],
     "hype":     ["almost there!", "reset hype!!", "HERE IT COMES!", "so close!", "any moment!"],
     "refreshed": ["refreshed~", "brand new!", "recharged!", "lets go!", "reset!"],
-    "studying": ["studying!", "practicing~", "learning!", "drilling~", "writing!",
-                 "/language-review?", "check progress~", "run /language-review!"],
-    "leveling": ["level up!!", "band up!!", "progress!!", "improving!!", "nice gain!!",
-                 "run /language-review!", "see your stats!!"],
+    "studying": ["studying!", "practicing~", "learning!", "drilling~", "writing!"],
+    "leveling": ["level up!!", "band up!!", "progress!!", "improving!!", "nice gain!!"],
 }
+
+# Analysis hints shown only when the language-coach plugin is active
+ANALYSIS_HINTS = [
+    "/language-review?", "check progress~", "run /language-review!", "see your stats!!",
+]
 
 # Cat faces for coaching moods
 CAT_FACES_EXTRA = {
@@ -216,16 +219,16 @@ def format_pet(
     name = get_pet_name(session_id, custom_name)
     mood = _get_mood(pct, hour, minutes_to_reset)
 
-    # Load coach config for reminders
+    # Load coach config for reminders (only when plugin is installed and enabled)
     coach_config = _load_coach_config(coach_config_path)
     reminders: Optional[list[str]] = None
     if coach_config.get("enabled", False):
         r = _reminder_texts(coach_config)
-        if r:
-            reminders = r
+        # Mix language reminders + analysis hints into one pool
+        reminders = (r + ANALYSIS_HINTS) if r else ANALYSIS_HINTS
 
-    # Coaching mood overrides low-intensity base moods (chill/sleepy/working)
-    if mood in ("chill", "sleepy", "working"):
+    # Coaching mood overrides low-intensity base moods — only when plugin is active
+    if mood in ("chill", "sleepy", "working") and coach_config.get("enabled", False):
         progress = _load_language_progress(progress_path)
         coaching = _coaching_mood(progress)
         if coaching:

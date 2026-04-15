@@ -195,8 +195,22 @@ def _language_trend(estimates: object) -> str:
     return "→"
 
 
+def _coach_enabled(config_path: str = "~/.claude/language-coach.json") -> bool:
+    """Return True only when the language-coach plugin is installed and enabled."""
+    try:
+        cfg = json.loads(Path(config_path).expanduser().read_text(encoding="utf-8"))
+        return bool(cfg.get("enabled", False))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return False
+
+
 def format_language_segment(progress_path: str, use_color: bool = True) -> str:
-    """Read the language-progress JSON and return a compact segment like '📚 EN:6.0↑ JA:5.0→'."""
+    """Read the language-progress JSON and return a compact segment like '📚 EN:6.0↑ JA:5.0→'.
+
+    Returns empty string when the language-coach plugin is not installed or disabled.
+    """
+    if not _coach_enabled():
+        return ""
     path = Path(progress_path).expanduser()
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
