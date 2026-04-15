@@ -18,6 +18,7 @@ It shows your current Claude.ai rate-limit usage, reset timers, context window u
 | `⏰3d05h` | Time until the 7-day window resets |
 | `Opus 4.6(90.0k/1.0M)` | Model name plus current context usage |
 | `ᓚᘏᗢ Giga:working!` | Optional status-bar pet |
+| `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
 Colors default to green / yellow / red at `30%` and `70%`, and can be customized.
 
@@ -100,6 +101,21 @@ pip install --upgrade claude-statusbar
 ```
 
 To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
+
+## Integrations
+
+### prompt-language-coach
+
+Install the [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach) Claude Code plugin to get IELTS band progress tracking. After setup, the status bar automatically shows your current writing level and trend:
+
+```
+... | Opus 4.6(90k/1M) | 📚 EN:6.0↑ JA:5.0→ | ᓚᘏᗢ
+```
+
+- `↑` improved from last session · `↓` dropped · `→` no change
+- No configuration needed — the segment appears automatically when `~/.claude/language-progress.json` exists.
+
+---
 
 ## License
 
