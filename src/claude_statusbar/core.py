@@ -828,6 +828,7 @@ def main(json_output: bool = False,
                     pet_text = format_pet(
                         pet_pct, current_hour, session_id, minutes_to_reset, pet_name,
                         progress_path=str(Path.home() / ".claude" / "language-progress.json"),
+                        coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
                     )
                 countdown = get_countdown_emoji(minutes_to_reset)
 
@@ -873,6 +874,7 @@ def main(json_output: bool = False,
                         pet_text = format_pet(
                             0, current_hour, session_id, None, pet_name,
                             progress_path=str(Path.home() / ".claude" / "language-progress.json"),
+                        coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
                         )
                     print(format_status_line(
                         msgs_pct=None, tkns_pct=None,
@@ -909,6 +911,7 @@ def main(json_output: bool = False,
                 pet_text = format_pet(
                     0, current_hour, '', None, pet_name,
                     progress_path=str(Path.home() / ".claude" / "language-progress.json"),
+                        coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
                 )
             print(format_status_line(
                 msgs_pct=None, tkns_pct=None,

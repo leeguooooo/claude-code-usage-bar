@@ -45,6 +45,49 @@ CAT_FACES_EXTRA = {
 }
 
 
+def _load_coach_config(config_path: Optional[str] = None) -> dict:
+    """Load language-coach config. Returns empty dict on any error."""
+    path = Path(config_path) if config_path else Path.home() / ".claude" / "language-coach.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _reminder_texts(config: dict) -> list[str]:
+    """Build language-specific reminder texts from the coach config.
+
+    Returns phrases like ["Use English!", "Write in English!", "Try English!"]
+    based on the configured target language(s). Returns [] if no config.
+    """
+    # Multi-target: collect all target languages from targets list
+    targets = config.get("targets")
+    languages: list[str] = []
+    if isinstance(targets, list):
+        languages = [
+            t["targetLanguage"]
+            for t in targets
+            if isinstance(t, dict) and t.get("targetLanguage")
+        ]
+    if not languages:
+        lang = config.get("targetLanguage")
+        if isinstance(lang, str) and lang:
+            languages = [lang]
+    if not languages:
+        return []
+
+    texts: list[str] = []
+    for lang in languages:
+        texts += [
+            f"Use {lang}!",
+            f"Write in {lang}!",
+            f"Try {lang}!",
+            f"Speak {lang}!",
+            f"Practice {lang}!",
+        ]
+    return texts
+
+
 def _load_language_progress(progress_path: Optional[str] = None) -> dict:
     """Load language progress JSON. Returns empty dict on any error."""
     path = Path(progress_path) if progress_path else Path.home() / ".claude" / "language-progress.json"
@@ -129,17 +172,25 @@ def get_pet_face(mood: str) -> str:
     return frames[tick % len(frames)]
 
 
-def get_pet_status(mood: str, session_id: str = "") -> str:
-    """Pick a status text for the mood. Varies per refresh but stable within ~5s windows."""
-    texts = STATUS_TEXTS.get(mood, STATUS_TEXTS["chill"])
-    # Use time window + session_id for variety that's stable for a few seconds
+def get_pet_status(mood: str, session_id: str = "", reminders: Optional[list[str]] = None) -> str:
+    """Pick a status text for the mood. Varies per refresh but stable within ~5s windows.
+
+    When reminders are provided (language-specific nudges like "Use English!"),
+    they are mixed into the pool at roughly 1-in-3 frequency.
+    """
+    base_texts = STATUS_TEXTS.get(mood, STATUS_TEXTS["chill"])
+    if reminders:
+        # Weight: 2 base texts for every 1 reminder → ~33% reminder rate
+        pool = base_texts + base_texts + reminders
+    else:
+        pool = base_texts
     window = int(time.time() / 5)
     if session_id:
         seed = hash((window, session_id))
     else:
         seed = window
     rng = random.Random(seed)
-    return rng.choice(texts)
+    return rng.choice(pool)
 
 
 def format_pet(
@@ -149,6 +200,7 @@ def format_pet(
     minutes_to_reset: Optional[int] = None,
     custom_name: Optional[str] = None,
     progress_path: Optional[str] = None,
+    coach_config_path: Optional[str] = None,
 ) -> str:
     """Build the full pet string for the status bar.
 
@@ -156,9 +208,19 @@ def format_pet(
     When language-progress data exists the pet enters a coaching-aware mood:
       studying → "ᓚᘏᗢ✏ Byte:studying!"
       leveling → "ᓚ₍ᘏ₎ᗢ↑ Byte:level up!!"
+    Language reminders ("Use English!", "Write in Japanese!") are mixed in
+    at ~33% frequency when the coach config is present and enabled.
     """
     name = get_pet_name(session_id, custom_name)
     mood = _get_mood(pct, hour, minutes_to_reset)
+
+    # Load coach config for reminders
+    coach_config = _load_coach_config(coach_config_path)
+    reminders: Optional[list[str]] = None
+    if coach_config.get("enabled", False):
+        r = _reminder_texts(coach_config)
+        if r:
+            reminders = r
 
     # Coaching mood overrides low-intensity base moods (chill/sleepy/working)
     if mood in ("chill", "sleepy", "working"):
@@ -168,7 +230,7 @@ def format_pet(
             mood = coaching
 
     face = get_pet_face(mood)
-    status = get_pet_status(mood, session_id)
+    status = get_pet_status(mood, session_id, reminders=reminders)
     return f"{face} {name}:{status}"
 
 
