@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .cache import read_cache, read_cache_stale, write_cache, refresh_cache_background
-from .progress import format_status_line
+from .progress import format_language_segment, format_status_line
 
 # Suppress log output
 logging.basicConfig(level=logging.ERROR)
@@ -742,6 +742,10 @@ def main(json_output: bool = False,
     from .pet import format_pet, get_countdown_emoji
     from .setup import ensure_statusline_configured
     stdin_data = parse_stdin_data()
+    lang_text = format_language_segment(
+        str(Path.home() / ".claude" / "language-progress.json"),
+        use_color=use_color,
+    )
 
     try:
         if not json_output:
@@ -835,6 +839,7 @@ def main(json_output: bool = False,
                     pet_text=pet_text, countdown_emoji=countdown,
                     warning_threshold=warning_threshold,
                     critical_threshold=critical_threshold,
+                    lang_text=lang_text,
                 ))
         else:
             # No rate_limits yet — could be session start or old Claude Code
@@ -873,6 +878,7 @@ def main(json_output: bool = False,
                         pet_text=pet_text,
                         warning_threshold=warning_threshold,
                         critical_threshold=critical_threshold,
+                        lang_text=lang_text,
                     ))
             else:
                 # No stdin at all — not running inside Claude Code statusLine
@@ -905,6 +911,7 @@ def main(json_output: bool = False,
                 pet_text=pet_text,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
+                lang_text=lang_text,
             ))
 
 if __name__ == '__main__':

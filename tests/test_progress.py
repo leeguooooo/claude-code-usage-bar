@@ -154,3 +154,82 @@ def test_format_status_line_with_color():
     )
     assert "\033[" in line
     assert "\033[0m" in line
+
+
+# ── language segment tests ────────────────────────────────────────────────────
+
+import json
+import os
+from claude_statusbar.progress import format_language_segment
+
+def test_format_language_segment_missing_file():
+    assert format_language_segment("/nonexistent/path.json", use_color=False) == ""
+
+def test_format_language_segment_invalid_json(tmp_path):
+    p = tmp_path / "bad.json"
+    p.write_text("not json", encoding="utf-8")
+    assert format_language_segment(str(p), use_color=False) == ""
+
+def test_format_language_segment_basic(tmp_path):
+    data = {
+        "English": {
+            "estimates": [
+                {"date": "2026-04-14", "band": "5.5"},
+                {"date": "2026-04-15", "band": "6.0"},
+            ],
+            "currentBand": "6.0",
+        }
+    }
+    p = tmp_path / "progress.json"
+    p.write_text(json.dumps(data), encoding="utf-8")
+    result = format_language_segment(str(p), use_color=False)
+    assert result == "📚 EN:6.0↑"
+
+def test_format_language_segment_japanese(tmp_path):
+    data = {
+        "Japanese": {
+            "estimates": [{"date": "2026-04-15", "band": "5.0"}],
+            "currentBand": "5.0",
+        }
+    }
+    p = tmp_path / "progress.json"
+    p.write_text(json.dumps(data), encoding="utf-8")
+    result = format_language_segment(str(p), use_color=False)
+    assert result == "📚 JA:5.0→"
+
+def test_format_language_segment_multiple(tmp_path):
+    data = {
+        "English": {
+            "estimates": [
+                {"date": "2026-04-14", "band": "5.5"},
+                {"date": "2026-04-15", "band": "5.0"},
+            ],
+            "currentBand": "5.0",
+        },
+        "Japanese": {
+            "estimates": [{"date": "2026-04-15", "band": "5.0"}],
+            "currentBand": "5.0",
+        },
+    }
+    p = tmp_path / "progress.json"
+    p.write_text(json.dumps(data), encoding="utf-8")
+    result = format_language_segment(str(p), use_color=False)
+    assert "EN:5.0↓" in result
+    assert "JA:5.0→" in result
+    assert result.startswith("📚 ")
+
+def test_format_status_line_with_lang_text():
+    line = format_status_line(
+        msgs_pct=50, tkns_pct=None,
+        reset_time="2h00m", model="Opus 4.6",
+        weekly_pct=30,
+        use_color=False,
+        lang_text="📚 EN:6.0↑",
+        pet_text="ᓚᘏᗢ",
+    )
+    assert "📚 EN:6.0↑" in line
+    # lang_text appears between model and pet
+    model_pos = line.index("Opus 4.6")
+    lang_pos = line.index("📚")
+    pet_pos = line.index("ᓚᘏᗢ")
+    assert model_pos < lang_pos < pet_pos

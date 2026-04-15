@@ -1,5 +1,7 @@
 """Progress bar rendering for the status bar. Pure functions, no I/O."""
 
+import json
+from pathlib import Path
 from typing import Optional
 from claude_statusbar import __version__
 
@@ -168,6 +170,57 @@ def _build_dimension(label: str, pct: Optional[float],
     )
 
 
+_LANGUAGE_OVERRIDES: dict[str, str] = {
+    "Chinese": "ZH",
+    "Japanese": "JA",
+}
+
+
+def _language_code(language: str) -> str:
+    return _LANGUAGE_OVERRIDES.get(language, language[:2].upper())
+
+
+def _language_trend(estimates: object) -> str:
+    if not isinstance(estimates, list) or len(estimates) < 2:
+        return "→"
+    try:
+        previous = float(estimates[-2].get("band"))  # type: ignore[union-attr]
+        current = float(estimates[-1].get("band"))   # type: ignore[union-attr]
+    except (AttributeError, TypeError, ValueError):
+        return "→"
+    if current > previous:
+        return "↑"
+    if current < previous:
+        return "↓"
+    return "→"
+
+
+def format_language_segment(progress_path: str, use_color: bool = True) -> str:
+    """Read the language-progress JSON and return a compact segment like '📚 EN:6.0↑ JA:5.0→'."""
+    path = Path(progress_path).expanduser()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+
+    parts: list[str] = []
+    for language in sorted(payload):
+        entry = payload.get(language)
+        if not isinstance(entry, dict):
+            continue
+        current_band = entry.get("currentBand")
+        if not isinstance(current_band, str) or not current_band:
+            continue
+        trend = _language_trend(entry.get("estimates"))
+        parts.append(f"{_language_code(str(language))}:{current_band}{trend}")
+
+    if not parts:
+        return ""
+    return colorize(f"📚 {' '.join(parts)}", GREEN, use_color)
+
+
 def format_status_line(
     msgs_pct: Optional[float],
     tkns_pct: Optional[float],
@@ -182,6 +235,7 @@ def format_status_line(
     countdown_emoji: str = "",
     warning_threshold: Optional[float] = None,
     critical_threshold: Optional[float] = None,
+    lang_text: str = "",
 ) -> str:
     """Build the complete status bar string.
 
@@ -225,6 +279,8 @@ def format_status_line(
         dim_7d += colorize(f"⏰{reset_time_7d}", overall_color, use_color)
     parts.append(dim_7d)
     parts.append(colorize(model, overall_color, use_color))
+    if lang_text:
+        parts.append(lang_text)
     if bypass:
         parts.append(colorize("⚠️BYPASS", RED, use_color))
 
