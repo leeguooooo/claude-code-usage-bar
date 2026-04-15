@@ -826,7 +826,8 @@ def main(json_output: bool = False,
                 if show_pet:
                     pet_pct = msgs_pct if msgs_pct is not None else 0
                     pet_text = format_pet(
-                        pet_pct, current_hour, session_id, minutes_to_reset, pet_name
+                        pet_pct, current_hour, session_id, minutes_to_reset, pet_name,
+                        progress_path=str(Path.home() / ".claude" / "language-progress.json"),
                     )
                 countdown = get_countdown_emoji(minutes_to_reset)
 
@@ -869,7 +870,10 @@ def main(json_output: bool = False,
                     current_hour = datetime.now().hour
                     pet_text = ""
                     if show_pet:
-                        pet_text = format_pet(0, current_hour, session_id, None, pet_name)
+                        pet_text = format_pet(
+                            0, current_hour, session_id, None, pet_name,
+                            progress_path=str(Path.home() / ".claude" / "language-progress.json"),
+                        )
                     print(format_status_line(
                         msgs_pct=None, tkns_pct=None,
                         reset_time="--", model=model,
@@ -902,7 +906,10 @@ def main(json_output: bool = False,
             current_hour = datetime.now().hour
             pet_text = ""
             if show_pet:
-                pet_text = format_pet(0, current_hour, '', None, pet_name)
+                pet_text = format_pet(
+                    0, current_hour, '', None, pet_name,
+                    progress_path=str(Path.home() / ".claude" / "language-progress.json"),
+                )
             print(format_status_line(
                 msgs_pct=None, tkns_pct=None,
                 reset_time=reset_time, model=display_name,

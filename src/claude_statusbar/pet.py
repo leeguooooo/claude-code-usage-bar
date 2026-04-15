@@ -1,8 +1,10 @@
 """ASCII pet system for the status bar."""
 
 import hashlib
+import json
 import random
 import time
+from pathlib import Path
 from typing import Optional
 
 # Pet names pool
@@ -25,14 +27,54 @@ CAT_FACES = {
 
 # Status text pools per mood
 STATUS_TEXTS = {
-    "chill":   ["chilling~", "vibing~", "relaxed~", "all good~", "easy~"],
-    "sleepy":  ["zzz...", "sleepy...", "nap time...", "*yawn*", "dozing..."],
-    "working": ["working!", "coding~", "focused!", "busy~", "on it!"],
-    "nervous": ["hmm...", "uh oh...", "getting warm...", "careful...", "watch out..."],
-    "panic":   ["help!!", "oh no!!", "critical!!", "mayday!!", "SOS!!"],
-    "hype":    ["almost there!", "reset hype!!", "HERE IT COMES!", "so close!", "any moment!"],
+    "chill":    ["chilling~", "vibing~", "relaxed~", "all good~", "easy~"],
+    "sleepy":   ["zzz...", "sleepy...", "nap time...", "*yawn*", "dozing..."],
+    "working":  ["working!", "coding~", "focused!", "busy~", "on it!"],
+    "nervous":  ["hmm...", "uh oh...", "getting warm...", "careful...", "watch out..."],
+    "panic":    ["help!!", "oh no!!", "critical!!", "mayday!!", "SOS!!"],
+    "hype":     ["almost there!", "reset hype!!", "HERE IT COMES!", "so close!", "any moment!"],
     "refreshed": ["refreshed~", "brand new!", "recharged!", "lets go!", "reset!"],
+    "studying": ["studying!", "practicing~", "learning!", "drilling~", "writing!"],
+    "leveling": ["level up!!", "band up!!", "progress!!", "improving!!", "nice gain!!"],
 }
+
+# Cat faces for coaching moods
+CAT_FACES_EXTRA = {
+    "studying": ["ᓚᘏᗢ✏", "ᓚᘏ-ᗢ✏", "ᓚᘏᗢ✏"],
+    "leveling": ["ᓚ₍ᘏ₎ᗢ↑", "ᓚ₍ᘏ₎ᗢ↑!", "ᓚ₍ᘏ₎ᗢ↑"],
+}
+
+
+def _load_language_progress(progress_path: Optional[str] = None) -> dict:
+    """Load language progress JSON. Returns empty dict on any error."""
+    path = Path(progress_path) if progress_path else Path.home() / ".claude" / "language-progress.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _coaching_mood(progress: dict) -> Optional[str]:
+    """Return a coaching-specific mood if language progress exists with recent data.
+
+    Returns 'leveling' if any language improved in the last session,
+    'studying' if progress data exists, or None if no progress data.
+    """
+    if not progress:
+        return None
+    for entry in progress.values():
+        if not isinstance(entry, dict):
+            continue
+        estimates = entry.get("estimates", [])
+        if len(estimates) >= 2:
+            try:
+                prev = float(estimates[-2].get("band", 0))
+                curr = float(estimates[-1].get("band", 0))
+                if curr > prev:
+                    return "leveling"
+            except (TypeError, ValueError):
+                pass
+    return "studying"
 
 
 def get_pet_name(session_id: str = "", custom_name: Optional[str] = None) -> str:
@@ -78,8 +120,11 @@ def _get_frame_tick() -> int:
 
 def get_pet_face(mood: str) -> str:
     """Get the cat face for current mood with blink animation."""
-    face_key = mood if mood in CAT_FACES else "chill"
-    frames = CAT_FACES[face_key]
+    if mood in CAT_FACES_EXTRA:
+        frames = CAT_FACES_EXTRA[mood]
+    else:
+        face_key = mood if mood in CAT_FACES else "chill"
+        frames = CAT_FACES[face_key]
     tick = _get_frame_tick()
     return frames[tick % len(frames)]
 
@@ -103,13 +148,25 @@ def format_pet(
     session_id: str = "",
     minutes_to_reset: Optional[int] = None,
     custom_name: Optional[str] = None,
+    progress_path: Optional[str] = None,
 ) -> str:
     """Build the full pet string for the status bar.
 
     Example: "ᓚᘏᗢ Pixel:working!"
+    When language-progress data exists the pet enters a coaching-aware mood:
+      studying → "ᓚᘏᗢ✏ Byte:studying!"
+      leveling → "ᓚ₍ᘏ₎ᗢ↑ Byte:level up!!"
     """
     name = get_pet_name(session_id, custom_name)
     mood = _get_mood(pct, hour, minutes_to_reset)
+
+    # Coaching mood overrides low-intensity base moods (chill/sleepy/working)
+    if mood in ("chill", "sleepy", "working"):
+        progress = _load_language_progress(progress_path)
+        coaching = _coaching_mood(progress)
+        if coaching:
+            mood = coaching
+
     face = get_pet_face(mood)
     status = get_pet_status(mood, session_id)
     return f"{face} {name}:{status}"
