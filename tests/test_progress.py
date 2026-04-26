@@ -160,7 +160,17 @@ def test_format_status_line_with_color():
 
 import json
 import os
+import pytest
+from claude_statusbar import progress as _prog
 from claude_statusbar.progress import format_language_segment
+
+
+@pytest.fixture(autouse=True)
+def _enable_coach(monkeypatch):
+    """The language segment is gated on language-coach being enabled.
+    These tests are about the formatting, so unconditionally enable it."""
+    monkeypatch.setattr(_prog, "_coach_enabled", lambda *a, **kw: True)
+
 
 def test_format_language_segment_missing_file():
     assert format_language_segment("/nonexistent/path.json", use_color=False) == ""

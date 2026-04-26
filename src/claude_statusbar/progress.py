@@ -204,11 +204,9 @@ def _coach_enabled(config_path: str = "~/.claude/language-coach.json") -> bool:
         return False
 
 
-def format_language_segment(progress_path: str, use_color: bool = True) -> str:
-    """Read the language-progress JSON and return a compact segment like '📚 EN:6.0↑ JA:5.0→'.
-
-    Returns empty string when the language-coach plugin is not installed or disabled.
-    """
+def format_language_body(progress_path: str) -> str:
+    """Return only the body of the language segment (e.g. 'EN:6.0↑ JA:5.0→'),
+    without emoji or color codes. Empty string when disabled or missing."""
     if not _coach_enabled():
         return ""
     path = Path(progress_path).expanduser()
@@ -230,9 +228,19 @@ def format_language_segment(progress_path: str, use_color: bool = True) -> str:
         trend = _language_trend(entry.get("estimates"))
         parts.append(f"{_language_code(str(language))}:{current_band}{trend}")
 
-    if not parts:
+    return " ".join(parts)
+
+
+def format_language_segment(progress_path: str, use_color: bool = True) -> str:
+    """Backwards-compatible wrapper used by the classic style.
+
+    Returns a colored '📚 EN:6.0↑ JA:5.0→' string, or empty when disabled.
+    New styles should call format_language_body and add their own emoji + color.
+    """
+    body = format_language_body(progress_path)
+    if not body:
         return ""
-    return colorize(f"📚 {' '.join(parts)}", GREEN, use_color)
+    return colorize(f"📚 {body}", GREEN, use_color)
 
 
 def format_status_line(

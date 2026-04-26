@@ -78,20 +78,22 @@ def rgb(t): return f"rgb({t[0]},{t[1]},{t[2]})" if t else "none"
 
 def render_svg(text, *, char_w=8.4, char_h=18, padding_x=12, padding_y=10,
                bg_canvas=(28, 30, 36), title=None):
-    """Convert ANSI-colored text to a self-contained SVG string."""
-    # Compute width by counting columns (treat each char as 1 col; emoji etc.
-    # display 2 wide in many terminals but 1 wide in most monospace SVG fonts;
-    # we approximate by counting code points).
+    """Convert ANSI-colored text to a self-contained SVG string.
+
+    Width per chunk is locked via SVG `textLength` + `lengthAdjust="spacingAndGlyphs"`
+    so the rendering is identical regardless of which monospace font the
+    viewing browser falls back to (GitHub strips most font hints).
+    """
     plain = ANSI_RE.sub("", text)
     cols = len(plain)
     width = int(padding_x * 2 + cols * char_w)
     height = padding_y * 2 + char_h + (24 if title else 0)
     title_h = 24 if title else 0
 
+    # Use only the generic monospace family; widths are pinned via textLength.
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-        f'viewBox="0 0 {width} {height}" font-family="ui-monospace, SF Mono, Menlo, Consolas, monospace" '
-        f'font-size="14">',
+        f'viewBox="0 0 {width} {height}" font-family="monospace" font-size="14">',
         f'<rect x="0" y="0" width="{width}" height="{height}" fill="{rgb(bg_canvas)}" rx="6"/>',
     ]
 
@@ -101,7 +103,6 @@ def render_svg(text, *, char_w=8.4, char_h=18, padding_x=12, padding_y=10,
             f'fill="rgb(150,155,165)" font-size="11" letter-spacing="0.5">{escape(title)}</text>'
         )
 
-    # Render text
     x = padding_x
     y = padding_y + title_h + char_h - 4  # baseline
     bg_y = padding_y + title_h
@@ -117,6 +118,7 @@ def render_svg(text, *, char_w=8.4, char_h=18, padding_x=12, padding_y=10,
         weight = ' font-weight="700"' if bold else ""
         parts.append(
             f'<text x="{x:.2f}" y="{y}" fill="{rgb(fg)}"{weight} '
+            f'textLength="{seg_w:.2f}" lengthAdjust="spacingAndGlyphs" '
             f'xml:space="preserve">{escape(chunk)}</text>'
         )
         x += seg_w

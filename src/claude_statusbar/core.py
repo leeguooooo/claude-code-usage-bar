@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .cache import read_cache, read_cache_stale, write_cache, refresh_cache_background
-from .progress import format_language_segment, format_status_line
+from .progress import format_language_body, format_status_line
 
 # Suppress log output
 logging.basicConfig(level=logging.ERROR)
@@ -756,6 +756,10 @@ def main(json_output: bool = False,
 
     cfg = _cfg.load_config()
     chosen_style = _cfg.resolve_style(style_override, cfg)
+    if not __import__("claude_statusbar.styles", fromlist=["is_known_style"]).is_known_style(chosen_style):
+        # Unknown style → silently fall back to the safe default rather than
+        # explode in the statusLine where the user can't see the error.
+        chosen_style = "classic"
     chosen_theme = get_theme(_cfg.resolve_theme(theme_override, cfg))
 
     # Auto-compact: if terminal narrower than threshold, force hairline
@@ -772,9 +776,8 @@ def main(json_output: bool = False,
         show_pet = False
 
     stdin_data = parse_stdin_data()
-    lang_text = format_language_segment(
+    lang_body = format_language_body(
         str(Path.home() / ".claude" / "language-progress.json"),
-        use_color=use_color,
     ) if cfg.show_language else ""
 
     try:
@@ -866,14 +869,13 @@ def main(json_output: bool = False,
                     chosen_style,
                     msgs_pct=msgs_pct, weekly_pct=weekly_pct,
                     reset_5h=reset_time, reset_7d=reset_time_7d,
-                    model=model, lang_text=lang_text,
-                    pet_text=pet_text, bypass=bypass,
+                    model=model, lang_body=lang_body,
+                    pet_body=pet_text, bypass=bypass,
                     use_color=use_color, theme=chosen_theme,
                     warning_threshold=warning_threshold,
                     critical_threshold=critical_threshold,
-                    **({"countdown_emoji": countdown} if chosen_style == "classic" else {
-                        "density": cfg.density, "show_weekly": cfg.show_weekly,
-                    }),
+                    countdown_emoji=countdown,
+                    density=cfg.density, show_weekly=cfg.show_weekly,
                 ))
         else:
             # No rate_limits yet — could be session start or old Claude Code
@@ -906,20 +908,18 @@ def main(json_output: bool = False,
                         pet_text = format_pet(
                             0, current_hour, session_id, None, pet_name,
                             progress_path=str(Path.home() / ".claude" / "language-progress.json"),
-                        coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
+                            coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
                         )
                     print(_render_style(
                         chosen_style,
                         msgs_pct=None, weekly_pct=None,
                         reset_5h="--", reset_7d="",
-                        model=model, lang_text=lang_text,
-                        pet_text=pet_text, bypass=bypass,
+                        model=model, lang_body=lang_body,
+                        pet_body=pet_text, bypass=bypass,
                         use_color=use_color, theme=chosen_theme,
                         warning_threshold=warning_threshold,
                         critical_threshold=critical_threshold,
-                        **({} if chosen_style == "classic" else {
-                            "density": cfg.density, "show_weekly": cfg.show_weekly,
-                        }),
+                        density=cfg.density, show_weekly=cfg.show_weekly,
                     ))
             else:
                 # No stdin at all — not running inside Claude Code statusLine
@@ -946,20 +946,18 @@ def main(json_output: bool = False,
                 pet_text = format_pet(
                     0, current_hour, '', None, pet_name,
                     progress_path=str(Path.home() / ".claude" / "language-progress.json"),
-                        coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
+                    coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
                 )
             print(_render_style(
                 chosen_style,
                 msgs_pct=None, weekly_pct=None,
                 reset_5h=reset_time, reset_7d="",
-                model=display_name, lang_text=lang_text,
-                pet_text=pet_text, bypass=bypass,
+                model=display_name, lang_body=lang_body,
+                pet_body=pet_text, bypass=bypass,
                 use_color=use_color, theme=chosen_theme,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
-                **({} if chosen_style == "classic" else {
-                    "density": cfg.density, "show_weekly": cfg.show_weekly,
-                }),
+                density=cfg.density, show_weekly=cfg.show_weekly,
             ))
 
 if __name__ == '__main__':

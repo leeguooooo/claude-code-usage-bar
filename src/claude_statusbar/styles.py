@@ -24,6 +24,9 @@ import re as _re
 _ANSI_RE = _re.compile(r"\033\[[0-9;]*m")
 def _strip(s: str) -> str: return _ANSI_RE.sub("", s)
 
+# Density → padding string, shared by all renderers that support it.
+DENSITY_PAD = {"compact": "", "regular": " ", "cozy": "  "}
+
 
 def _severity_color(theme: Theme, pct: Optional[float],
                      warning: float, critical: float) -> tuple:
@@ -39,18 +42,19 @@ def _severity_color(theme: Theme, pct: Optional[float],
 # ---------------------------------------------------------------------------
 def render_capsule(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_text="", pet_text="", bypass=False,
+    lang_body="", pet_body="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
     show_weekly: bool = True,
+    **_ignored,
 ) -> str:
     theme = theme or get_theme("graphite")
     INK    = _fg(theme.pill_ink)
     EDGE   = _fg(theme.edge)
     MUTE   = _fg(theme.mute)
 
-    pad = {"compact": "", "regular": " ", "cozy": "  "}.get(density, " ")
+    pad = DENSITY_PAD.get(density, " ")
 
     def pill(bg_rgb, body):
         return f"{_bg(bg_rgb)}{INK}{pad}{body}{pad}{RESET}"
@@ -83,21 +87,16 @@ def render_capsule(
 
     parts.append(pill(theme.pill_model, f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}"))
 
-    if lang_text:
-        # lang_text may already carry ANSI — strip and re-render in pill colors
-        plain = _strip(lang_text).strip()
-        # drop the leading 📚 if present (we re-add inside the pill)
-        plain = plain.lstrip("📚 ").strip()
-        parts.append(pill(theme.pill_lang, f"📚 {plain}"))
+    if lang_body:
+        parts.append(pill(theme.pill_lang, f"📚 {lang_body}"))
 
     line = spacer.join(parts)
 
     if bypass:
         line += f"  {_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}"
 
-    if pet_text:
-        plain = _strip(pet_text).strip()
-        line += f"  {MUTE}{plain}{RESET}"
+    if pet_body:
+        line += f"  {MUTE}{pet_body}{RESET}"
 
     if not use_color:
         return _strip(line)
@@ -109,11 +108,12 @@ def render_capsule(
 # ---------------------------------------------------------------------------
 def render_hairline(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_text="", pet_text="", bypass=False,
+    lang_body="", pet_body="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
     show_weekly: bool = True,
+    **_ignored,
 ) -> str:
     theme = theme or get_theme("graphite")
     INK  = _fg(theme.ink)
@@ -136,7 +136,7 @@ def render_hairline(
     def pct_text(p):
         return "--%" if p is None else f"{int(round(p)):>2}%"
 
-    sep_pad = {"compact": "", "regular": " ", "cozy": "  "}.get(density, " ")
+    sep_pad = DENSITY_PAD.get(density, " ")
     sep = f"{sep_pad}{EDGE}┊{RESET}{sep_pad}"
     parts = []
 
@@ -151,16 +151,14 @@ def render_hairline(
         )
     parts.append(f"{MUTE}›{RESET} {INK}{model}{RESET}")
 
-    if lang_text:
-        plain = _strip(lang_text).strip()
-        parts.append(f"{MUTE}{plain}{RESET}")
+    if lang_body:
+        parts.append(f"{MUTE}{lang_body}{RESET}")
 
     if bypass:
         parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
 
-    if pet_text:
-        plain = _strip(pet_text).strip()
-        parts.append(f"{MUTE}{plain}{RESET}")
+    if pet_body:
+        parts.append(f"{MUTE}{pet_body}{RESET}")
 
     line = sep.join(parts)
     if not use_color:
@@ -173,12 +171,17 @@ def render_hairline(
 # ---------------------------------------------------------------------------
 def render_classic(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_text="", pet_text="", bypass=False,
+    lang_body="", pet_body="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     countdown_emoji: str = "",
+    **_ignored,
 ) -> str:
-    from .progress import format_status_line
+    from .progress import format_status_line, GREEN, colorize
+    # Classic re-builds the styled language segment from raw body (mirrors
+    # the legacy format_language_segment output: `📚 EN:6.0↑`).
+    lang_text = colorize(f"📚 {lang_body}", GREEN, use_color) if lang_body else ""
+    pet_text = pet_body  # classic adds its own coloring inside format_status_line
     return format_status_line(
         msgs_pct=msgs_pct, tkns_pct=None,
         reset_time=reset_5h, model=model,
@@ -198,8 +201,17 @@ RENDERERS = {
 }
 
 
+def is_known_style(style: str) -> bool:
+    return style in RENDERERS
+
+
 def render(style: str, **kwargs) -> str:
-    """Render with the named style, falling back to classic for unknown names."""
+    """Render with the named style. Unknown style names fall back to classic.
+
+    Unknown kwargs are absorbed by each renderer's **_ignored, so callers can
+    freely pass style-specific args (density, countdown_emoji, ...) to whichever
+    renderer is selected.
+    """
     fn = RENDERERS.get(style, render_classic)
     return fn(**kwargs)
 
