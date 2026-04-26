@@ -754,9 +754,11 @@ def main(json_output: bool = False,
     from .styles import render as _render_style
     from .themes import get_theme
 
+    from .styles import is_known_style as _is_known_style
+
     cfg = _cfg.load_config()
     chosen_style = _cfg.resolve_style(style_override, cfg)
-    if not __import__("claude_statusbar.styles", fromlist=["is_known_style"]).is_known_style(chosen_style):
+    if not _is_known_style(chosen_style):
         # Unknown style → silently fall back to the safe default rather than
         # explode in the statusLine where the user can't see the error.
         chosen_style = "classic"

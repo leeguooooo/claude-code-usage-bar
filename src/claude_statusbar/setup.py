@@ -14,15 +14,9 @@ from typing import Tuple
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 STATUSLINE_CONFIG = {"type": "command", "command": "cs"}
 
-# User-level slash command directory + the command files we ship.
+# User-level slash command directory; we ship every *.md found in the
+# bundled commands/ dir so adding a new command file Just Works.
 COMMANDS_DIR = Path.home() / ".claude" / "commands"
-COMMAND_FILES = (
-    "statusbar.md",
-    "statusbar-preview.md",
-    "statusbar-style.md",
-    "statusbar-theme.md",
-    "statusbar-reset.md",
-)
 
 
 def _read_settings() -> dict:
@@ -94,10 +88,9 @@ def install_commands(force: bool = False) -> Tuple[int, list[str]]:
     installed = 0
     skipped: list[str] = []
 
-    for name in COMMAND_FILES:
-        src = src_dir / name
-        if not src.is_file():
-            continue
+    # Glob *.md so newly-added commands ship without code changes.
+    for src in sorted(src_dir.glob("*.md")):
+        name = src.name
         dst = COMMANDS_DIR / name
         if dst.exists() and not force:
             # Compare contents — if they match, count as installed; otherwise skip.

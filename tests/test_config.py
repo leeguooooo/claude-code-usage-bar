@@ -67,6 +67,17 @@ def test_set_value_rejects_non_numeric_threshold(tmp_path: Path):
         cfg_mod.set_value("warning_threshold", "high", tmp_path / "cfg.json")
 
 
+def test_set_value_rejects_invalid_density(tmp_path: Path):
+    with pytest.raises(ValueError):
+        cfg_mod.set_value("density", "snug", tmp_path / "cfg.json")
+
+
+@pytest.mark.parametrize("ok", ["compact", "regular", "cozy"])
+def test_set_value_accepts_valid_density(tmp_path: Path, ok: str):
+    cfg_mod.set_value("density", ok, tmp_path / "cfg.json")
+    assert cfg_mod.load_config(tmp_path / "cfg.json").density == ok
+
+
 def test_resolve_style_priority(tmp_path: Path):
     cfg = cfg_mod.StatusbarConfig(style="capsule")
     # CLI wins

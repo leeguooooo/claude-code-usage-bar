@@ -78,6 +78,7 @@ VALID_KEYS = {
 _BOOL_KEYS = {"show_pet", "show_weekly", "show_language"}
 _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width"}
+_VALID_DENSITY = {"compact", "regular", "cozy"}
 
 
 def set_value(key: str, value: str, path: Path = CONFIG_PATH) -> StatusbarConfig:
@@ -96,6 +97,10 @@ def set_value(key: str, value: str, path: Path = CONFIG_PATH) -> StatusbarConfig
             raise ValueError(f"{key} must be an integer, got {value!r}") from e
     elif key in _BOOL_KEYS:
         setattr(cfg, key, _to_bool(value))
+    elif key == "density":
+        if value not in _VALID_DENSITY:
+            raise ValueError(f"density must be one of {sorted(_VALID_DENSITY)}, got {value!r}")
+        setattr(cfg, key, value)
     else:
         setattr(cfg, key, value)
     save_config(cfg, path)
