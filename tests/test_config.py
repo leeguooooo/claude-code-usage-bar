@@ -120,3 +120,18 @@ def test_to_bool_handles_strings_and_bools():
         assert cfg_mod._to_bool(truthy) is True
     for falsy in (False, "0", "false", "no", "off", ""):
         assert cfg_mod._to_bool(falsy) is False
+
+
+def test_save_config_is_atomic(tmp_path: Path):
+    """Two writes must not leave a .tmp file behind, and second write must
+    succeed (regression: config.save_config used to call write_text directly,
+    so Ctrl+C mid-write could corrupt the JSON file)."""
+    p = tmp_path / "cfg.json"
+    cfg_mod.save_config(cfg_mod.StatusbarConfig(style="capsule"), p)
+    cfg_mod.save_config(cfg_mod.StatusbarConfig(style="hairline"), p)
+
+    leftover = list(tmp_path.glob(".cfg.json.*.tmp"))
+    assert leftover == [], f"temp files leaked: {leftover}"
+
+    loaded = cfg_mod.load_config(p)
+    assert loaded.style == "hairline"

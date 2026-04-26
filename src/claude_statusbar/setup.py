@@ -14,9 +14,10 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 from typing import Tuple
+
+from .cache import atomic_write_text
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 COMMANDS_DIR  = Path.home() / ".claude" / "commands"
@@ -86,30 +87,10 @@ def _read_settings() -> dict:
 
 def _write_settings(data: dict) -> bool:
     """Atomically write settings.json so we can never leave half a file behind."""
-    try:
-        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        # Write to a sibling temp file in the same directory, then rename.
-        # Same-directory rename is atomic on POSIX and on NTFS for replace.
-        fd, tmp = tempfile.mkstemp(
-            prefix=".settings.", suffix=".tmp",
-            dir=str(SETTINGS_PATH.parent),
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-                f.write("\n")
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, SETTINGS_PATH)
-            return True
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
-    except OSError:
-        return False
+    return atomic_write_text(
+        SETTINGS_PATH,
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+    )
 
 
 def is_statusline_configured() -> bool:

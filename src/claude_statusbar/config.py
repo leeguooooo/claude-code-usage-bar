@@ -63,11 +63,9 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
 
 
 def save_config(cfg: StatusbarConfig, path: Path = CONFIG_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(asdict(cfg), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    """Persist config atomically — Ctrl+C mid-write must not corrupt JSON."""
+    from .cache import atomic_write_text
+    atomic_write_text(path, json.dumps(asdict(cfg), indent=2, ensure_ascii=False) + "\n")
 
 
 VALID_KEYS = {

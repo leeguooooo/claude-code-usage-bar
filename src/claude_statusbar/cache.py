@@ -13,6 +13,40 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+
+def atomic_write_text(path: Path, text: str) -> bool:
+    """Cross-platform atomic text write. Returns True on success.
+
+    Writes to a sibling tempfile in the same directory, fsyncs, then
+    os.replace to swap into place. Same-directory rename is atomic on
+    POSIX and on NTFS for replace, so a Ctrl+C / OOM mid-write can
+    never leave the destination half-written.
+
+    Used by every persistent state file: settings.json, claude-statusbar
+    config, last_stdin cache, etc.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix=".tmp",
+            dir=str(path.parent),
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+            return True
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    except OSError:
+        return False
+
 CACHE_MAX_AGE_S = 30
 CACHE_DIR = Path.home() / ".cache" / "claude-statusbar"
 CACHE_FILE = CACHE_DIR / "cache.json"

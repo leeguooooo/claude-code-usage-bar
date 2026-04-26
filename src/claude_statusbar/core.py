@@ -449,13 +449,11 @@ def parse_stdin_data() -> Dict[str, Any]:
         debug_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
         data = json.loads(raw)
 
-        # Only cache stdin when it contains rate_limits (avoid overwriting with empty data)
+        # Only cache stdin when it contains rate_limits (avoid overwriting with empty data).
+        # Atomic write — Ctrl+C must not corrupt the cache.
         if data.get('rate_limits', {}).get('five_hour'):
-            try:
-                debug_file.parent.mkdir(parents=True, exist_ok=True)
-                debug_file.write_text(raw, encoding="utf-8")
-            except OSError:
-                pass
+            from .cache import atomic_write_text
+            atomic_write_text(debug_file, raw)
 
         # Session ID
         result['session_id'] = data.get('session_id', '')
