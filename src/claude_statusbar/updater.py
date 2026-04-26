@@ -99,40 +99,39 @@ def get_upgrade_command(
     return [sys.executable, "-m", "pip", "install", "--upgrade", DIST_NAME]
 
 
-def auto_upgrade() -> bool:
-    """Attempt automatic upgrade"""
+# Hard cap so a hung pip/uv install can NEVER freeze a Claude Code statusLine
+# render. 60s is generous for fast networks and short-circuits cleanly on slow
+# ones — the user gets a normal status line at the next session.
+_UPGRADE_TIMEOUT_S = 60
+
+
+def _run_upgrade(cmd) -> bool:
+    """Run an upgrade command with a timeout. Returns True on success."""
     try:
         result = subprocess.run(
-            get_upgrade_command(),
+            cmd,
             capture_output=True,
             text=True,
-        )
-
-        if result.returncode == 0:
-            return True
-
-        # Fallback to pipx when the preferred path fails and pipx is available
-        try:
-            result = subprocess.run(
-                ["pipx", "upgrade", "claude-statusbar"], capture_output=True, text=True
-            )
-            if result.returncode == 0:
-                return True
-        except FileNotFoundError:
-            pass
-
-        # Final fallback: plain pip in the current interpreter
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", DIST_NAME],
-            capture_output=True,
-            text=True,
+            timeout=_UPGRADE_TIMEOUT_S,
         )
         return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        logging.error(f"Upgrade command {cmd!r} failed: {e}")
+        return False
 
-    except Exception as e:
-        logging.error(f"Upgrade failed: {e}")
 
-    return False
+def auto_upgrade() -> bool:
+    """Attempt automatic upgrade. Bounded by _UPGRADE_TIMEOUT_S per attempt."""
+    if _run_upgrade(get_upgrade_command()):
+        return True
+
+    if shutil.which("pipx"):
+        if _run_upgrade(["pipx", "upgrade", DIST_NAME]):
+            return True
+
+    return _run_upgrade(
+        [sys.executable, "-m", "pip", "install", "--upgrade", DIST_NAME]
+    )
 
 
 def check_and_upgrade() -> Tuple[bool, str]:

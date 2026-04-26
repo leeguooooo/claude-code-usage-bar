@@ -690,19 +690,23 @@ def check_for_updates(session_id: str = ''):
             except OSError:
                 pass
 
-        if should_check:
-            from .updater import check_and_upgrade
-            success, message = check_and_upgrade()
+        if not should_check:
+            return
 
-            # Record current session
-            if session_id:
-                try:
-                    last_session_file.write_text(session_id)
-                except OSError:
-                    pass
+        # Mark this session as checked BEFORE running the (potentially slow)
+        # upgrade. If the upgrade hangs, the next render won't re-trigger it
+        # and the user gets a working status bar instead of a frozen one.
+        if session_id:
+            try:
+                last_session_file.write_text(session_id)
+            except OSError:
+                pass
 
-            if success:
-                print(f"🔄 {message}", file=sys.stderr)
+        from .updater import check_and_upgrade
+        success, message = check_and_upgrade()
+
+        if success:
+            print(f"🔄 {message}", file=sys.stderr)
 
     except Exception:
         # Silently fail - don't interrupt main functionality
