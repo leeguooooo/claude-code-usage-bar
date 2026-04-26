@@ -448,6 +448,12 @@ def parse_stdin_data() -> Dict[str, Any]:
 
         debug_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
         data = json.loads(raw)
+        # Mark stdin as valid the moment we parse it. If any per-field
+        # extraction below raises (e.g. Anthropic ships an unexpected shape),
+        # main() must still take the "have stdin" branch and render with the
+        # partial data we managed to extract — not silently fall back to the
+        # "no stdin" path.
+        result['_has_stdin'] = True
 
         # Only cache stdin when it contains rate_limits (avoid overwriting with empty data).
         # Atomic write — Ctrl+C must not corrupt the cache.
@@ -525,10 +531,12 @@ def parse_stdin_data() -> Dict[str, Any]:
         # Version
         result['claude_version'] = data.get('version', '')
 
-        # Mark that we have valid stdin data
-        result['_has_stdin'] = True
-
-    except (json.JSONDecodeError, TypeError, AttributeError):
+    except json.JSONDecodeError:
+        # Bad JSON from stdin — treat as if there was no stdin at all.
+        result.pop('_has_stdin', None)
+    except (TypeError, AttributeError):
+        # Unexpected shape on a sub-field; preserve _has_stdin so main()
+        # still renders with whatever we managed to extract.
         pass
     return result
 
@@ -656,16 +664,22 @@ except:
     pass
 print("")
 """
-                result = subprocess.run(
-                    [claude_python, '-c', code],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                
-                if result.returncode == 0 and result.stdout.strip():
-                    return result.stdout.strip()
-    except:
+                # 3s cap — this is invoked from the synchronous render path
+                # in the exception fallback, so a slow claude-monitor must
+                # not stall the status line. On timeout we fall through to
+                # the next-2pm estimate below rather than returning empty.
+                try:
+                    result = subprocess.run(
+                        [claude_python, '-c', code],
+                        capture_output=True,
+                        text=True,
+                        timeout=3
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        return result.stdout.strip()
+                except subprocess.TimeoutExpired:
+                    pass
+    except Exception:
         pass
     
     # Fallback: estimate reset time (assume session started within the last 5 hours)

@@ -76,3 +76,48 @@ def test_pct_rounds_floating_point_drift(monkeypatch, isolated_cache):
     }, monkeypatch)
     out = core.parse_stdin_data()
     assert out["rate_limit_pct"] == 56
+
+
+# ---------------------------------------------------------------------------
+# _has_stdin must be set as soon as JSON parses, NOT only after every field
+# is successfully extracted. Otherwise an unexpected sub-field shape silently
+# kicks main() into the "no stdin" path even though we have valid data.
+# ---------------------------------------------------------------------------
+def test_has_stdin_set_when_only_minimal_payload(monkeypatch, isolated_cache):
+    _stdin_with({"session_id": "abc"}, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out.get("_has_stdin") is True
+    assert out.get("session_id") == "abc"
+
+
+def test_has_stdin_survives_unexpected_subfield_shape(monkeypatch, isolated_cache):
+    """Anthropic ships a list where we expect a dict — partial extraction
+    must still mark stdin as valid. Regression: prior to v2.8.11 the
+    AttributeError thrown by some `.get()` would skip the trailing
+    `_has_stdin = True` line."""
+    _stdin_with({
+        "session_id": "abc",
+        "rate_limits": "this should be a dict but isn't",
+    }, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out.get("_has_stdin") is True
+
+
+def test_has_stdin_unset_on_invalid_json(monkeypatch, isolated_cache):
+    fake = type("F", (), {})()
+    fake.isatty = lambda: False
+    fake.read = lambda: "{not valid json"
+    monkeypatch.setattr(sys, "stdin", fake)
+
+    out = core.parse_stdin_data()
+    assert out.get("_has_stdin") is None
+
+
+def test_has_stdin_unset_when_stdin_empty(monkeypatch, isolated_cache):
+    fake = type("F", (), {})()
+    fake.isatty = lambda: False
+    fake.read = lambda: ""
+    monkeypatch.setattr(sys, "stdin", fake)
+
+    out = core.parse_stdin_data()
+    assert out.get("_has_stdin") is None
