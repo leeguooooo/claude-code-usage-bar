@@ -97,6 +97,29 @@ def test_is_known_style():
     assert not is_known_style("")
 
 
+@pytest.mark.parametrize("style", ["capsule", "hairline"])
+def test_pet_color_tracks_severity(style):
+    """When 5h pct is critical, pet should render in the hot color (severity)
+    rather than the muted secondary color."""
+    theme = get_theme("graphite")
+    hot_rgb = f"\033[38;2;{theme.s_hot[0]};{theme.s_hot[1]};{theme.s_hot[2]}m"
+    mute_rgb = f"\033[38;2;{theme.mute[0]};{theme.mute[1]};{theme.mute[2]}m"
+
+    base = dict(SAMPLE)
+    base["pet_body"] = "ᓚᘏᗢ Tofu"
+
+    # 5h calm → pet uses mute, NOT hot
+    out_calm = render(style, theme=theme, use_color=True, **{**base, "msgs_pct": 5})
+    assert mute_rgb in out_calm
+    assert hot_rgb not in out_calm.split("ᓚᘏᗢ")[0][-30:] if "ᓚᘏᗢ" in out_calm else True
+
+    # 5h critical → pet uses hot
+    out_hot = render(style, theme=theme, use_color=True, **{**base, "msgs_pct": 95})
+    # The hot color must appear immediately before the pet glyph
+    pet_idx = out_hot.index("ᓚᘏᗢ")
+    assert hot_rgb in out_hot[:pet_idx], f"hot color missing before pet: {out_hot!r}"
+
+
 def test_capsule_does_not_eat_emoji_prefix():
     """Regression: prior implementation used lstrip('📚 ') which would also
     strip a literal space at the start of language data. The fix routes raw

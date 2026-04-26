@@ -96,7 +96,14 @@ def render_capsule(
         line += f"  {_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}"
 
     if pet_body:
-        line += f"  {MUTE}{pet_body}{RESET}"
+        # Pet color tracks 5h severity: hot when critical, warn when amber,
+        # mute when calm. So a "panic" pet actually reads as panicked.
+        pet_col = MUTE
+        if msgs_pct is not None:
+            sev = _severity_color(theme, msgs_pct, warning_threshold, critical_threshold)
+            if sev != theme.s_ok:  # only override on warn / hot
+                pet_col = _fg(sev)
+        line += f"  {pet_col}{pet_body}{RESET}"
 
     if not use_color:
         return _strip(line)
@@ -158,7 +165,12 @@ def render_hairline(
         parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
 
     if pet_body:
-        parts.append(f"{MUTE}{pet_body}{RESET}")
+        pet_col = MUTE
+        if msgs_pct is not None:
+            sev = _severity_color(theme, msgs_pct, warning_threshold, critical_threshold)
+            if sev != theme.s_ok:
+                pet_col = _fg(sev)
+        parts.append(f"{pet_col}{pet_body}{RESET}")
 
     line = sep.join(parts)
     if not use_color:

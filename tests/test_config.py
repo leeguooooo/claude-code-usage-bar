@@ -78,6 +78,28 @@ def test_set_value_accepts_valid_density(tmp_path: Path, ok: str):
     assert cfg_mod.load_config(tmp_path / "cfg.json").density == ok
 
 
+def test_set_value_rejects_invalid_style(tmp_path: Path):
+    with pytest.raises(ValueError):
+        cfg_mod.set_value("style", "capsulee", tmp_path / "cfg.json")
+
+
+def test_set_value_rejects_invalid_theme(tmp_path: Path):
+    with pytest.raises(ValueError):
+        cfg_mod.set_value("theme", "midnight", tmp_path / "cfg.json")
+
+
+@pytest.mark.parametrize("style", ["classic", "capsule", "hairline"])
+def test_set_value_accepts_valid_style(tmp_path: Path, style: str):
+    cfg_mod.set_value("style", style, tmp_path / "cfg.json")
+    assert cfg_mod.load_config(tmp_path / "cfg.json").style == style
+
+
+@pytest.mark.parametrize("theme", ["graphite", "twilight", "linen", "nord", "dracula", "sakura", "mono"])
+def test_set_value_accepts_valid_theme(tmp_path: Path, theme: str):
+    cfg_mod.set_value("theme", theme, tmp_path / "cfg.json")
+    assert cfg_mod.load_config(tmp_path / "cfg.json").theme == theme
+
+
 def test_resolve_style_priority(tmp_path: Path):
     cfg = cfg_mod.StatusbarConfig(style="capsule")
     # CLI wins

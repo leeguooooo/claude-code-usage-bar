@@ -101,6 +101,19 @@ def set_value(key: str, value: str, path: Path = CONFIG_PATH) -> StatusbarConfig
         if value not in _VALID_DENSITY:
             raise ValueError(f"density must be one of {sorted(_VALID_DENSITY)}, got {value!r}")
         setattr(cfg, key, value)
+    elif key == "style":
+        # Lazy import to avoid a config↔styles cycle at module load.
+        from .styles import list_styles
+        valid = set(list_styles())
+        if value not in valid:
+            raise ValueError(f"style must be one of {sorted(valid)}, got {value!r}")
+        setattr(cfg, key, value)
+    elif key == "theme":
+        from .themes import list_themes
+        valid = {t.name for t in list_themes()}
+        if value not in valid:
+            raise ValueError(f"theme must be one of {sorted(valid)}, got {value!r}")
+        setattr(cfg, key, value)
     else:
         setattr(cfg, key, value)
     save_config(cfg, path)

@@ -91,19 +91,34 @@ def run(use_color: bool = True) -> int:
         "capsule":  "02 · CAPSULE（胶囊）",
         "hairline": "03 · HAIRLINE（极简线条）",
     }
+    # Classic predates the theme system and ignores Theme entirely, so showing
+    # 7 rows of identical output is just visual noise.
+    THEME_AGNOSTIC = {"classic"}
 
     for style_name in RENDERERS:
         title = style_titles.get(style_name, style_name)
         print()
         print(f"  {GOLD}{title}{R}")
         print(f"  {DIM}{'─' * 78}{R}")
+        if style_name in THEME_AGNOSTIC:
+            line = render(
+                style_name, theme=BUILTIN_THEMES[0],
+                msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],
+                reset_5h=data["reset_5h"], reset_7d=data["reset_7d"],
+                model=data["model"],
+                lang_body="", pet_body="", bypass=False,
+                use_color=use_color,
+                warning_threshold=30.0, critical_threshold=70.0,
+            )
+            print(f"  {DIM}[theme-agnostic]{R} {line}")
+            continue
         for theme in BUILTIN_THEMES:
             line = render(
                 style_name, theme=theme,
                 msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],
                 reset_5h=data["reset_5h"], reset_7d=data["reset_7d"],
                 model=data["model"],
-                lang_text="", pet_text="", bypass=False,
+                lang_body="", pet_body="", bypass=False,
                 use_color=use_color,
                 warning_threshold=30.0, critical_threshold=70.0,
             )
