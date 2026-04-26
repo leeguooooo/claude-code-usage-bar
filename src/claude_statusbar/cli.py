@@ -271,10 +271,9 @@ Integration:
         print("  pipx install claude-monitor")
         return 0
 
-    if args.plan is not None:
-        # Compatibility shim for scripts that still pass --plan.
-        # Current implementation no longer needs a local plan override.
-        os.environ["CLAUDE_PLAN"] = args.plan
+    # `--plan` was removed in 1.4.0 but kept as a no-op so old scripts don't
+    # explode with "unrecognized argument". Nothing reads its value.
+    _ = args.plan
 
     if args.no_auto_update:
         os.environ['CLAUDE_STATUSBAR_NO_UPDATE'] = '1'

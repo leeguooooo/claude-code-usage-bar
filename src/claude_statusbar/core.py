@@ -465,13 +465,20 @@ def parse_stdin_data() -> Dict[str, Any]:
             result['display_name'] = model_obj.get('display_name', '')
 
         # Rate limits (Claude.ai Pro/Max only)
-        # Coerce percentages to int — Anthropic occasionally returns
-        # floats like 56.00000000000001 that look ugly in the UI.
+        # Coerce percentages to int and clamp to [0, ∞):
+        # - Anthropic occasionally returns floats like 56.00000000000001
+        # - Reject NaN/inf so they never reach the renderer
+        # - Clamp negatives to 0 (defensive — should never happen in practice)
+        # - Don't cap at 100; values >100% are valid for over-quota indicators
+        import math
         def _pct(v):
             try:
-                return int(round(float(v)))
+                f = float(v)
             except (TypeError, ValueError):
                 return 0
+            if math.isnan(f) or math.isinf(f):
+                return 0
+            return max(0, int(round(f)))
         rl = data.get('rate_limits', {})
         fh = rl.get('five_hour', {})
         if fh:
