@@ -452,14 +452,21 @@ def parse_stdin_data() -> Dict[str, Any]:
             result['display_name'] = model_obj.get('display_name', '')
 
         # Rate limits (Claude.ai Pro/Max only)
+        # Coerce percentages to int — Anthropic occasionally returns
+        # floats like 56.00000000000001 that look ugly in the UI.
+        def _pct(v):
+            try:
+                return int(round(float(v)))
+            except (TypeError, ValueError):
+                return 0
         rl = data.get('rate_limits', {})
         fh = rl.get('five_hour', {})
         if fh:
-            result['rate_limit_pct'] = fh.get('used_percentage', 0)
+            result['rate_limit_pct'] = _pct(fh.get('used_percentage', 0))
             result['rate_limit_resets_at'] = fh.get('resets_at')
         sd = rl.get('seven_day', {})
         if sd:
-            result['rate_limit_7d_pct'] = sd.get('used_percentage', 0)
+            result['rate_limit_7d_pct'] = _pct(sd.get('used_percentage', 0))
             result['rate_limit_7d_resets_at'] = sd.get('resets_at')
 
         # Fallback: load rate_limits from previous session's cached stdin
@@ -470,10 +477,10 @@ def parse_stdin_data() -> Dict[str, Any]:
                 cached_fh = cached_rl.get('five_hour', {})
                 cached_sd = cached_rl.get('seven_day', {})
                 if cached_fh:
-                    result['rate_limit_pct'] = cached_fh.get('used_percentage', 0)
+                    result['rate_limit_pct'] = _pct(cached_fh.get('used_percentage', 0))
                     result['rate_limit_resets_at'] = cached_fh.get('resets_at')
                 if cached_sd:
-                    result['rate_limit_7d_pct'] = cached_sd.get('used_percentage', 0)
+                    result['rate_limit_7d_pct'] = _pct(cached_sd.get('used_percentage', 0))
                     result['rate_limit_7d_resets_at'] = cached_sd.get('resets_at')
             except (OSError, json.JSONDecodeError, TypeError):
                 pass
@@ -737,15 +744,38 @@ def main(json_output: bool = False,
          reset_hour: Optional[int] = None, use_color: bool = True,
          detail: bool = False, pet_name: Optional[str] = None,
          show_pet: bool = True,
-         warning_threshold: float = 30.0, critical_threshold: float = 70.0):
+         warning_threshold: float = 30.0, critical_threshold: float = 70.0,
+         style_override: Optional[str] = None,
+         theme_override: Optional[str] = None):
     """Main function"""
     from .pet import format_pet, get_countdown_emoji
     from .setup import ensure_statusline_configured
+    from . import config as _cfg
+    from .styles import render as _render_style
+    from .themes import get_theme
+
+    cfg = _cfg.load_config()
+    chosen_style = _cfg.resolve_style(style_override, cfg)
+    chosen_theme = get_theme(_cfg.resolve_theme(theme_override, cfg))
+
+    # Auto-compact: if terminal narrower than threshold, force hairline
+    if cfg.auto_compact_width > 0 and chosen_style != "hairline":
+        try:
+            term_w = os.get_terminal_size().columns
+            if term_w < cfg.auto_compact_width:
+                chosen_style = "hairline"
+        except OSError:
+            pass
+
+    # Honor show_pet from config (CLI --hide-pet still overrides)
+    if not cfg.show_pet:
+        show_pet = False
+
     stdin_data = parse_stdin_data()
     lang_text = format_language_segment(
         str(Path.home() / ".claude" / "language-progress.json"),
         use_color=use_color,
-    )
+    ) if cfg.show_language else ""
 
     try:
         if not json_output:
@@ -832,16 +862,18 @@ def main(json_output: bool = False,
                     )
                 countdown = get_countdown_emoji(minutes_to_reset)
 
-                print(format_status_line(
-                    msgs_pct=msgs_pct, tkns_pct=None,
-                    reset_time=reset_time, model=model,
-                    weekly_pct=weekly_pct,
-                    reset_time_7d=reset_time_7d,
-                    bypass=bypass, use_color=use_color,
-                    pet_text=pet_text, countdown_emoji=countdown,
+                print(_render_style(
+                    chosen_style,
+                    msgs_pct=msgs_pct, weekly_pct=weekly_pct,
+                    reset_5h=reset_time, reset_7d=reset_time_7d,
+                    model=model, lang_text=lang_text,
+                    pet_text=pet_text, bypass=bypass,
+                    use_color=use_color, theme=chosen_theme,
                     warning_threshold=warning_threshold,
                     critical_threshold=critical_threshold,
-                    lang_text=lang_text,
+                    **({"countdown_emoji": countdown} if chosen_style == "classic" else {
+                        "density": cfg.density, "show_weekly": cfg.show_weekly,
+                    }),
                 ))
         else:
             # No rate_limits yet — could be session start or old Claude Code
@@ -876,15 +908,18 @@ def main(json_output: bool = False,
                             progress_path=str(Path.home() / ".claude" / "language-progress.json"),
                         coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
                         )
-                    print(format_status_line(
-                        msgs_pct=None, tkns_pct=None,
-                        reset_time="--", model=model,
-                        weekly_pct=None,
-                        bypass=bypass, use_color=use_color,
-                        pet_text=pet_text,
+                    print(_render_style(
+                        chosen_style,
+                        msgs_pct=None, weekly_pct=None,
+                        reset_5h="--", reset_7d="",
+                        model=model, lang_text=lang_text,
+                        pet_text=pet_text, bypass=bypass,
+                        use_color=use_color, theme=chosen_theme,
                         warning_threshold=warning_threshold,
                         critical_threshold=critical_threshold,
-                        lang_text=lang_text,
+                        **({} if chosen_style == "classic" else {
+                            "density": cfg.density, "show_weekly": cfg.show_weekly,
+                        }),
                     ))
             else:
                 # No stdin at all — not running inside Claude Code statusLine
@@ -913,15 +948,18 @@ def main(json_output: bool = False,
                     progress_path=str(Path.home() / ".claude" / "language-progress.json"),
                         coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
                 )
-            print(format_status_line(
-                msgs_pct=None, tkns_pct=None,
-                reset_time=reset_time, model=display_name,
-                weekly_pct=None,
-                bypass=bypass, use_color=use_color,
-                pet_text=pet_text,
+            print(_render_style(
+                chosen_style,
+                msgs_pct=None, weekly_pct=None,
+                reset_5h=reset_time, reset_7d="",
+                model=display_name, lang_text=lang_text,
+                pet_text=pet_text, bypass=bypass,
+                use_color=use_color, theme=chosen_theme,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
-                lang_text=lang_text,
+                **({} if chosen_style == "classic" else {
+                    "density": cfg.density, "show_weekly": cfg.show_weekly,
+                }),
             ))
 
 if __name__ == '__main__':

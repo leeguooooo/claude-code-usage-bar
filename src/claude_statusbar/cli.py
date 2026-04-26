@@ -7,26 +7,128 @@ import argparse
 from . import __version__
 from .core import main as statusbar_main
 from .progress import normalize_thresholds
+from .styles import list_styles
+from .themes import list_themes
+
+
+def _run_config_subcommand(rest):
+    """Handle `cs config <action> [args...]`. Returns exit code."""
+    from . import config as cfg_mod
+
+    if not rest:
+        rest = ["show"]
+    action, args = rest[0], rest[1:]
+
+    if action == "show":
+        cfg = cfg_mod.load_config()
+        print(f"style              = {cfg.style}")
+        print(f"theme              = {cfg.theme}")
+        print(f"density            = {cfg.density}")
+        print(f"auto_compact_width = {cfg.auto_compact_width or '(disabled)'}")
+        print(f"show_pet           = {cfg.show_pet}")
+        print(f"show_weekly        = {cfg.show_weekly}")
+        print(f"show_language      = {cfg.show_language}")
+        print(f"warning_threshold  = {cfg.warning_threshold}")
+        print(f"critical_threshold = {cfg.critical_threshold}")
+        print(f"\nfile: {cfg_mod.CONFIG_PATH}")
+        return 0
+
+    if action == "set":
+        if len(args) != 2:
+            print("usage: cs config set <key> <value>", file=sys.stderr)
+            return 2
+        key, value = args
+        try:
+            new_cfg = cfg_mod.set_value(key, value)
+        except (KeyError, ValueError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(f"{key} = {getattr(new_cfg, key)}")
+        return 0
+
+    if action == "get":
+        if len(args) != 1:
+            print("usage: cs config get <key>", file=sys.stderr)
+            return 2
+        try:
+            print(cfg_mod.get_value(args[0]))
+        except KeyError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        return 0
+
+    print(f"unknown config action: {action} (try: show / set / get)", file=sys.stderr)
+    return 2
+
+
+def _run_themes_subcommand():
+    print("Available themes:")
+    for t in list_themes():
+        print(f"  {t.name:<10}  {t.description}")
+    return 0
+
+
+def _run_styles_subcommand():
+    descriptions = {
+        "classic":  "原始样式（带 [bar] 与 | 分隔）",
+        "capsule":  "胶囊样式 — 带底色的药丸，地铁标识感",
+        "hairline": "极简线条 — 3 格小条 + 虚线分隔",
+    }
+    print("Available styles:")
+    for name in list_styles():
+        print(f"  {name:<10}  {descriptions.get(name, '')}")
+    return 0
 
 
 def main():
     """Main CLI entry point"""
+    # Subcommands hijack argv before argparse so they coexist with flags.
+    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands"):
+        sub = sys.argv[1]
+        rest = sys.argv[2:]
+        if sub == "config":
+            return _run_config_subcommand(rest)
+        if sub == "themes":
+            return _run_themes_subcommand()
+        if sub == "styles":
+            return _run_styles_subcommand()
+        if sub == "preview":
+            from .preview import run as run_preview
+            no_color = "--no-color" in rest or os.environ.get("NO_COLOR") not in (None, "")
+            return run_preview(use_color=not no_color)
+        if sub == "install-commands":
+            from .setup import install_commands, COMMANDS_DIR
+            force = "--force" in rest
+            n, skipped = install_commands(force=force)
+            print(f"Installed {n} slash command(s) to {COMMANDS_DIR}")
+            if skipped:
+                print("Skipped:")
+                for s in skipped:
+                    print(f"  {s}")
+                print("Use `cs install-commands --force` to overwrite.")
+            print("Try /statusbar in Claude Code.")
+            return 0
+
     parser = argparse.ArgumentParser(
         description="Claude Status Bar Monitor - Lightweight token usage monitor",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  claude-statusbar          # Show current usage
-  cstatus                   # Short alias
-  cs                        # Shortest alias
-  
-  claude-statusbar --json-output
-  claude-statusbar --reset-hour 14
-  
+  cs                            # Show current status (uses configured style+theme)
+  cs --style capsule            # Override style for one render
+  cs --theme twilight           # Override theme
+  cs config show                # Show current config
+  cs config set style hairline  # Persist style
+  cs config set theme linen     # Persist theme
+  cs themes                     # List available themes
+  cs styles                     # List available styles
+  cs preview                    # Render every style × theme together
+  cs install-commands           # Install /statusbar slash commands
+  cs --json-output              # Machine-readable JSON
+
 Integration:
   tmux:     set -g status-right '#(claude-statusbar)'
   zsh:      RPROMPT='$(claude-statusbar)'
-  i3:       status_command echo "$(claude-statusbar)"
         """,
     )
 
@@ -96,6 +198,18 @@ Integration:
         "--critical-threshold",
         type=float,
         help="Usage percentage that switches from yellow to red (default: 70)",
+    )
+    parser.add_argument(
+        "--style",
+        type=str,
+        choices=list_styles(),
+        help="Override status-line style for this run (persist with `cs config set style`)",
+    )
+    parser.add_argument(
+        "--theme",
+        type=str,
+        choices=[t.name for t in list_themes()],
+        help="Override color theme for this run (persist with `cs config set theme`)",
     )
 
     args = parser.parse_args()
@@ -188,6 +302,8 @@ Integration:
             show_pet=show_pet,
             warning_threshold=warning_threshold,
             critical_threshold=critical_threshold,
+            style_override=args.style,
+            theme_override=args.theme,
         )
         return 0
     except KeyboardInterrupt:

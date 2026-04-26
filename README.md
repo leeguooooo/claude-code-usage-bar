@@ -22,6 +22,84 @@ It shows your current Claude.ai rate-limit usage, reset timers, context window u
 
 Colors default to green / yellow / red at `30%` and `70%`, and can be customized.
 
+## Styles & themes (v2.7+)
+
+The default style above (`classic`) stays the same forever. Two new styles are available — pick whichever you like, or stick with classic.
+
+```bash
+cs --style capsule  --theme graphite   # try once
+cs --style hairline --theme twilight   # try once
+cs config set style capsule            # persist
+cs config set theme twilight
+cs styles                              # list available styles
+cs themes                              # list available themes
+cs preview                             # render every style × theme together
+```
+
+| Style | Look |
+|-------|------|
+| `classic`  | Original `[bar] \| pipe` engineering layout. Default. |
+| `capsule`  | Each metric is a colored pill — type badge (`◷ 5H` / `☷ 7D` / `◆` / `📚`) on the left, value, severity dot on the right. Subway-signage feel. |
+| `hairline` | One-character mini-bar (`▁▃▆█`) per metric, dashed `┊` separators, tight typography. Maximally calm. |
+
+| Theme | When to use |
+|-------|-------------|
+| `graphite` | Default. Cool/dark, fits most dark terminals. |
+| `twilight` | Soft purples/roses — looks great on warm dark backgrounds. |
+| `linen`    | Cream/beige — for light terminal themes. |
+
+Style and theme are independent: any of the three styles can be rendered with any of the three themes (9 combinations).
+
+### Slash commands inside Claude Code
+
+After running `cs --setup` (or `cs install-commands`), the following slash commands work inside Claude Code:
+
+| Slash command | What it does |
+|---------------|--------------|
+| `/statusbar`               | Show current config + lists styles/themes |
+| `/statusbar-preview`       | Render every style × theme combination using your real data |
+| `/statusbar-style <name>`  | Switch style (`classic` / `capsule` / `hairline`) |
+| `/statusbar-theme <name>`  | Switch theme (`graphite` / `twilight` / `linen`) |
+| `/statusbar-reset`         | Restore the original `classic` + `graphite` defaults |
+
+### Configuration file
+
+Persisted to `~/.claude/claude-statusbar.json`:
+
+```json
+{
+  "style": "capsule",
+  "theme": "twilight",
+  "density": "regular",
+  "auto_compact_width": 100,
+  "show_pet": true,
+  "show_weekly": true,
+  "show_language": true
+}
+```
+
+| Key | Values | What it does |
+|-----|--------|--------------|
+| `style` | `classic` / `capsule` / `hairline` | Layout |
+| `theme` | `graphite` / `twilight` / `linen` | Colors |
+| `density` | `compact` / `regular` / `cozy` | Padding around segments (capsule + hairline only) |
+| `auto_compact_width` | integer (e.g. `100`) | Force `hairline` when terminal narrower than this. `0` = disabled |
+| `show_pet`, `show_weekly`, `show_language` | bool | Hide individual segments |
+
+Set via `cs config set <key> <value>`.
+
+Override per-invocation via `--style` / `--theme` flags or `CLAUDE_STATUSBAR_STYLE` / `CLAUDE_STATUSBAR_THEME` env vars.
+
+### Install as a Claude Code plugin
+
+The repo also ships a `.claude-plugin/plugin.json` so you can install everything (slash commands + this README) directly from inside Claude Code:
+
+```
+/plugin install https://github.com/leeguooooo/claude-code-usage-bar
+```
+
+You still need the `cs` CLI (`pip install claude-statusbar` or `uv tool install claude-statusbar`) — the plugin only carries the slash commands; the heavy lifting is the Python package.
+
 ## Install
 
 ### One-line install (recommended)
@@ -54,12 +132,20 @@ Then add to `~/.claude/settings.json`:
 ## Usage
 
 ```bash
-cs                  # show status bar (shortest alias)
-cs --json-output    # machine-readable JSON
-cs --no-color       # disable ANSI colors
-cs --hide-pet       # hide the ASCII pet
+cs                            # show status bar (shortest alias)
+cs --style capsule            # render with capsule style for one run
+cs --theme twilight           # override theme
+cs config show                # show persistent config
+cs config set style hairline  # save style to ~/.claude/claude-statusbar.json
+cs config set theme linen     # save theme
+cs styles                     # list available styles
+cs themes                     # list available themes
+cs preview                    # render every style × theme using your real data
+cs --json-output              # machine-readable JSON
+cs --no-color                 # disable ANSI colors
+cs --hide-pet                 # hide the ASCII pet
 cs --warning-threshold 40 --critical-threshold 85
-cs --no-auto-update # disable auto-update checks
+cs --no-auto-update           # disable auto-update checks
 ```
 
 `--plan` still exists for older scripts, but it is deprecated and no longer changes the status line output.
@@ -68,6 +154,8 @@ cs --no-auto-update # disable auto-update checks
 
 | Variable | Effect |
 |----------|--------|
+| `CLAUDE_STATUSBAR_STYLE=capsule` | Render with this style (overrides config file) |
+| `CLAUDE_STATUSBAR_THEME=twilight` | Render with this theme (overrides config file) |
 | `CLAUDE_STATUSBAR_NO_UPDATE=1` | Disable automatic update checks |
 | `CLAUDE_STATUSBAR_HIDE_PET=1` | Hide the status bar pet |
 | `CLAUDE_STATUSBAR_WARNING_THRESHOLD=40` | Switch from green to yellow at 40% |

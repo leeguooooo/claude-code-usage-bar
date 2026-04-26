@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-statusbar"
-version = "2.6.1"
+version = "2.8.0"
 authors = [
     {name = "leeguooooo", email = "leeguooooo@gmail.com"}
 ]
@@ -48,4 +48,4 @@ cs = "claude_statusbar.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-claude_statusbar = ["*.py"]
+claude_statusbar = ["*.py", "commands/*.md"]
