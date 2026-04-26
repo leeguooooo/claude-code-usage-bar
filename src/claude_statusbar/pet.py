@@ -178,10 +178,14 @@ def get_pet_face(mood: str) -> str:
 
 
 def get_pet_status(mood: str, session_id: str = "", reminders: Optional[list[str]] = None) -> str:
-    """Pick a status text for the mood. Varies per refresh but stable within ~5s windows.
+    """Pick a status text for the mood. Stable within ~5s windows.
 
     When reminders are provided (language-specific nudges like "Use English!"),
     they are mixed into the pool at roughly 1-in-3 frequency.
+
+    Use a deterministic hash (md5) instead of Python's built-in hash(): the
+    builtin is salted per-process via PYTHONHASHSEED, which would make the
+    "stable within a 5s window" promise break across separate cs invocations.
     """
     base_texts = STATUS_TEXTS.get(mood, STATUS_TEXTS["chill"])
     if reminders:
@@ -190,10 +194,8 @@ def get_pet_status(mood: str, session_id: str = "", reminders: Optional[list[str
     else:
         pool = base_texts
     window = int(time.time() / 5)
-    if session_id:
-        seed = hash((window, session_id))
-    else:
-        seed = window
+    seed_input = f"{window}:{session_id}".encode("utf-8")
+    seed = int(hashlib.md5(seed_input).hexdigest()[:8], 16)
     rng = random.Random(seed)
     return rng.choice(pool)
 

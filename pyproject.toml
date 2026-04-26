@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-statusbar"
-version = "2.8.7"
+version = "2.8.8"
 authors = [
     {name = "leeguooooo", email = "leeguooooo@gmail.com"}
 ]

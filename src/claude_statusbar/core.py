@@ -281,8 +281,23 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
         current_session_cost = 0.0
         last_time = None
         
-        # Read all JSONL files
-        for jsonl_file in sorted(data_path.rglob("*.jsonl"), key=lambda f: f.stat().st_mtime):
+        # Read JSONL files, but skip ones whose mtime is older than the
+        # history window (with 1-day slack for clock skew). Heavy users have
+        # thousands of session files; without this prefilter we re-read every
+        # one of them on every fallback render.
+        history_cutoff_ts = (history_cutoff - timedelta(days=1)).timestamp()
+
+        def _recent_files():
+            for f in data_path.rglob("*.jsonl"):
+                try:
+                    mtime = f.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime < history_cutoff_ts:
+                    continue
+                yield f, mtime
+
+        for jsonl_file, _ in sorted(_recent_files(), key=lambda pair: pair[1]):
             try:
                 with open(jsonl_file, 'r', encoding='utf-8') as f:
                     for line in f:

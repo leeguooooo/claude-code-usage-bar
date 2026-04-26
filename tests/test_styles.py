@@ -132,3 +132,41 @@ def test_capsule_does_not_eat_emoji_prefix():
                   model="Opus 4.7", lang_body=body, pet_body="",
                   bypass=False, warning_threshold=30.0, critical_threshold=70.0)
     assert body in out, "language body content was mangled"
+
+
+# ---------------------------------------------------------------------------
+# Pet determinism — separate Python processes must agree on the status text
+# inside the same 5s window. Catches regressions where hash() (salted
+# per-process via PYTHONHASHSEED) sneaks back in.
+# ---------------------------------------------------------------------------
+def test_pet_status_deterministic_across_processes():
+    """Run get_pet_status from a fresh subprocess with a randomized
+    PYTHONHASHSEED and assert it matches the in-process value."""
+    import os, subprocess, sys, time
+    from claude_statusbar.pet import get_pet_status
+
+    # Pin to a 5s window we can reproduce in the subprocess by passing the
+    # same anchor time.
+    anchor = int(time.time() / 5) * 5
+    in_proc = get_pet_status("working", session_id="abc-deterministic")
+
+    code = (
+        "import time, sys\n"
+        f"_anchor = {anchor}\n"
+        "import claude_statusbar.pet as pet\n"
+        "_orig = time.time\n"
+        "time.time = lambda: _anchor\n"
+        "print(pet.get_pet_status('working', session_id='abc-deterministic'))\n"
+    )
+    env = {**os.environ, "PYTHONHASHSEED": "999", "PYTHONPATH": "src"}
+    out = subprocess.check_output([sys.executable, "-c", code], env=env, text=True).strip()
+
+    # The in-process call also lands in the `anchor` window because both used
+    # int(time.time()/5)*5; allow boundary slop by also computing the next
+    # window.
+    from claude_statusbar.pet import get_pet_status as _g
+    in_proc_now = _g("working", session_id="abc-deterministic")
+
+    assert out in (in_proc, in_proc_now), (
+        f"subprocess produced {out!r}, expected one of {in_proc!r} / {in_proc_now!r}"
+    )
