@@ -1,7 +1,7 @@
 {
   "name": "claude-statusbar",
   "description": "Lightweight Claude Code status-line monitor with switchable styles, themes, and slash commands. Requires the `cs` CLI from PyPI (`pip install claude-statusbar` or `uv tool install claude-statusbar`).",
-  "version": "2.8.11",
+  "version": "2.8.12",
   "author": {
     "name": "leeguooooo",
     "email": "leeguooooo@gmail.com"

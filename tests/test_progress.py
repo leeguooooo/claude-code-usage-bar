@@ -243,3 +243,40 @@ def test_format_status_line_with_lang_text():
     lang_pos = line.index("📚")
     pet_pos = line.index("ᓚᘏᗢ")
     assert model_pos < lang_pos < pet_pos
+
+
+def test_language_segment_capped_at_max_languages(monkeypatch, tmp_path):
+    """A bloated language-progress.json must not let the segment expand
+    indefinitely and push the rest of the status line off-screen."""
+    monkeypatch.setattr(_prog, "_coach_enabled", lambda *a, **kw: True)
+    payload = {f"Lang{i:03d}": {"currentBand": "5.0"} for i in range(50)}
+    p = tmp_path / "progress.json"
+    p.write_text(json.dumps(payload), encoding="utf-8")
+
+    out = _prog.format_language_body(str(p))
+    # Each entry is "XX:5.0→" = 7 chars + 1 space ⇒ N entries = 7N + (N-1) chars
+    # Cap is MAX_LANGUAGES; output length ≤ 8 * cap to give a comfortable upper bound.
+    parts = out.split(" ")
+    assert len(parts) == _prog.MAX_LANGUAGES, (
+        f"expected {_prog.MAX_LANGUAGES} entries, got {len(parts)}: {out!r}"
+    )
+
+
+def test_language_logging_does_not_clobber_root(monkeypatch):
+    """Importing claude_statusbar must not call logging.basicConfig() —
+    that would override host applications' logging config."""
+    import importlib
+    import logging as _logging
+
+    # Capture the root logger handlers BEFORE re-importing.
+    root = _logging.getLogger()
+    handlers_before = list(root.handlers)
+    level_before = root.level
+
+    import claude_statusbar.core
+    importlib.reload(claude_statusbar.core)
+
+    handlers_after = list(root.handlers)
+    level_after = root.level
+    assert handlers_after == handlers_before, "core.py polluted root logger handlers"
+    assert level_after == level_before, "core.py reset root logger level"

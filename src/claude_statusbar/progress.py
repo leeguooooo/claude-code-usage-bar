@@ -204,6 +204,12 @@ def _coach_enabled(config_path: str = "~/.claude/language-coach.json") -> bool:
         return False
 
 
+# Hard cap on languages shown in the status bar. A bloated or malicious
+# language-progress.json would otherwise let the segment expand indefinitely
+# and push the rest of the line off-screen.
+MAX_LANGUAGES = 4
+
+
 def format_language_body(progress_path: str) -> str:
     """Return only the body of the language segment (e.g. 'EN:6.0↑ JA:5.0→'),
     without emoji or color codes. Empty string when disabled or missing."""
@@ -227,6 +233,8 @@ def format_language_body(progress_path: str) -> str:
             continue
         trend = _language_trend(entry.get("estimates"))
         parts.append(f"{_language_code(str(language))}:{current_band}{trend}")
+        if len(parts) >= MAX_LANGUAGES:
+            break
 
     return " ".join(parts)
 

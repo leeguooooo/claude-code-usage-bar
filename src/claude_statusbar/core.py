@@ -18,8 +18,13 @@ from typing import Any, Dict, List, Optional
 from .cache import read_cache, read_cache_stale, write_cache, refresh_cache_background
 from .progress import format_language_body, format_status_line
 
-# Suppress log output
-logging.basicConfig(level=logging.ERROR)
+# Module-local logger: never call logging.basicConfig() at import-time —
+# that would clobber the root logger config of any program that imports
+# claude_statusbar (cli + lib + tests). Default to ERROR-level + null
+# handler so we stay quiet unless the host explicitly enables our logs.
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
+logger.addHandler(logging.NullHandler())
 
 def try_original_analysis() -> Optional[Dict[str, Any]]:
     """Try to use the installed claude-monitor package"""
@@ -35,7 +40,7 @@ def try_original_analysis() -> Optional[Dict[str, Any]]:
                     break
         
         if not claude_monitor_cmd:
-            logging.info("claude-monitor not found. Install with: uv tool install claude-monitor")
+            logger.info("claude-monitor not found. Install with: uv tool install claude-monitor")
             return None
         
         # Find the Python interpreter used by claude-monitor
@@ -63,7 +68,7 @@ def try_original_analysis() -> Optional[Dict[str, Any]]:
                 pass
         
         if not claude_python:
-            logging.info("Could not find claude-monitor Python interpreter")
+            logger.info("Could not find claude-monitor Python interpreter")
             return None
         
         # Use subprocess to run analysis with the correct Python
@@ -218,7 +223,7 @@ except Exception as e:
         return None
         
     except Exception as e:
-        logging.error(f"Original analysis failed: {e}")
+        logger.error(f"Original analysis failed: {e}")
         return None
 
 def direct_data_analysis() -> Optional[Dict[str, Any]]:
@@ -428,7 +433,7 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
         }
         
     except Exception as e:
-        logging.error(f"Direct analysis failed: {e}")
+        logger.error(f"Direct analysis failed: {e}")
         return None
 
 def parse_stdin_data() -> Dict[str, Any]:
