@@ -56,7 +56,9 @@ def write_cache(data: Dict[str, Any], path: Path = CACHE_FILE) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(payload, f)
-        os.rename(tmp_path, path)
+        # os.replace handles same-directory atomic overwrite on POSIX *and*
+        # Windows. os.rename used to fail on Windows when the dest existed.
+        os.replace(tmp_path, path)
     except Exception:
         try:
             os.unlink(tmp_path)

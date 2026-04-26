@@ -238,6 +238,10 @@ Integration:
             )
             return None
 
+    # NO_COLOR follows the no-color.org convention: ANY value (including
+    # empty string) disables color. So we check presence, not truthiness.
+    no_color_env = "NO_COLOR" in os.environ
+
     json_output = args.json_output or env_bool("CLAUDE_STATUSBAR_JSON")
     reset_hour = args.reset_hour
     if reset_hour is None:
@@ -276,7 +280,7 @@ Integration:
         os.environ['CLAUDE_STATUSBAR_NO_UPDATE'] = '1'
 
     # Run the status bar
-    use_color = not (args.no_color or env_bool("NO_COLOR"))
+    use_color = not (args.no_color or no_color_env)
     show_pet = not (args.hide_pet or env_bool("CLAUDE_STATUSBAR_HIDE_PET"))
     try:
         warning_threshold, critical_threshold = normalize_thresholds(

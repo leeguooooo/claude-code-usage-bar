@@ -62,3 +62,37 @@ def test_cli_rejects_invalid_thresholds(monkeypatch, capsys):
     assert cli.main() == 1
     assert called is False
     assert "Thresholds must satisfy" in capsys.readouterr().err
+
+
+def test_no_color_env_var_with_any_value(monkeypatch):
+    """no-color.org spec: NO_COLOR is honored regardless of value, including
+    empty string. We previously only triggered on '1/true/yes' which broke
+    the spec."""
+    captured = {}
+
+    def fake_statusbar_main(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli, "statusbar_main", fake_statusbar_main)
+    monkeypatch.setattr(sys, "argv", ["cs"])
+
+    for val in ("", "0", "false", "1", "anything"):
+        captured.clear()
+        monkeypatch.setenv("NO_COLOR", val)
+        cli.main()
+        assert captured["use_color"] is False, (
+            f"NO_COLOR={val!r} did not disable color"
+        )
+
+
+def test_no_color_unset_keeps_color(monkeypatch):
+    captured = {}
+
+    def fake_statusbar_main(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli, "statusbar_main", fake_statusbar_main)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setattr(sys, "argv", ["cs"])
+    cli.main()
+    assert captured["use_color"] is True

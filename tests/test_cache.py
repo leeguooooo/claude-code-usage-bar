@@ -44,3 +44,22 @@ def test_write_is_atomic(tmp_path):
     write_cache({"a": 1}, cache_file)
     result = json.loads(cache_file.read_text())
     assert "_cache_time" in result
+
+
+def test_write_overwrites_existing_file(tmp_path):
+    """os.replace must succeed even when the target already exists.
+    Regression test for the os.rename → os.replace migration that fixed
+    a Windows-only FileExistsError."""
+    cache_file = tmp_path / "cache.json"
+    write_cache({"a": 1}, cache_file)
+    write_cache({"a": 2}, cache_file)  # second write must not raise
+    result = read_cache(cache_file)
+    assert result is not None
+    assert result["a"] == 2
+
+
+def test_write_leaves_no_temp_file(tmp_path):
+    cache_file = tmp_path / "cache.json"
+    write_cache({"x": 1}, cache_file)
+    leftover = list(tmp_path.glob("*.tmp"))
+    assert leftover == [], f"temp files leaked: {leftover}"
