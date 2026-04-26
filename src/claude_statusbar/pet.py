@@ -137,10 +137,20 @@ def get_pet_name(session_id: str = "", custom_name: Optional[str] = None) -> str
     return rng.choice(PET_NAMES)
 
 
-def _get_mood(pct: float, hour: int, minutes_to_reset: Optional[int] = None) -> str:
-    """Determine pet mood from usage percentage, time of day, and reset proximity."""
+def _get_mood(pct: float, hour: int, minutes_to_reset: Optional[int] = None,
+               warning_threshold: float = 30.0,
+               critical_threshold: float = 70.0) -> str:
+    """Determine pet mood from usage percentage, time of day, and reset proximity.
+
+    Thresholds align with the bar's color ladder so the pet text and the bar
+    color tell the same story:
+      - pct <= warning/2  → chill   (well within safe zone)
+      - pct <= warning    → working (still safe but engaged)
+      - pct <= critical   → nervous (yellow zone)
+      - pct > critical    → panic   (red zone)
+    """
     # Reset hype overrides everything when usage is high
-    if minutes_to_reset is not None and minutes_to_reset <= 30 and pct >= 50:
+    if minutes_to_reset is not None and minutes_to_reset <= 30 and pct >= warning_threshold:
         return "hype"
 
     # Just reset — low usage after being high
@@ -148,15 +158,15 @@ def _get_mood(pct: float, hour: int, minutes_to_reset: Optional[int] = None) -> 
         return "refreshed" if minutes_to_reset and minutes_to_reset > 280 else "chill"
 
     # Night time override for low usage
-    if pct <= 20 and (hour >= 23 or hour < 6):
+    if pct <= warning_threshold and (hour >= 23 or hour < 6):
         return "sleepy"
 
-    # Usage-based mood
-    if pct <= 20:
+    # Usage-based mood — proportional to user's chosen thresholds
+    if pct <= warning_threshold * 0.65:
         return "chill"
-    if pct <= 50:
+    if pct <= warning_threshold:
         return "working"
-    if pct <= 70:
+    if pct <= critical_threshold:
         return "nervous"
     return "panic"
 
@@ -208,6 +218,8 @@ def format_pet(
     custom_name: Optional[str] = None,
     progress_path: Optional[str] = None,
     coach_config_path: Optional[str] = None,
+    warning_threshold: float = 30.0,
+    critical_threshold: float = 70.0,
 ) -> str:
     """Build the full pet string for the status bar.
 
@@ -217,9 +229,16 @@ def format_pet(
       leveling → "ᓚ₍ᘏ₎ᗢ↑ Byte:level up!!"
     Language reminders ("Use English!", "Write in Japanese!") are mixed in
     at ~33% frequency when the coach config is present and enabled.
+
+    `warning_threshold` and `critical_threshold` are passed through so the
+    pet mood ladder stays in sync with the bar color ladder (otherwise a
+    user with --critical-threshold 80 would see a panicked pet on a calm
+    green bar at pct=72).
     """
     name = get_pet_name(session_id, custom_name)
-    mood = _get_mood(pct, hour, minutes_to_reset)
+    mood = _get_mood(pct, hour, minutes_to_reset,
+                      warning_threshold=warning_threshold,
+                      critical_threshold=critical_threshold)
 
     # Load coach config for reminders (only when plugin is installed and enabled)
     coach_config = _load_coach_config(coach_config_path)
