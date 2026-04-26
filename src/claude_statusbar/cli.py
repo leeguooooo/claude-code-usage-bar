@@ -94,7 +94,14 @@ def main():
             return _run_styles_subcommand()
         if sub == "preview":
             from .preview import run as run_preview
-            no_color = "--no-color" in rest or os.environ.get("NO_COLOR") not in (None, "")
+            # Disable color when stdout is redirected to a file/pipe so
+            # `cs preview > out.txt` produces clean text instead of an ANSI
+            # blob. NO_COLOR (any value) and --no-color also disable.
+            no_color = (
+                "--no-color" in rest
+                or "NO_COLOR" in os.environ
+                or not sys.stdout.isatty()
+            )
             return run_preview(use_color=not no_color)
         if sub == "install-commands":
             from .setup import install_commands, COMMANDS_DIR

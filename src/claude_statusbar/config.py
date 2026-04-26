@@ -85,10 +85,33 @@ def set_value(key: str, value: str, path: Path = CONFIG_PATH) -> StatusbarConfig
     cfg = load_config(path)
     if key in _FLOAT_KEYS:
         try:
-            setattr(cfg, key, float(value))
+            new_val = float(value)
         except ValueError as e:
             raise ValueError(f"{key} must be a number, got {value!r}") from e
-    elif key in _INT_KEYS:
+        # Cross-field check: warning < critical must hold or every render crashes.
+        # Use the resulting pair (existing other field + new value) to validate.
+        from .progress import normalize_thresholds
+        if key == "warning_threshold":
+            other = cfg.critical_threshold
+        else:
+            other = cfg.warning_threshold
+        try:
+            if key == "warning_threshold":
+                normalize_thresholds(new_val, other)
+            else:
+                normalize_thresholds(other, new_val)
+        except ValueError as e:
+            raise ValueError(
+                f"refusing to save: {key}={new_val} would make the pair invalid "
+                f"(warning_threshold={cfg.warning_threshold}, "
+                f"critical_threshold={cfg.critical_threshold}). "
+                f"Set both keys or use --warning-threshold / --critical-threshold "
+                f"together."
+            ) from e
+        setattr(cfg, key, new_val)
+        save_config(cfg, path)
+        return cfg
+    if key in _INT_KEYS:
         try:
             setattr(cfg, key, int(value))
         except ValueError as e:

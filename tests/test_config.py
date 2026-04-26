@@ -135,3 +135,30 @@ def test_save_config_is_atomic(tmp_path: Path):
 
     loaded = cfg_mod.load_config(p)
     assert loaded.style == "hairline"
+
+
+def test_set_warning_above_default_critical_rejected(tmp_path: Path):
+    """Defaults: warning=None→30, critical=None→70. Setting warning=80
+    would create an invalid pair (80 >= 70) and crash every render."""
+    p = tmp_path / "cfg.json"
+    with pytest.raises(ValueError, match="invalid"):
+        cfg_mod.set_value("warning_threshold", "80", p)
+
+
+def test_set_critical_below_warning_rejected(tmp_path: Path):
+    """If warning is already 50, setting critical=40 is invalid."""
+    p = tmp_path / "cfg.json"
+    cfg_mod.set_value("critical_threshold", "60", p)  # 30 < 60 OK
+    cfg_mod.set_value("warning_threshold", "50", p)   # 50 < 60 OK
+    with pytest.raises(ValueError, match="invalid"):
+        cfg_mod.set_value("critical_threshold", "40", p)
+
+
+def test_thresholds_can_be_widened_in_correct_order(tmp_path: Path):
+    """Two-step move: raise ceiling first, then floor."""
+    p = tmp_path / "cfg.json"
+    cfg_mod.set_value("critical_threshold", "90", p)  # 30 < 90 OK
+    cfg_mod.set_value("warning_threshold", "80", p)   # 80 < 90 OK
+    cfg = cfg_mod.load_config(p)
+    assert cfg.warning_threshold == 80.0
+    assert cfg.critical_threshold == 90.0
