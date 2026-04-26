@@ -24,7 +24,7 @@ Colors default to green / yellow / red at `30%` and `70%`, and can be customized
 
 ## Styles & themes (v2.7+)
 
-The default style above (`classic`) stays the same forever. Two new styles are available — pick whichever you like, or stick with classic.
+The default style (`classic`) stays the same forever. Two new styles, plus a palette of seven themes, are opt-in.
 
 ```bash
 cs --style capsule  --theme graphite   # try once
@@ -36,19 +36,49 @@ cs themes                              # list available themes
 cs preview                             # render every style × theme together
 ```
 
+### Styles
+
 | Style | Look |
 |-------|------|
 | `classic`  | Original `[bar] \| pipe` engineering layout. Default. |
 | `capsule`  | Each metric is a colored pill — type badge (`◷ 5H` / `☷ 7D` / `◆` / `📚`) on the left, value, severity dot on the right. Subway-signage feel. |
 | `hairline` | One-character mini-bar (`▁▃▆█`) per metric, dashed `┊` separators, tight typography. Maximally calm. |
 
-| Theme | When to use |
-|-------|-------------|
-| `graphite` | Default. Cool/dark, fits most dark terminals. |
-| `twilight` | Soft purples/roses — looks great on warm dark backgrounds. |
-| `linen`    | Cream/beige — for light terminal themes. |
+**Capsule** — `graphite` · `twilight` · `nord` · `dracula` · `sakura` · `linen` · `mono`
 
-Style and theme are independent: any of the three styles can be rendered with any of the three themes (9 combinations).
+![capsule + graphite](docs/images/capsule-graphite.svg)
+![capsule + twilight](docs/images/capsule-twilight.svg)
+![capsule + nord](docs/images/capsule-nord.svg)
+![capsule + dracula](docs/images/capsule-dracula.svg)
+![capsule + sakura](docs/images/capsule-sakura.svg)
+![capsule + linen](docs/images/capsule-linen.svg)
+![capsule + mono](docs/images/capsule-mono.svg)
+
+**Hairline** — same theme set, different layout
+
+![hairline + graphite](docs/images/hairline-graphite.svg)
+![hairline + nord](docs/images/hairline-nord.svg)
+![hairline + dracula](docs/images/hairline-dracula.svg)
+![hairline + sakura](docs/images/hairline-sakura.svg)
+![hairline + mono](docs/images/hairline-mono.svg)
+
+**Classic** — kept identical to the pre-v2.7 look
+
+![classic + graphite](docs/images/classic-graphite.svg)
+
+### Themes
+
+| Theme | Vibe |
+|-------|------|
+| `graphite` | Cool dark graphite — default, fits most dark terminals |
+| `twilight` | Soft purples/roses — warm dark |
+| `linen`    | Cream/beige — for light terminal themes |
+| `nord`     | Nord palette — familiar Arctic blue |
+| `dracula`  | Dracula palette — high-contrast purple/black |
+| `sakura`   | Pink/cream — soft, light backgrounds |
+| `mono`     | Pure grayscale — no chromatic distraction |
+
+Style and theme are independent: any of the **3 styles × 7 themes = 21 combinations**.
 
 ### Slash commands inside Claude Code
 

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="612" height="62" viewBox="0 0 612 62" font-family="ui-monospace, SF Mono, Menlo, Consolas, monospace" font-size="14">
+<rect x="0" y="0" width="612" height="62" fill="rgb(28,30,36)" rx="6"/>
+<text x="12" y="24" fill="rgb(150,155,165)" font-size="11" letter-spacing="0.5">cs --style capsule --theme graphite</text>
+<rect x="12.00" y="34" width="8.40" height="18" fill="rgb(38,70,83)"/>
+<text x="12.00" y="48" fill="rgb(238,235,224)" xml:space="preserve"> </text>
+<rect x="20.40" y="34" width="33.60" height="18" fill="rgb(38,70,83)"/>
+<text x="20.40" y="48" fill="rgb(238,235,224)" font-weight="700" xml:space="preserve">◷ 5H</text>
+<rect x="54.00" y="34" width="109.20" height="18" fill="rgb(38,70,83)"/>
+<text x="54.00" y="48" fill="rgb(238,235,224)" xml:space="preserve"> 58% · 2h47m </text>
+<rect x="163.20" y="34" width="8.40" height="18" fill="rgb(38,70,83)"/>
+<text x="163.20" y="48" fill="rgb(232,178,96)" xml:space="preserve">●</text>
+<rect x="171.60" y="34" width="8.40" height="18" fill="rgb(38,70,83)"/>
+<text x="171.60" y="48" fill="rgb(238,235,224)" xml:space="preserve"> </text>
+<text x="180.00" y="48" fill="rgb(75,80,88)" xml:space="preserve"> ╱</text>
+<text x="196.80" y="48" fill="rgb(220,220,220)" xml:space="preserve"> </text>
+<rect x="205.20" y="34" width="8.40" height="18" fill="rgb(42,56,79)"/>
+<text x="205.20" y="48" fill="rgb(238,235,224)" xml:space="preserve"> </text>
+<rect x="213.60" y="34" width="33.60" height="18" fill="rgb(42,56,79)"/>
+<text x="213.60" y="48" fill="rgb(238,235,224)" font-weight="700" xml:space="preserve">☷ 7D</text>
+<rect x="247.20" y="34" width="109.20" height="18" fill="rgb(42,56,79)"/>
+<text x="247.20" y="48" fill="rgb(238,235,224)" xml:space="preserve"> 24% · 3d12h </text>
+<rect x="356.40" y="34" width="8.40" height="18" fill="rgb(42,56,79)"/>
+<text x="356.40" y="48" fill="rgb(120,200,192)" xml:space="preserve">●</text>
+<rect x="364.80" y="34" width="8.40" height="18" fill="rgb(42,56,79)"/>
+<text x="364.80" y="48" fill="rgb(238,235,224)" xml:space="preserve"> </text>
+<text x="373.20" y="48" fill="rgb(75,80,88)" xml:space="preserve"> ╱</text>
+<text x="390.00" y="48" fill="rgb(220,220,220)" xml:space="preserve"> </text>
+<rect x="398.40" y="34" width="8.40" height="18" fill="rgb(60,47,65)"/>
+<text x="398.40" y="48" fill="rgb(238,235,224)" xml:space="preserve"> </text>
+<rect x="406.80" y="34" width="8.40" height="18" fill="rgb(60,47,65)"/>
+<text x="406.80" y="48" fill="rgb(238,235,224)" font-weight="700" xml:space="preserve">◆</text>
+<rect x="415.20" y="34" width="184.80" height="18" fill="rgb(60,47,65)"/>
+<text x="415.20" y="48" fill="rgb(238,235,224)" xml:space="preserve"> Opus 4.7(45.0k/1.0M) </text>
+</svg>
