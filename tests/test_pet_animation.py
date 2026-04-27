@@ -149,3 +149,18 @@ def test_compose_face_microbench_under_budget():
         f"compose_face is now {elapsed_us_per_call:.1f} µs/call — "
         f"animation hot path is slow"
     )
+
+
+def test_nervous_mood_now_has_visible_tail():
+    """Regression: 30-70% range was visually frozen because nervous mood
+    had no tail. Now it does a flick."""
+    seen = set()
+    for i in range(8):
+        seen.add(anim.compose_face("nervous", i * 0.1, "sess"))
+    assert len(seen) >= 3, f"nervous still looks static: {seen!r}"
+    # Must be a flick glyph, not a wag glyph
+    flick_glyphs = set(anim.TAIL_FLICK_FRAMES)
+    wag_glyphs = set(anim.TAIL_FRAMES)
+    has_flick = any(any(g in face for g in flick_glyphs) for face in seen)
+    has_wag = any(any(g in face for g in wag_glyphs) for face in seen)
+    assert has_flick and not has_wag, "nervous should flick, not wag"

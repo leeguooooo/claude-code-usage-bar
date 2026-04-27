@@ -49,13 +49,23 @@ def _det_unit(seed: str) -> float:
 
 
 # ---------------------------------------------------------------------------
-# TRACK: tail wag — 4 frames at 250ms (4Hz)
+# TRACK: tail — multiple wag styles
 # ---------------------------------------------------------------------------
+# Smooth happy wag — 4 frames at 250ms (4Hz). Used for chill / working / hype.
 TAIL_FRAMES = ("⌒", "~", "∽", "~")
+
+# Short jittery flick — for nervous moods. Real nervous cats twitch the tail
+# in shorter bursts than they wag it. 6 frames at 8Hz, with held positions
+# to read as agitation rather than relaxed swing.
+TAIL_FLICK_FRAMES = (",", "_", ",", "˒", "_", "˒")
 
 
 def tail_frame(t: float) -> str:
     return TAIL_FRAMES[int(t * 4) % len(TAIL_FRAMES)]
+
+
+def tail_flick_frame(t: float) -> str:
+    return TAIL_FLICK_FRAMES[int(t * 8) % len(TAIL_FLICK_FRAMES)]
 
 
 # ---------------------------------------------------------------------------
@@ -143,8 +153,13 @@ _MOOD_AURA = {
     "leveling":  AURA_HYPE,
 }
 
-# Moods where the tail visibly wags. Sleepy/panic are still.
+# Moods where the tail does a relaxed wag.
 _MOOD_TAIL_WAGS = {"chill", "working", "hype", "refreshed", "studying", "leveling"}
+
+# Moods where the tail flicks instead of waving — keeps the pet visibly
+# alive in 30-70% range (nervous) without misleading the user about its
+# emotional state.
+_MOOD_TAIL_FLICKS = {"nervous"}
 
 
 # ---------------------------------------------------------------------------
@@ -178,8 +193,13 @@ def compose_face(
 
     body = f"{left_ear}{eye}ᗢ"
 
-    # Tail wag — only for moods where motion is appropriate.
-    tail = tail_frame(t) if mood in _MOOD_TAIL_WAGS else ""
+    # Tail — relaxed wag, jittery flick, or none.
+    if mood in _MOOD_TAIL_WAGS:
+        tail = tail_frame(t)
+    elif mood in _MOOD_TAIL_FLICKS:
+        tail = tail_flick_frame(t)
+    else:
+        tail = ""
 
     # Breath — insert a single-space "exhale" between body and tail every
     # ~700ms. Subtle but ever-present.
