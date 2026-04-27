@@ -42,7 +42,7 @@ def _severity_color(theme: Theme, pct: Optional[float],
 # ---------------------------------------------------------------------------
 def render_capsule(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", bypass=False,
+    lang_body="", cost_text="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
@@ -87,6 +87,9 @@ def render_capsule(
 
     parts.append(pill(theme.pill_model, f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}"))
 
+    if cost_text:
+        parts.append(pill(theme.pill_lang, f"$ {cost_text}"))
+
     if lang_body:
         parts.append(pill(theme.pill_lang, f"📚 {lang_body}"))
 
@@ -105,7 +108,7 @@ def render_capsule(
 # ---------------------------------------------------------------------------
 def render_hairline(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", bypass=False,
+    lang_body="", cost_text="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
@@ -148,6 +151,9 @@ def render_hairline(
         )
     parts.append(f"{MUTE}›{RESET} {INK}{model}{RESET}")
 
+    if cost_text:
+        parts.append(f"{MUTE}$ {INK}{cost_text}{RESET}")
+
     if lang_body:
         parts.append(f"{MUTE}{lang_body}{RESET}")
 
@@ -165,7 +171,7 @@ def render_hairline(
 # ---------------------------------------------------------------------------
 def render_classic(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", bypass=False,
+    lang_body="", cost_text="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     countdown_emoji: str = "",
@@ -184,6 +190,7 @@ def render_classic(
         warning_threshold=warning_threshold,
         critical_threshold=critical_threshold,
         lang_text=lang_text,
+        cost_text=cost_text,
     )
 
 

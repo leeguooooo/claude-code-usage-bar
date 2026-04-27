@@ -280,6 +280,7 @@ def format_status_line(
     warning_threshold: Optional[float] = None,
     critical_threshold: Optional[float] = None,
     lang_text: str = "",
+    cost_text: str = "",
 ) -> str:
     """Build the complete status bar string.
 
@@ -323,6 +324,8 @@ def format_status_line(
         dim_7d += colorize(f"⏰{reset_time_7d}", overall_color, use_color)
     parts.append(dim_7d)
     parts.append(colorize(model, overall_color, use_color))
+    if cost_text:
+        parts.append(colorize(f"$ {cost_text}", overall_color, use_color))
     if lang_text:
         parts.append(lang_text)
     if bypass:

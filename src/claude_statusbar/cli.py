@@ -56,7 +56,22 @@ def _run_config_subcommand(rest):
             return 2
         return 0
 
-    print(f"unknown config action: {action} (try: show / set / get)", file=sys.stderr)
+    if action == "reset":
+        # Delete the config file → load_config() falls back to defaults.
+        # Idempotent: missing file is success.
+        try:
+            cfg_mod.CONFIG_PATH.unlink()
+            print(f"removed {cfg_mod.CONFIG_PATH}")
+        except FileNotFoundError:
+            print(f"already at defaults (no {cfg_mod.CONFIG_PATH})")
+        except OSError as e:
+            print(f"error: could not remove {cfg_mod.CONFIG_PATH}: {e}",
+                  file=sys.stderr)
+            return 2
+        return 0
+
+    print(f"unknown config action: {action} (try: show / set / get / reset)",
+          file=sys.stderr)
     return 2
 
 
@@ -84,7 +99,7 @@ def _run_styles_subcommand():
 def main():
     """Main CLI entry point"""
     # Subcommands hijack argv before argparse so they coexist with flags.
-    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands"):
+    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands", "doctor"):
         sub = sys.argv[1]
         rest = sys.argv[2:]
         if sub == "config":
@@ -104,6 +119,9 @@ def main():
                 or not sys.stdout.isatty()
             )
             return run_preview(use_color=not no_color)
+        if sub == "doctor":
+            from .doctor import run as run_doctor
+            return run_doctor()
         if sub == "install-commands":
             from .setup import install_commands, COMMANDS_DIR
             force = "--force" in rest

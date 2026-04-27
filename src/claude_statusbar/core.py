@@ -872,6 +872,13 @@ def main(json_output: bool = False,
         str(Path.home() / ".claude" / "language-progress.json"),
     ) if cfg.show_language else ""
 
+    # Optional session cost segment.
+    cost_text = ""
+    if cfg.show_cost:
+        sc = stdin_data.get("session_cost_usd")
+        if isinstance(sc, (int, float)) and sc >= 0:
+            cost_text = f"{sc:.2f}"
+
     try:
         if not json_output:
             check_for_updates(stdin_data.get('session_id', ''))
@@ -951,7 +958,7 @@ def main(json_output: bool = False,
                     chosen_style,
                     msgs_pct=msgs_pct, weekly_pct=weekly_pct,
                     reset_5h=reset_time, reset_7d=reset_time_7d,
-                    model=model, lang_body=lang_body,
+                    model=model, lang_body=lang_body, cost_text=cost_text,
                     bypass=bypass,
                     use_color=use_color, theme=chosen_theme,
                     warning_threshold=warning_threshold,
@@ -987,7 +994,7 @@ def main(json_output: bool = False,
                         chosen_style,
                         msgs_pct=None, weekly_pct=None,
                         reset_5h="--", reset_7d="",
-                        model=model, lang_body=lang_body,
+                        model=model, lang_body=lang_body, cost_text=cost_text,
                         bypass=bypass,
                         use_color=use_color, theme=chosen_theme,
                         warning_threshold=warning_threshold,
@@ -1017,7 +1024,7 @@ def main(json_output: bool = False,
                 chosen_style,
                 msgs_pct=None, weekly_pct=None,
                 reset_5h=reset_time, reset_7d="",
-                model=display_name, lang_body=lang_body,
+                model=display_name, lang_body=lang_body, cost_text=cost_text,
                 bypass=bypass,
                 use_color=use_color, theme=chosen_theme,
                 warning_threshold=warning_threshold,
