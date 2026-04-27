@@ -131,3 +131,21 @@ def test_compose_face_blink_hides_eyes():
             assert "-" in face, f"blink should close eyes, got {face!r}"
             return
     pytest.skip("no blink hit in sample window")
+
+
+# ---------------------------------------------------------------------------
+# Perf budget — the animation engine sits in the statusLine hot path; if a
+# regression slows it past a few microseconds per call, every keystroke the
+# user types pays the cost. We keep a generous 50 µs ceiling.
+# ---------------------------------------------------------------------------
+def test_compose_face_microbench_under_budget():
+    import time as _time
+    iters = 5000
+    t0 = _time.perf_counter()
+    for i in range(iters):
+        anim.compose_face("chill", t0 + i * 0.05, "sess")
+    elapsed_us_per_call = (_time.perf_counter() - t0) / iters * 1e6
+    assert elapsed_us_per_call < 50, (
+        f"compose_face is now {elapsed_us_per_call:.1f} µs/call — "
+        f"animation hot path is slow"
+    )

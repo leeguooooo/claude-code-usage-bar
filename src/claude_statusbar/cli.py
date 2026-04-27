@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""CLI entry point for claude-statusbar"""
+"""CLI entry point for claude-statusbar.
+
+Heavy imports (.core, .styles, .themes) are deferred into the branches
+that actually need them, so `cs config show` and the other lightweight
+subcommands don't pay the ~13ms render-path import tax.
+"""
 
 import sys
 import os
 import argparse
-from . import __version__
-from .core import main as statusbar_main
-from .progress import normalize_thresholds
-from .styles import list_styles
-from .themes import list_themes
 
 
 def _run_config_subcommand(rest):
@@ -62,6 +62,7 @@ def _run_config_subcommand(rest):
 
 
 def _run_themes_subcommand():
+    from .themes import list_themes
     print("Available themes:")
     for t in list_themes():
         print(f"  {t.name:<10}  {t.description}")
@@ -69,6 +70,7 @@ def _run_themes_subcommand():
 
 
 def _run_styles_subcommand():
+    from .styles import list_styles
     descriptions = {
         "classic":  "原始样式（带 [bar] 与 | 分隔）",
         "capsule":  "胶囊样式 — 带底色的药丸，地铁标识感",
@@ -139,8 +141,11 @@ Integration:
         """,
     )
 
+    # Deferred: only resolve __version__ when --version is actually parsed
+    # (still cheap compared to having it at module import).
+    from . import __version__ as _ver
     parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
+        "--version", action="version", version=f"%(prog)s {_ver}"
     )
 
     parser.add_argument(
@@ -206,16 +211,20 @@ Integration:
         type=float,
         help="Usage percentage that switches from yellow to red (default: 70)",
     )
+    # Defer the imports for choices generation so subcommands that don't
+    # touch argparse (config / themes / styles / preview) skip them entirely.
+    from .styles import list_styles as _list_styles
+    from .themes import list_themes as _list_themes
     parser.add_argument(
         "--style",
         type=str,
-        choices=list_styles(),
+        choices=_list_styles(),
         help="Override status-line style for this run (persist with `cs config set style`)",
     )
     parser.add_argument(
         "--theme",
         type=str,
-        choices=[t.name for t in list_themes()],
+        choices=[t.name for t in _list_themes()],
         help="Override color theme for this run (persist with `cs config set theme`)",
     )
 
@@ -288,6 +297,7 @@ Integration:
     # Run the status bar
     use_color = not (args.no_color or no_color_env)
     show_pet = not (args.hide_pet or env_bool("CLAUDE_STATUSBAR_HIDE_PET"))
+    from .progress import normalize_thresholds  # heavy: pulls in all of progress
     try:
         warning_threshold, critical_threshold = normalize_thresholds(
             args.warning_threshold
@@ -303,6 +313,9 @@ Integration:
 
     try:
         pet_name = args.pet_name or os.environ.get("CLAUDE_PET_NAME")
+        # Pull in the heavy render path only now (after we've definitely
+        # decided to render — subcommands have already returned by here).
+        from .core import main as statusbar_main
         statusbar_main(
             json_output=json_output,
             reset_hour=reset_hour,

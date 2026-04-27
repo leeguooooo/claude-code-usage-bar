@@ -9,7 +9,7 @@ def test_cli_passes_hide_pet_effort_and_thresholds(monkeypatch):
     def fake_statusbar_main(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(cli, "statusbar_main", fake_statusbar_main)
+    import claude_statusbar.core as _core; monkeypatch.setattr(_core, "main", fake_statusbar_main)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -35,7 +35,7 @@ def test_cli_uses_env_fallbacks(monkeypatch):
     def fake_statusbar_main(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(cli, "statusbar_main", fake_statusbar_main)
+    import claude_statusbar.core as _core; monkeypatch.setattr(_core, "main", fake_statusbar_main)
     monkeypatch.setenv("CLAUDE_STATUSBAR_HIDE_PET", "1")
     monkeypatch.setenv("CLAUDE_STATUSBAR_WARNING_THRESHOLD", "35")
     monkeypatch.setenv("CLAUDE_STATUSBAR_CRITICAL_THRESHOLD", "75")
@@ -54,7 +54,7 @@ def test_cli_rejects_invalid_thresholds(monkeypatch, capsys):
         nonlocal called
         called = True
 
-    monkeypatch.setattr(cli, "statusbar_main", fake_statusbar_main)
+    import claude_statusbar.core as _core; monkeypatch.setattr(_core, "main", fake_statusbar_main)
     monkeypatch.setattr(
         sys, "argv", ["cs", "--warning-threshold", "90", "--critical-threshold", "60"]
     )
@@ -73,7 +73,7 @@ def test_no_color_env_var_with_any_value(monkeypatch):
     def fake_statusbar_main(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(cli, "statusbar_main", fake_statusbar_main)
+    import claude_statusbar.core as _core; monkeypatch.setattr(_core, "main", fake_statusbar_main)
     monkeypatch.setattr(sys, "argv", ["cs"])
 
     for val in ("", "0", "false", "1", "anything"):
@@ -91,8 +91,28 @@ def test_no_color_unset_keeps_color(monkeypatch):
     def fake_statusbar_main(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(cli, "statusbar_main", fake_statusbar_main)
+    import claude_statusbar.core as _core; monkeypatch.setattr(_core, "main", fake_statusbar_main)
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setattr(sys, "argv", ["cs"])
     cli.main()
     assert captured["use_color"] is True
+
+
+def test_subcommand_skips_heavy_imports(monkeypatch):
+    """`cs config show` and friends must not pull in core/styles/themes
+    at module import time. Regression test for the lazy-import refactor —
+    if someone re-adds `from .core import main` at the top of cli.py, this
+    test catches it."""
+    import importlib, sys as _sys
+
+    # Wipe any cached state
+    for mod in list(_sys.modules):
+        if mod.startswith("claude_statusbar"):
+            del _sys.modules[mod]
+
+    # Just importing the cli module must not pull core/themes/styles.
+    importlib.import_module("claude_statusbar.cli")
+    forbidden = {"claude_statusbar.core", "claude_statusbar.themes",
+                 "claude_statusbar.styles", "claude_statusbar.progress"}
+    leaked = forbidden & set(_sys.modules)
+    assert not leaked, f"cli.py imports leaked at module load: {leaked}"
