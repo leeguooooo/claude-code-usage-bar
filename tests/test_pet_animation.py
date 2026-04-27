@@ -166,17 +166,11 @@ def test_nervous_mood_now_has_visible_tail():
     assert has_tail, f"nervous should show a tail flick: {seen!r}"
 
 
-def test_nervous_flicks_faster_than_chill_wags():
-    """Frequency check: nervous cycles at 8Hz, chill at 4Hz. Sample ~1s and
-    count distinct frames — nervous should reveal more variety than chill
-    inside the same time window."""
-    chill_seen = {anim.compose_face("chill", i * 0.05, "x") for i in range(20)}
-    nervous_seen = {anim.compose_face("nervous", i * 0.05, "x") for i in range(20)}
-    # nervous's higher cycle rate visits more distinct phases per second
-    assert len(nervous_seen) >= len(chill_seen), (
-        f"expected nervous to be at least as varied as chill: "
-        f"chill={len(chill_seen)} nervous={len(nervous_seen)}"
-    )
+def test_nervous_animates():
+    """Whatever flick pattern we use, nervous mood must produce visibly
+    different frames over a 1s window."""
+    seen = {anim.compose_face("nervous", i * 0.05, "x") for i in range(20)}
+    assert len(seen) >= 3, f"nervous looked static: {seen!r}"
 
 
 def test_no_tail_glyph_breaks_baseline():

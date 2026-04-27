@@ -51,17 +51,24 @@ def _det_unit(seed: str) -> float:
 # ---------------------------------------------------------------------------
 # TRACK: tail — multiple wag styles
 # ---------------------------------------------------------------------------
-# Glyph picking rule: every tail char MUST sit on the midline so it visually
-# joins ᓚ's baseline. Floor-anchored chars (_ ,) and ascender-anchored chars
-# (˒ ⌐) leave a visible gap and the tail reads as "floating debris" rather
-# than "attached to the cat".
+# Glyph rule:
+#   - Anything from TOP of cell to MIDDLE is OK. Reads as the tail held up
+#     over the cat's back, or extending straight back.
+#   - Floor-anchored chars (_ , .) are NOT OK. They read as "dropped on
+#     floor" — anatomically nonsensical for a tail in profile, and the
+#     visible gap next to ᓚ (which fills the whole cell) makes it look
+#     like floating debris.
+#
+# Visual motion: an all-midline set looked technically correct but
+# IDENTICAL in most monospace fonts (~ ≈ ∼ render almost the same).
+# Mixing in a top-of-cell glyph (⌒) creates real vertical bob the eye
+# actually catches.
 #
 # Smooth happy wag — 4 frames at 250ms (4Hz). chill / working / hype.
-TAIL_FRAMES = ("~", "∽", "≈", "∼")
+TAIL_FRAMES = ("⌒", "~", "∽", "~")
 
-# Short jittery flick — nervous moods. 4 frames at 8Hz, all midline tilde
-# variants for fast back-and-forth motion that still reads as a tail.
-TAIL_FLICK_FRAMES = ("~", "≈", "∼", "≈")
+# Short jittery flick — nervous moods. Fast up-down jab at 8Hz.
+TAIL_FLICK_FRAMES = ("⌒", "~", "⌒", "~")
 
 
 def tail_frame(t: float) -> str:
