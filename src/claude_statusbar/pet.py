@@ -172,19 +172,25 @@ def _get_mood(pct: float, hour: int, minutes_to_reset: Optional[int] = None,
 
 
 def _get_frame_tick() -> int:
-    """Get a frame index based on current time (changes every ~3 seconds)."""
+    """Get a frame index based on current time (changes every ~3 seconds).
+    Kept for backward compatibility with anything that imports it; the
+    multi-track animation engine in pet_animation no longer relies on it.
+    """
     return int(time.time() / 3) % 3
 
 
-def get_pet_face(mood: str) -> str:
-    """Get the cat face for current mood with blink animation."""
-    if mood in CAT_FACES_EXTRA:
-        frames = CAT_FACES_EXTRA[mood]
-    else:
-        face_key = mood if mood in CAT_FACES else "chill"
-        frames = CAT_FACES[face_key]
-    tick = _get_frame_tick()
-    return frames[tick % len(frames)]
+def get_pet_face(mood: str, session_id: str = "") -> str:
+    """Get the cat face for the current mood.
+
+    Delegates to the multi-track time-driven animation engine in
+    pet_animation.compose_face. Each call is one frame: tail position,
+    aura particle, blink/ear-twitch state, breath phase — all functions
+    of `time.time()` with independent periods. Two consecutive renders
+    even ~50ms apart will look different, which is what makes the pet
+    appear continuously alive whenever the user is active.
+    """
+    from . import pet_animation
+    return pet_animation.compose_face(mood, time.time(), session_id=session_id)
 
 
 def get_pet_status(mood: str, session_id: str = "", reminders: Optional[list[str]] = None) -> str:
@@ -255,7 +261,7 @@ def format_pet(
         if coaching:
             mood = coaching
 
-    face = get_pet_face(mood)
+    face = get_pet_face(mood, session_id=session_id)
     status = get_pet_status(mood, session_id, reminders=reminders)
     return f"{face} {name}:{status}"
 
