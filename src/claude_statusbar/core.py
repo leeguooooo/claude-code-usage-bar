@@ -739,13 +739,26 @@ print("")
     
     return f"{hours}h {mins:02d}m"
 
+# Auto-update is rate-limited to once per machine per day. We use the mtime
+# of `last_update_check` as the timestamp — touching it before the slow
+# urlopen+pip work means N concurrent new sessions only fire ONE check
+# (the first one to win the touch race; the rest see a fresh mtime and skip).
+_UPDATE_CHECK_INTERVAL_S = 24 * 3600
+
+
 def check_for_updates(session_id: str = ''):
-    """Check for updates once per new session.
+    """Check for updates at most once per machine per 24 hours.
 
     Disabled by setting env CLAUDE_STATUSBAR_NO_UPDATE=1 or
     passing --no-auto-update on the CLI.
+
+    Concurrency notes
+    -----------------
+    Previously this was gated by session_id, so opening 5 new Claude Code
+    windows simultaneously would fire 5 parallel pip installs. The timestamp
+    gate fixes that: whichever cs gets to update the timestamp first wins;
+    everyone else sees a fresh marker and bails before running urlopen / pip.
     """
-    # Respect opt-out
     env_val = os.environ.get('CLAUDE_STATUSBAR_NO_UPDATE', '').lower()
     if env_val in ('1', 'true', 'yes'):
         return
@@ -753,29 +766,27 @@ def check_for_updates(session_id: str = ''):
     try:
         cache_dir = Path.home() / '.cache' / 'claude-statusbar'
         cache_dir.mkdir(parents=True, exist_ok=True)
-        last_session_file = cache_dir / 'last_update_session'
+        marker = cache_dir / 'last_update_check'
 
-        # Only check when session changes
-        should_check = True
-        if session_id and last_session_file.exists():
+        # Skip if last check was within the interval.
+        if marker.exists():
             try:
-                last_session = last_session_file.read_text().strip()
-                if last_session == session_id:
-                    should_check = False
+                age = _time_now() - marker.stat().st_mtime
+                if age < _UPDATE_CHECK_INTERVAL_S:
+                    return
             except OSError:
                 pass
 
-        if not should_check:
-            return
-
-        # Mark this session as checked BEFORE running the (potentially slow)
-        # upgrade. If the upgrade hangs, the next render won't re-trigger it
-        # and the user gets a working status bar instead of a frozen one.
-        if session_id:
-            try:
-                last_session_file.write_text(session_id)
-            except OSError:
-                pass
+        # Touch the marker BEFORE the slow operation. Two consequences:
+        #   1. A hung urlopen/pip can't trap us in a re-trigger loop on
+        #      next render — the marker is already fresh.
+        #   2. Concurrent sessions that arrive a few ms later see the
+        #      fresh mtime and skip. (Race window is tiny but exists; if
+        #      it matters we'd switch to fcntl.flock.)
+        try:
+            marker.touch()
+        except OSError:
+            return  # if we can't even touch the marker, don't try the upgrade
 
         from .updater import check_and_upgrade
         success, message = check_and_upgrade()
@@ -786,6 +797,12 @@ def check_for_updates(session_id: str = ''):
     except Exception:
         # Silently fail - don't interrupt main functionality
         pass
+
+
+def _time_now() -> float:
+    """Indirection so tests can monkeypatch."""
+    import time as _t
+    return _t.time()
 
 def build_json_output(usage_data: Dict[str, Any], reset_time: str, model: str, display_name: str) -> Dict[str, Any]:
     """Create machine-readable payload."""
