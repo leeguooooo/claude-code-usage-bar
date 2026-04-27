@@ -482,6 +482,7 @@ def parse_stdin_data() -> Dict[str, Any]:
         # - Clamp negatives to 0 (defensive — should never happen in practice)
         # - Don't cap at 100; values >100% are valid for over-quota indicators
         import math
+        import time as _time
         def _pct(v):
             try:
                 f = float(v)
@@ -490,15 +491,46 @@ def parse_stdin_data() -> Dict[str, Any]:
             if math.isnan(f) or math.isinf(f):
                 return 0
             return max(0, int(round(f)))
+
+        # Time-based window rollover.
+        # Anthropic only pushes fresh rate_limits when the user actually
+        # makes a request. Between requests, both the value we receive and
+        # any cached value can describe a window that has already expired.
+        # Showing "99%" hours after the window reset is misleading.
+        #
+        # If resets_at is in the past, the old window has clearly rolled
+        # over (possibly multiple times). The new window's pct is 0 and
+        # its resets_at = old + N × window_length.
+        FIVE_HOUR_S  = 5 * 3600
+        SEVEN_DAY_S  = 7 * 86400
+
+        def _rollover(pct, resets_at, window_s):
+            try:
+                resets_at_f = float(resets_at) if resets_at is not None else None
+            except (TypeError, ValueError):
+                return pct, resets_at
+            if resets_at_f is None:
+                return pct, resets_at
+            now = _time.time()
+            if resets_at_f > now:
+                return pct, resets_at  # current window still active
+            # Advance through however many windows have elapsed.
+            elapsed = now - resets_at_f
+            windows_passed = int(elapsed // window_s) + 1
+            return 0, int(resets_at_f + windows_passed * window_s)
         rl = data.get('rate_limits', {})
         fh = rl.get('five_hour', {})
         if fh:
-            result['rate_limit_pct'] = _pct(fh.get('used_percentage', 0))
-            result['rate_limit_resets_at'] = fh.get('resets_at')
+            p, ra = _rollover(_pct(fh.get('used_percentage', 0)),
+                               fh.get('resets_at'), FIVE_HOUR_S)
+            result['rate_limit_pct'] = p
+            result['rate_limit_resets_at'] = ra
         sd = rl.get('seven_day', {})
         if sd:
-            result['rate_limit_7d_pct'] = _pct(sd.get('used_percentage', 0))
-            result['rate_limit_7d_resets_at'] = sd.get('resets_at')
+            p, ra = _rollover(_pct(sd.get('used_percentage', 0)),
+                               sd.get('resets_at'), SEVEN_DAY_S)
+            result['rate_limit_7d_pct'] = p
+            result['rate_limit_7d_resets_at'] = ra
 
         # Fallback: load rate_limits from previous session's cached stdin
         if not fh and not sd:
@@ -508,11 +540,15 @@ def parse_stdin_data() -> Dict[str, Any]:
                 cached_fh = cached_rl.get('five_hour', {})
                 cached_sd = cached_rl.get('seven_day', {})
                 if cached_fh:
-                    result['rate_limit_pct'] = _pct(cached_fh.get('used_percentage', 0))
-                    result['rate_limit_resets_at'] = cached_fh.get('resets_at')
+                    p, ra = _rollover(_pct(cached_fh.get('used_percentage', 0)),
+                                       cached_fh.get('resets_at'), FIVE_HOUR_S)
+                    result['rate_limit_pct'] = p
+                    result['rate_limit_resets_at'] = ra
                 if cached_sd:
-                    result['rate_limit_7d_pct'] = _pct(cached_sd.get('used_percentage', 0))
-                    result['rate_limit_7d_resets_at'] = cached_sd.get('resets_at')
+                    p, ra = _rollover(_pct(cached_sd.get('used_percentage', 0)),
+                                       cached_sd.get('resets_at'), SEVEN_DAY_S)
+                    result['rate_limit_7d_pct'] = p
+                    result['rate_limit_7d_resets_at'] = ra
             except (OSError, json.JSONDecodeError, TypeError):
                 pass
 

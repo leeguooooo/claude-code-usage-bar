@@ -27,8 +27,8 @@ def isolated_cache(monkeypatch, tmp_path):
 def test_pct_clamps_negative(monkeypatch, isolated_cache):
     _stdin_with({
         "rate_limits": {
-            "five_hour": {"used_percentage": -5, "resets_at": 0},
-            "seven_day": {"used_percentage": -1, "resets_at": 0},
+            "five_hour": {"used_percentage": -5, "resets_at": 9999999999},
+            "seven_day": {"used_percentage": -1, "resets_at": 9999999999},
         },
     }, monkeypatch)
     out = core.parse_stdin_data()
@@ -39,7 +39,7 @@ def test_pct_clamps_negative(monkeypatch, isolated_cache):
 def test_pct_rejects_nan(monkeypatch, isolated_cache):
     _stdin_with({
         "rate_limits": {
-            "five_hour": {"used_percentage": float("nan"), "resets_at": 0},
+            "five_hour": {"used_percentage": float("nan"), "resets_at": 9999999999},
         },
     }, monkeypatch)
     out = core.parse_stdin_data()
@@ -49,7 +49,7 @@ def test_pct_rejects_nan(monkeypatch, isolated_cache):
 def test_pct_rejects_inf(monkeypatch, isolated_cache):
     _stdin_with({
         "rate_limits": {
-            "five_hour": {"used_percentage": float("inf"), "resets_at": 0},
+            "five_hour": {"used_percentage": float("inf"), "resets_at": 9999999999},
         },
     }, monkeypatch)
     out = core.parse_stdin_data()
@@ -60,7 +60,7 @@ def test_pct_preserves_over_100(monkeypatch, isolated_cache):
     """Values >100 are legitimate (over-quota indicator) and must NOT be capped."""
     _stdin_with({
         "rate_limits": {
-            "five_hour": {"used_percentage": 110, "resets_at": 0},
+            "five_hour": {"used_percentage": 110, "resets_at": 9999999999},
         },
     }, monkeypatch)
     out = core.parse_stdin_data()
@@ -71,7 +71,7 @@ def test_pct_rounds_floating_point_drift(monkeypatch, isolated_cache):
     """Anthropic occasionally returns 56.00000000000001."""
     _stdin_with({
         "rate_limits": {
-            "five_hour": {"used_percentage": 56.00000000000001, "resets_at": 0},
+            "five_hour": {"used_percentage": 56.00000000000001, "resets_at": 9999999999},
         },
     }, monkeypatch)
     out = core.parse_stdin_data()
@@ -121,3 +121,89 @@ def test_has_stdin_unset_when_stdin_empty(monkeypatch, isolated_cache):
 
     out = core.parse_stdin_data()
     assert out.get("_has_stdin") is None
+
+
+# ---------------------------------------------------------------------------
+# Time-based window rollover.
+# Anthropic only pushes fresh rate_limits when a request actually fires.
+# Between requests, the value we have can describe an already-expired
+# window. Showing "99%" hours after the reset is misleading; once
+# resets_at < now() we MUST roll over to 0% in the new window.
+# ---------------------------------------------------------------------------
+import time as _time
+
+
+def test_5h_window_rollover_when_resets_at_in_past(monkeypatch, isolated_cache):
+    """Anthropic sent 99% with resets_at = 1h ago. We must show 0%, with
+    resets_at advanced into the future."""
+    now = _time.time()
+    expired_resets_at = int(now - 3600)  # 1 hour ago
+    _stdin_with({
+        "rate_limits": {
+            "five_hour": {"used_percentage": 99, "resets_at": expired_resets_at},
+        },
+    }, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out["rate_limit_pct"] == 0, "stale 99% leaked into a new window"
+    assert out["rate_limit_resets_at"] > now, "resets_at must be in the future"
+
+
+def test_7d_window_rollover_when_resets_at_in_past(monkeypatch, isolated_cache):
+    now = _time.time()
+    expired = int(now - 86400 * 2)  # 2 days ago
+    _stdin_with({
+        "rate_limits": {
+            "seven_day": {"used_percentage": 88, "resets_at": expired},
+        },
+    }, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out["rate_limit_7d_pct"] == 0
+    assert out["rate_limit_7d_resets_at"] > now
+
+
+def test_rollover_advances_through_multiple_expired_windows(monkeypatch, isolated_cache):
+    """If user was offline for 2 weeks, the 7d window has rolled over twice.
+    resets_at should land in the FUTURE, not 1 day ago."""
+    now = _time.time()
+    very_old = int(now - 86400 * 14)  # 14 days ago
+    _stdin_with({
+        "rate_limits": {
+            "seven_day": {"used_percentage": 100, "resets_at": very_old},
+        },
+    }, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out["rate_limit_7d_resets_at"] > now
+
+
+def test_no_rollover_when_window_still_active(monkeypatch, isolated_cache):
+    """resets_at in the future → leave pct alone."""
+    now = _time.time()
+    future = int(now + 3600)  # 1 hour from now
+    _stdin_with({
+        "rate_limits": {
+            "five_hour": {"used_percentage": 47, "resets_at": future},
+        },
+    }, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out["rate_limit_pct"] == 47
+    assert out["rate_limit_resets_at"] == future
+
+
+def test_cached_stdin_is_also_rolled_over(monkeypatch, isolated_cache, tmp_path):
+    """When current stdin lacks rate_limits, we read from
+    last_stdin.json. That cached value's resets_at can also be expired —
+    rollover must apply there too."""
+    # Pre-populate cache with stale data
+    cache_dir = tmp_path / ".cache" / "claude-statusbar"
+    cache_dir.mkdir(parents=True)
+    expired = int(_time.time() - 3600)
+    cache_dir.joinpath("last_stdin.json").write_text(json.dumps({
+        "rate_limits": {
+            "five_hour": {"used_percentage": 99, "resets_at": expired},
+        },
+    }), encoding="utf-8")
+
+    # Current stdin has NO rate_limits
+    _stdin_with({"session_id": "abc"}, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out.get("rate_limit_pct") == 0, "rolled-over cache fallback failed"
