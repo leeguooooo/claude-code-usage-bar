@@ -26,7 +26,7 @@ DATA = dict(
     msgs_pct=58, weekly_pct=24,
     reset_5h="2h47m", reset_7d="3d12h",
     model="Opus 4.7(45.0k/1.0M)",
-    lang_text="", pet_text="",
+    lang_body="",
     bypass=False, use_color=True,
     warning_threshold=30.0, critical_threshold=70.0,
 )

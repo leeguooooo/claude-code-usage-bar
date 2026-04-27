@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 from typing import Optional
-from claude_statusbar import __version__
 
 FILL = "█"
 EMPTY = "░"
