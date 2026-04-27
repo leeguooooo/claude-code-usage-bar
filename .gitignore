@@ -43,3 +43,6 @@ setup_*.py
 
 # Claude specific
 .claude/
+
+# Agent runtime state
+.omx/
