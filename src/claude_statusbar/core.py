@@ -838,13 +838,12 @@ def format_number(num: float) -> str:
 
 def main(json_output: bool = False,
          reset_hour: Optional[int] = None, use_color: bool = True,
-         detail: bool = False, pet_name: Optional[str] = None,
-         show_pet: bool = True,
+         detail: bool = False,
          warning_threshold: float = 30.0, critical_threshold: float = 70.0,
          style_override: Optional[str] = None,
          theme_override: Optional[str] = None):
     """Main function"""
-    from .pet import format_pet, get_countdown_emoji
+    from .progress import get_countdown_emoji
     from .setup import ensure_statusline_configured
     from . import config as _cfg
     from .styles import render as _render_style
@@ -868,10 +867,6 @@ def main(json_output: bool = False,
                 chosen_style = "hairline"
         except OSError:
             pass
-
-    # Honor show_pet from config (CLI --hide-pet still overrides)
-    if not cfg.show_pet:
-        show_pet = False
 
     stdin_data = parse_stdin_data()
     lang_body = format_language_body(
@@ -951,18 +946,6 @@ def main(json_output: bool = False,
                     model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
                     model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
-                session_id = stdin_data.get('session_id', '')
-                current_hour = datetime.now().hour
-                pet_text = ""
-                if show_pet:
-                    pet_pct = msgs_pct if msgs_pct is not None else 0
-                    pet_text = format_pet(
-                        pet_pct, current_hour, session_id, minutes_to_reset, pet_name,
-                        progress_path=str(Path.home() / ".claude" / "language-progress.json"),
-                        coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
-                        warning_threshold=warning_threshold,
-                        critical_threshold=critical_threshold,
-                    )
                 countdown = get_countdown_emoji(minutes_to_reset)
 
                 print(_render_style(
@@ -970,7 +953,7 @@ def main(json_output: bool = False,
                     msgs_pct=msgs_pct, weekly_pct=weekly_pct,
                     reset_5h=reset_time, reset_7d=reset_time_7d,
                     model=model, lang_body=lang_body,
-                    pet_body=pet_text, bypass=bypass,
+                    bypass=bypass,
                     use_color=use_color, theme=chosen_theme,
                     warning_threshold=warning_threshold,
                     critical_threshold=critical_threshold,
@@ -1001,23 +984,12 @@ def main(json_output: bool = False,
                                  "claude_version": version, "bypass": bypass},
                     }))
                 else:
-                    session_id = stdin_data.get('session_id', '')
-                    current_hour = datetime.now().hour
-                    pet_text = ""
-                    if show_pet:
-                        pet_text = format_pet(
-                            0, current_hour, session_id, None, pet_name,
-                            progress_path=str(Path.home() / ".claude" / "language-progress.json"),
-                            coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
-                            warning_threshold=warning_threshold,
-                            critical_threshold=critical_threshold,
-                        )
                     print(_render_style(
                         chosen_style,
                         msgs_pct=None, weekly_pct=None,
                         reset_5h="--", reset_7d="",
                         model=model, lang_body=lang_body,
-                        pet_body=pet_text, bypass=bypass,
+                        bypass=bypass,
                         use_color=use_color, theme=chosen_theme,
                         warning_threshold=warning_threshold,
                         critical_threshold=critical_threshold,
@@ -1042,22 +1014,12 @@ def main(json_output: bool = False,
         if json_output:
             print(json.dumps({"success": False, "error": str(e)}))
         else:
-            current_hour = datetime.now().hour
-            pet_text = ""
-            if show_pet:
-                pet_text = format_pet(
-                    0, current_hour, '', None, pet_name,
-                    progress_path=str(Path.home() / ".claude" / "language-progress.json"),
-                    coach_config_path=str(Path.home() / ".claude" / "language-coach.json"),
-                    warning_threshold=warning_threshold,
-                    critical_threshold=critical_threshold,
-                )
             print(_render_style(
                 chosen_style,
                 msgs_pct=None, weekly_pct=None,
                 reset_5h=reset_time, reset_7d="",
                 model=display_name, lang_body=lang_body,
-                pet_body=pet_text, bypass=bypass,
+                bypass=bypass,
                 use_color=use_color, theme=chosen_theme,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,

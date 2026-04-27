@@ -3,7 +3,7 @@ import sys
 import claude_statusbar.cli as cli
 
 
-def test_cli_passes_hide_pet_effort_and_thresholds(monkeypatch):
+def test_cli_passes_thresholds(monkeypatch):
     captured = {}
 
     def fake_statusbar_main(**kwargs):
@@ -15,7 +15,6 @@ def test_cli_passes_hide_pet_effort_and_thresholds(monkeypatch):
         "argv",
         [
             "cs",
-            "--hide-pet",
             "--warning-threshold",
             "40",
             "--critical-threshold",
@@ -24,7 +23,6 @@ def test_cli_passes_hide_pet_effort_and_thresholds(monkeypatch):
     )
 
     assert cli.main() == 0
-    assert captured["show_pet"] is False
     assert captured["warning_threshold"] == 40.0
     assert captured["critical_threshold"] == 85.0
 
@@ -36,13 +34,11 @@ def test_cli_uses_env_fallbacks(monkeypatch):
         captured.update(kwargs)
 
     import claude_statusbar.core as _core; monkeypatch.setattr(_core, "main", fake_statusbar_main)
-    monkeypatch.setenv("CLAUDE_STATUSBAR_HIDE_PET", "1")
     monkeypatch.setenv("CLAUDE_STATUSBAR_WARNING_THRESHOLD", "35")
     monkeypatch.setenv("CLAUDE_STATUSBAR_CRITICAL_THRESHOLD", "75")
     monkeypatch.setattr(sys, "argv", ["cs"])
 
     assert cli.main() == 0
-    assert captured["show_pet"] is False
     assert captured["warning_threshold"] == 35.0
     assert captured["critical_threshold"] == 75.0
 

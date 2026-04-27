@@ -27,7 +27,6 @@ class StatusbarConfig:
     theme: str = DEFAULT_THEME
     density: str = DEFAULT_DENSITY
     auto_compact_width: int = DEFAULT_AUTO_COMPACT_WIDTH
-    show_pet: bool = True
     show_weekly: bool = True
     show_language: bool = True
     warning_threshold: Optional[float] = None
@@ -54,7 +53,6 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
         theme=str(raw.get("theme", DEFAULT_THEME)),
         density=str(raw.get("density", DEFAULT_DENSITY)),
         auto_compact_width=int(raw.get("auto_compact_width", DEFAULT_AUTO_COMPACT_WIDTH) or 0),
-        show_pet=_to_bool(raw.get("show_pet", True)),
         show_weekly=_to_bool(raw.get("show_weekly", True)),
         show_language=_to_bool(raw.get("show_language", True)),
         warning_threshold=raw.get("warning_threshold"),
@@ -70,10 +68,10 @@ def save_config(cfg: StatusbarConfig, path: Path = CONFIG_PATH) -> None:
 
 VALID_KEYS = {
     "style", "theme", "density", "auto_compact_width",
-    "show_pet", "show_weekly", "show_language",
+    "show_weekly", "show_language",
     "warning_threshold", "critical_threshold",
 }
-_BOOL_KEYS = {"show_pet", "show_weekly", "show_language"}
+_BOOL_KEYS = {"show_weekly", "show_language"}
 _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}

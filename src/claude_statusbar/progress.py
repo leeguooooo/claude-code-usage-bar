@@ -251,6 +251,22 @@ def format_language_segment(progress_path: str, use_color: bool = True) -> str:
     return colorize(f"📚 {body}", GREEN, use_color)
 
 
+def get_countdown_emoji(minutes_to_reset: Optional[int]) -> str:
+    """Visual cue glued to the reset countdown:
+    party-popper at ≤1 min, sparkles at ≤10, lightning at ≤30, empty
+    otherwise. Lives on `progress.py` because it's a clock decoration,
+    not a pet mood."""
+    if minutes_to_reset is None:
+        return ""
+    if minutes_to_reset <= 1:
+        return " \U0001f389"  # 🎉
+    if minutes_to_reset <= 10:
+        return " ✨"      # ✨
+    if minutes_to_reset <= 30:
+        return " ⚡"      # ⚡
+    return ""
+
+
 def format_status_line(
     msgs_pct: Optional[float],
     tkns_pct: Optional[float],
@@ -261,7 +277,6 @@ def format_status_line(
     ctx_pct: Optional[float] = None,
     bypass: bool = False,
     use_color: bool = True,
-    pet_text: str = "",
     countdown_emoji: str = "",
     warning_threshold: Optional[float] = None,
     critical_threshold: Optional[float] = None,
@@ -313,9 +328,6 @@ def format_status_line(
         parts.append(lang_text)
     if bypass:
         parts.append(colorize("⚠️BYPASS", RED, use_color))
-
-    if pet_text:
-        parts.append(colorize(pet_text, overall_color, use_color))
 
     separator = colorize(" | ", overall_color, use_color)
     return separator.join(parts)

@@ -235,14 +235,12 @@ def test_format_status_line_with_lang_text():
         weekly_pct=30,
         use_color=False,
         lang_text="📚 EN:6.0↑",
-        pet_text="ᓚᘏᗢ",
     )
     assert "📚 EN:6.0↑" in line
-    # lang_text appears between model and pet
+    # lang_text appears after the model segment
     model_pos = line.index("Opus 4.6")
     lang_pos = line.index("📚")
-    pet_pos = line.index("ᓚᘏᗢ")
-    assert model_pos < lang_pos < pet_pos
+    assert model_pos < lang_pos
 
 
 def test_language_segment_capped_at_max_languages(monkeypatch, tmp_path):

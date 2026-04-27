@@ -106,7 +106,7 @@ def run(use_color: bool = True) -> int:
                 msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],
                 reset_5h=data["reset_5h"], reset_7d=data["reset_7d"],
                 model=data["model"],
-                lang_body="", pet_body="", bypass=False,
+                lang_body="", bypass=False,
                 use_color=use_color,
                 warning_threshold=30.0, critical_threshold=70.0,
             )
@@ -118,7 +118,7 @@ def run(use_color: bool = True) -> int:
                 msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],
                 reset_5h=data["reset_5h"], reset_7d=data["reset_7d"],
                 model=data["model"],
-                lang_body="", pet_body="", bypass=False,
+                lang_body="", bypass=False,
                 use_color=use_color,
                 warning_threshold=30.0, critical_threshold=70.0,
             )

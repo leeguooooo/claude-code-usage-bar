@@ -42,7 +42,7 @@ def _severity_color(theme: Theme, pct: Optional[float],
 # ---------------------------------------------------------------------------
 def render_capsule(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", pet_body="", bypass=False,
+    lang_body="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
@@ -95,16 +95,6 @@ def render_capsule(
     if bypass:
         line += f"  {_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}"
 
-    if pet_body:
-        # Pet color tracks 5h severity: hot when critical, warn when amber,
-        # mute when calm. So a "panic" pet actually reads as panicked.
-        pet_col = MUTE
-        if msgs_pct is not None:
-            sev = _severity_color(theme, msgs_pct, warning_threshold, critical_threshold)
-            if sev != theme.s_ok:  # only override on warn / hot
-                pet_col = _fg(sev)
-        line += f"  {pet_col}{pet_body}{RESET}"
-
     if not use_color:
         return _strip(line)
     return line
@@ -115,7 +105,7 @@ def render_capsule(
 # ---------------------------------------------------------------------------
 def render_hairline(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", pet_body="", bypass=False,
+    lang_body="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
@@ -164,14 +154,6 @@ def render_hairline(
     if bypass:
         parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
 
-    if pet_body:
-        pet_col = MUTE
-        if msgs_pct is not None:
-            sev = _severity_color(theme, msgs_pct, warning_threshold, critical_threshold)
-            if sev != theme.s_ok:
-                pet_col = _fg(sev)
-        parts.append(f"{pet_col}{pet_body}{RESET}")
-
     line = sep.join(parts)
     if not use_color:
         return _strip(line)
@@ -183,7 +165,7 @@ def render_hairline(
 # ---------------------------------------------------------------------------
 def render_classic(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", pet_body="", bypass=False,
+    lang_body="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     countdown_emoji: str = "",
@@ -193,13 +175,12 @@ def render_classic(
     # Classic re-builds the styled language segment from raw body (mirrors
     # the legacy format_language_segment output: `📚 EN:6.0↑`).
     lang_text = colorize(f"📚 {lang_body}", GREEN, use_color) if lang_body else ""
-    pet_text = pet_body  # classic adds its own coloring inside format_status_line
     return format_status_line(
         msgs_pct=msgs_pct, tkns_pct=None,
         reset_time=reset_5h, model=model,
         weekly_pct=weekly_pct, reset_time_7d=reset_7d or "",
         bypass=bypass, use_color=use_color,
-        pet_text=pet_text, countdown_emoji=countdown_emoji,
+        countdown_emoji=countdown_emoji,
         warning_threshold=warning_threshold,
         critical_threshold=critical_threshold,
         lang_text=lang_text,

@@ -13,7 +13,6 @@ def test_load_returns_defaults_when_missing(tmp_path: Path):
     assert cfg.style == cfg_mod.DEFAULT_STYLE
     assert cfg.theme == cfg_mod.DEFAULT_THEME
     assert cfg.density == cfg_mod.DEFAULT_DENSITY
-    assert cfg.show_pet is True
     assert cfg.show_weekly is True
     assert cfg.show_language is True
 
@@ -28,14 +27,14 @@ def test_load_returns_defaults_for_garbage(tmp_path: Path):
 def test_save_then_load_roundtrip(tmp_path: Path):
     p = tmp_path / "cfg.json"
     cfg = cfg_mod.StatusbarConfig(style="capsule", theme="twilight",
-                                   density="cozy", show_pet=False)
+                                   density="cozy", show_weekly=False)
     cfg_mod.save_config(cfg, p)
 
     raw = json.loads(p.read_text(encoding="utf-8"))
     assert raw["style"] == "capsule"
     assert raw["theme"] == "twilight"
     assert raw["density"] == "cozy"
-    assert raw["show_pet"] is False
+    assert raw["show_weekly"] is False
 
     loaded = cfg_mod.load_config(p)
     assert loaded == cfg

@@ -17,7 +17,6 @@ SAMPLE = dict(
     reset_5h="2h47m", reset_7d="3d12h",
     model="Opus 4.7(45.0k/1.0M)",
     lang_body="EN:6.0↑",
-    pet_body="ᓚᘏᗢ Tofu",
     bypass=False,
     warning_threshold=30.0,
     critical_threshold=70.0,
@@ -97,29 +96,6 @@ def test_is_known_style():
     assert not is_known_style("")
 
 
-@pytest.mark.parametrize("style", ["capsule", "hairline"])
-def test_pet_color_tracks_severity(style):
-    """When 5h pct is critical, pet should render in the hot color (severity)
-    rather than the muted secondary color."""
-    theme = get_theme("graphite")
-    hot_rgb = f"\033[38;2;{theme.s_hot[0]};{theme.s_hot[1]};{theme.s_hot[2]}m"
-    mute_rgb = f"\033[38;2;{theme.mute[0]};{theme.mute[1]};{theme.mute[2]}m"
-
-    base = dict(SAMPLE)
-    base["pet_body"] = "ᓚᘏᗢ Tofu"
-
-    # 5h calm → pet uses mute, NOT hot
-    out_calm = render(style, theme=theme, use_color=True, **{**base, "msgs_pct": 5})
-    assert mute_rgb in out_calm
-    assert hot_rgb not in out_calm.split("ᓚᘏᗢ")[0][-30:] if "ᓚᘏᗢ" in out_calm else True
-
-    # 5h critical → pet uses hot
-    out_hot = render(style, theme=theme, use_color=True, **{**base, "msgs_pct": 95})
-    # The hot color must appear immediately before the pet glyph
-    pet_idx = out_hot.index("ᓚᘏᗢ")
-    assert hot_rgb in out_hot[:pet_idx], f"hot color missing before pet: {out_hot!r}"
-
-
 def test_capsule_does_not_eat_emoji_prefix():
     """Regression: prior implementation used lstrip('📚 ') which would also
     strip a literal space at the start of language data. The fix routes raw
@@ -129,44 +105,6 @@ def test_capsule_does_not_eat_emoji_prefix():
                   use_color=False,
                   msgs_pct=42, weekly_pct=18,
                   reset_5h="2h", reset_7d="3d",
-                  model="Opus 4.7", lang_body=body, pet_body="",
+                  model="Opus 4.7", lang_body=body,
                   bypass=False, warning_threshold=30.0, critical_threshold=70.0)
     assert body in out, "language body content was mangled"
-
-
-# ---------------------------------------------------------------------------
-# Pet determinism — separate Python processes must agree on the status text
-# inside the same 5s window. Catches regressions where hash() (salted
-# per-process via PYTHONHASHSEED) sneaks back in.
-# ---------------------------------------------------------------------------
-def test_pet_status_deterministic_across_processes():
-    """Run get_pet_status from a fresh subprocess with a randomized
-    PYTHONHASHSEED and assert it matches the in-process value."""
-    import os, subprocess, sys, time
-    from claude_statusbar.pet import get_pet_status
-
-    # Pin to a 5s window we can reproduce in the subprocess by passing the
-    # same anchor time.
-    anchor = int(time.time() / 5) * 5
-    in_proc = get_pet_status("working", session_id="abc-deterministic")
-
-    code = (
-        "import time, sys\n"
-        f"_anchor = {anchor}\n"
-        "import claude_statusbar.pet as pet\n"
-        "_orig = time.time\n"
-        "time.time = lambda: _anchor\n"
-        "print(pet.get_pet_status('working', session_id='abc-deterministic'))\n"
-    )
-    env = {**os.environ, "PYTHONHASHSEED": "999", "PYTHONPATH": "src"}
-    out = subprocess.check_output([sys.executable, "-c", code], env=env, text=True).strip()
-
-    # The in-process call also lands in the `anchor` window because both used
-    # int(time.time()/5)*5; allow boundary slop by also computing the next
-    # window.
-    from claude_statusbar.pet import get_pet_status as _g
-    in_proc_now = _g("working", session_id="abc-deterministic")
-
-    assert out in (in_proc, in_proc_now), (
-        f"subprocess produced {out!r}, expected one of {in_proc!r} / {in_proc_now!r}"
-    )

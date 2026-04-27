@@ -2,12 +2,12 @@
 
 Lightweight Claude Code status bar monitor for the built-in `statusLine` hook.
 
-It shows your current Claude.ai rate-limit usage, reset timers, context window usage, and an optional ASCII pet in a compact single-line format.
+It shows your current Claude.ai rate-limit usage, reset timers, and context window usage in a compact single-line format.
 
 ## What it shows
 
 ```
-5h[███38%░░░░]⏰2h14m | 7d[███87%███░]⏰3d05h | Opus 4.6(90.0k/1.0M) | ᓚᘏᗢ Giga:working!
+5h[███38%░░░░]⏰2h14m | 7d[███87%███░]⏰3d05h | Opus 4.6(90.0k/1.0M)
 ```
 
 | Segment | Meaning |
@@ -17,7 +17,6 @@ It shows your current Claude.ai rate-limit usage, reset timers, context window u
 | `7d[███87%███░]` | 7-day rate-limit usage |
 | `⏰3d05h` | Time until the 7-day window resets |
 | `Opus 4.6(90.0k/1.0M)` | Model name plus current context usage |
-| `ᓚᘏᗢ Giga:working!` | Optional status-bar pet |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
 Colors default to green / yellow / red at `30%` and `70%`, and can be customized.
@@ -102,7 +101,6 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "theme": "twilight",
   "density": "regular",
   "auto_compact_width": 100,
-  "show_pet": true,
   "show_weekly": true,
   "show_language": true
 }
@@ -114,7 +112,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `theme` | `graphite` / `twilight` / `linen` | Colors |
 | `density` | `compact` / `regular` / `cozy` | Padding around segments (capsule + hairline only) |
 | `auto_compact_width` | integer (e.g. `100`) | Force `hairline` when terminal narrower than this. `0` = disabled |
-| `show_pet`, `show_weekly`, `show_language` | bool | Hide individual segments |
+| `show_weekly`, `show_language` | bool | Hide individual segments |
 
 Set via `cs config set <key> <value>`.
 
@@ -174,7 +172,6 @@ cs themes                     # list available themes
 cs preview                    # render every style × theme using your real data
 cs --json-output              # machine-readable JSON
 cs --no-color                 # disable ANSI colors
-cs --hide-pet                 # hide the ASCII pet
 cs --warning-threshold 40 --critical-threshold 85
 cs --no-auto-update           # disable auto-update checks
 ```
@@ -188,7 +185,6 @@ cs --no-auto-update           # disable auto-update checks
 | `CLAUDE_STATUSBAR_STYLE=capsule` | Render with this style (overrides config file) |
 | `CLAUDE_STATUSBAR_THEME=twilight` | Render with this theme (overrides config file) |
 | `CLAUDE_STATUSBAR_NO_UPDATE=1` | Disable automatic update checks |
-| `CLAUDE_STATUSBAR_HIDE_PET=1` | Hide the status bar pet |
 | `CLAUDE_STATUSBAR_WARNING_THRESHOLD=40` | Switch from green to yellow at 40% |
 | `CLAUDE_STATUSBAR_CRITICAL_THRESHOLD=85` | Switch from yellow to red at 85% |
 | `NO_COLOR=1` | Disable ANSI colors |
@@ -228,7 +224,7 @@ To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
 Install the [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach) Claude Code plugin to get IELTS band progress tracking. After setup, the status bar automatically shows your current writing level and trend:
 
 ```
-... | Opus 4.6(90k/1M) | 📚 EN:6.0↑ JA:5.0→ | ᓚᘏᗢ
+... | Opus 4.6(90k/1M) | 📚 EN:6.0↑ JA:5.0→
 ```
 
 - `↑` improved from last session · `↓` dropped · `→` no change
