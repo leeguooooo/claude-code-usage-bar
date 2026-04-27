@@ -88,8 +88,9 @@ After running `cs --setup` (or `cs install-commands`), the following slash comma
 | `/statusbar`               | Show current config + lists styles/themes |
 | `/statusbar-preview`       | Render every style × theme combination using your real data |
 | `/statusbar-style <name>`  | Switch style (`classic` / `capsule` / `hairline`) |
-| `/statusbar-theme <name>`  | Switch theme (`graphite` / `twilight` / `linen`) |
-| `/statusbar-reset`         | Restore the original `classic` + `graphite` defaults |
+| `/statusbar-theme <name>`  | Switch theme (`graphite` / `twilight` / `linen` / `nord` / `dracula` / `sakura` / `mono`) |
+| `/statusbar-doctor`        | Self-diagnostic — paste output in bug reports |
+| `/statusbar-reset`         | Wipe config back to defaults |
 
 ### Configuration file
 
@@ -102,21 +103,42 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "density": "regular",
   "auto_compact_width": 100,
   "show_weekly": true,
-  "show_language": true
+  "show_language": true,
+  "show_cost": false
 }
 ```
 
 | Key | Values | What it does |
 |-----|--------|--------------|
 | `style` | `classic` / `capsule` / `hairline` | Layout |
-| `theme` | `graphite` / `twilight` / `linen` | Colors |
+| `theme` | `graphite` / `twilight` / `linen` / `nord` / `dracula` / `sakura` / `mono` | Colors |
 | `density` | `compact` / `regular` / `cozy` | Padding around segments (capsule + hairline only) |
 | `auto_compact_width` | integer (e.g. `100`) | Force `hairline` when terminal narrower than this. `0` = disabled |
 | `show_weekly`, `show_language` | bool | Hide individual segments |
+| `show_cost` | bool, default `false` | Append a `$ X.XX` segment with the current session's cost (from Claude Code's stdin payload). Opt-in because the "session" boundary is what Claude Code reports — not necessarily what you intuitively call one |
 
-Set via `cs config set <key> <value>`.
+Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
 
 Override per-invocation via `--style` / `--theme` flags or `CLAUDE_STATUSBAR_STYLE` / `CLAUDE_STATUSBAR_THEME` env vars.
+
+### `cs doctor` — self-diagnostic
+
+If the status bar isn't behaving the way you expect, run:
+
+```bash
+cs doctor
+```
+
+It prints (with red ✗ for anything off):
+
+- Which `cs` binary the OS will resolve, plus its version + Python interpreter
+- Whether `~/.claude/settings.json` has *our* statusLine entry (vs missing / vs another tool's)
+- How fresh `~/.cache/claude-statusbar/last_stdin.json` is (so you can tell if Claude Code is actually pushing data)
+- Terminal size and `TERM`
+- Current resolved `style` / `theme` / all `show_*` toggles
+- Slash commands installed under `~/.claude/commands/`
+
+Paste the output verbatim in any bug report — it's almost always enough to diagnose remotely.
 
 ### Install as a Claude Code plugin
 
@@ -167,9 +189,12 @@ cs --theme twilight           # override theme
 cs config show                # show persistent config
 cs config set style hairline  # save style to ~/.claude/claude-statusbar.json
 cs config set theme linen     # save theme
+cs config set show_cost true  # show this session's $ cost on the bar
+cs config reset               # wipe config back to defaults
 cs styles                     # list available styles
 cs themes                     # list available themes
 cs preview                    # render every style × theme using your real data
+cs doctor                     # self-diagnostic — paste this in any bug report
 cs --json-output              # machine-readable JSON
 cs --no-color                 # disable ANSI colors
 cs --warning-threshold 40 --critical-threshold 85
