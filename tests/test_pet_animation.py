@@ -153,17 +153,40 @@ def test_compose_face_microbench_under_budget():
 
 def test_nervous_mood_now_has_visible_tail():
     """Regression: 30-70% range was visually frozen because nervous mood
-    had no tail. Now it does a flick."""
+    had no tail. Now it does a flick. (Glyph sets overlap with wag — both
+    are tilde-family on the midline so they visually attach to ᓚ. The
+    distinguisher is frequency, not glyph.)"""
     seen = set()
     for i in range(8):
         seen.add(anim.compose_face("nervous", i * 0.1, "sess"))
     assert len(seen) >= 3, f"nervous still looks static: {seen!r}"
-    # Must be a flick glyph, not a wag glyph
-    flick_glyphs = set(anim.TAIL_FLICK_FRAMES)
-    wag_glyphs = set(anim.TAIL_FRAMES)
-    has_flick = any(any(g in face for g in flick_glyphs) for face in seen)
-    has_wag = any(any(g in face for g in wag_glyphs) for face in seen)
-    assert has_flick and not has_wag, "nervous should flick, not wag"
+    # Some midline tail glyph must appear in the output.
+    tail_glyphs = set(anim.TAIL_FLICK_FRAMES)
+    has_tail = any(any(g in face for g in tail_glyphs) for face in seen)
+    assert has_tail, f"nervous should show a tail flick: {seen!r}"
+
+
+def test_nervous_flicks_faster_than_chill_wags():
+    """Frequency check: nervous cycles at 8Hz, chill at 4Hz. Sample ~1s and
+    count distinct frames — nervous should reveal more variety than chill
+    inside the same time window."""
+    chill_seen = {anim.compose_face("chill", i * 0.05, "x") for i in range(20)}
+    nervous_seen = {anim.compose_face("nervous", i * 0.05, "x") for i in range(20)}
+    # nervous's higher cycle rate visits more distinct phases per second
+    assert len(nervous_seen) >= len(chill_seen), (
+        f"expected nervous to be at least as varied as chill: "
+        f"chill={len(chill_seen)} nervous={len(nervous_seen)}"
+    )
+
+
+def test_no_tail_glyph_breaks_baseline():
+    """Tail glyphs must be midline chars only — anything that sits on the
+    floor (_) or top (˒) leaves a visible gap next to ᓚ and reads as
+    'floating debris'. Regression for the 2.9.6 → 2.9.7 fix."""
+    forbidden = {"_", ",", "˒", "‚", "ˏ", "ˎ"}
+    all_tail_chars = set(anim.TAIL_FRAMES) | set(anim.TAIL_FLICK_FRAMES)
+    leak = forbidden & all_tail_chars
+    assert not leak, f"non-midline glyphs leaked into tail: {leak}"
 
 
 def test_tail_lives_LEFT_of_butt_glyph():

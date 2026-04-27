@@ -51,13 +51,17 @@ def _det_unit(seed: str) -> float:
 # ---------------------------------------------------------------------------
 # TRACK: tail — multiple wag styles
 # ---------------------------------------------------------------------------
-# Smooth happy wag — 4 frames at 250ms (4Hz). Used for chill / working / hype.
-TAIL_FRAMES = ("⌒", "~", "∽", "~")
+# Glyph picking rule: every tail char MUST sit on the midline so it visually
+# joins ᓚ's baseline. Floor-anchored chars (_ ,) and ascender-anchored chars
+# (˒ ⌐) leave a visible gap and the tail reads as "floating debris" rather
+# than "attached to the cat".
+#
+# Smooth happy wag — 4 frames at 250ms (4Hz). chill / working / hype.
+TAIL_FRAMES = ("~", "∽", "≈", "∼")
 
-# Short jittery flick — for nervous moods. Real nervous cats twitch the tail
-# in shorter bursts than they wag it. 6 frames at 8Hz, with held positions
-# to read as agitation rather than relaxed swing.
-TAIL_FLICK_FRAMES = (",", "_", ",", "˒", "_", "˒")
+# Short jittery flick — nervous moods. 4 frames at 8Hz, all midline tilde
+# variants for fast back-and-forth motion that still reads as a tail.
+TAIL_FLICK_FRAMES = ("~", "≈", "∼", "≈")
 
 
 def tail_frame(t: float) -> str:
