@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from .styles import RENDERERS, render
-from .themes import BUILTIN_THEMES, get_theme
+from .themes import BUILTIN_THEMES
 
 CACHED_STDIN = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
 

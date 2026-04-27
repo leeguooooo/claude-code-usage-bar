@@ -15,8 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .cache import read_cache, read_cache_stale, write_cache, refresh_cache_background
-from .progress import format_language_body, format_status_line
+from .progress import format_language_body
 
 # Module-local logger: never call logging.basicConfig() at import-time —
 # that would clobber the root logger config of any program that imports
