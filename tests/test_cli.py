@@ -102,17 +102,27 @@ def test_subcommand_skips_heavy_imports(monkeypatch):
     """`cs config show` and friends must not pull in core/styles/themes
     at module import time. Regression test for the lazy-import refactor —
     if someone re-adds `from .core import main` at the top of cli.py, this
-    test catches it."""
+    test catches it.
+
+    NOTE: restores sys.modules at the end. Without restoration, other test
+    files that did `from claude_statusbar import X` at collection time end
+    up with dangling references when their tests run after this one.
+    """
     import importlib, sys as _sys
 
-    # Wipe any cached state
-    for mod in list(_sys.modules):
-        if mod.startswith("claude_statusbar"):
-            del _sys.modules[mod]
+    saved = {k: v for k, v in _sys.modules.items()
+             if k.startswith("claude_statusbar")}
+    try:
+        for k in saved:
+            del _sys.modules[k]
 
-    # Just importing the cli module must not pull core/themes/styles.
-    importlib.import_module("claude_statusbar.cli")
-    forbidden = {"claude_statusbar.core", "claude_statusbar.themes",
-                 "claude_statusbar.styles", "claude_statusbar.progress"}
-    leaked = forbidden & set(_sys.modules)
-    assert not leaked, f"cli.py imports leaked at module load: {leaked}"
+        importlib.import_module("claude_statusbar.cli")
+        forbidden = {"claude_statusbar.core", "claude_statusbar.themes",
+                     "claude_statusbar.styles", "claude_statusbar.progress"}
+        leaked = forbidden & set(_sys.modules)
+        assert not leaked, f"cli.py imports leaked at module load: {leaked}"
+    finally:
+        for k in list(_sys.modules):
+            if k.startswith("claude_statusbar"):
+                del _sys.modules[k]
+        _sys.modules.update(saved)

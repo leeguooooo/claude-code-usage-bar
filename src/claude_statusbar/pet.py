@@ -126,15 +126,25 @@ def _coaching_mood(progress: dict) -> Optional[str]:
 
 
 def get_pet_name(session_id: str = "", custom_name: Optional[str] = None) -> str:
-    """Pick a pet name. Custom name wins, otherwise deterministic random from session_id."""
+    """Pick a pet name.
+
+    Up through v2.9.3 this was a deterministic function of session_id alone,
+    so a new Claude Code session = a new name. From v2.9.4 we consult the
+    persistent state file: once a name is bound, it sticks. Falls back to
+    the legacy session-derived pick when no state file exists yet (which
+    means the first session after upgrade keeps whatever name the user has
+    been seeing — no surprise rename).
+    """
     if custom_name:
         return custom_name
-    if session_id:
-        seed = int(hashlib.md5(session_id.encode()).hexdigest()[:8], 16)
-    else:
-        seed = 42
-    rng = random.Random(seed)
-    return rng.choice(PET_NAMES)
+    from . import pet_state
+    state = pet_state.load_state()
+    if state.has_identity:
+        return state.name
+    # First contact — pick a name and persist it.
+    state, _ = pet_state.ensure_identity(state, session_id=session_id)
+    pet_state.save_state(state)
+    return state.name
 
 
 def _get_mood(pct: float, hour: int, minutes_to_reset: Optional[int] = None,
@@ -263,7 +273,36 @@ def format_pet(
 
     face = get_pet_face(mood, session_id=session_id)
     status = get_pet_status(mood, session_id, reminders=reminders)
-    return f"{face} {name}:{status}"
+
+    # Persistent identity layer — bond markers + milestone emoji.
+    # Reading + (occasionally) writing pet.json adds ~0.2ms; cheap enough
+    # to do per-render, and keeps total_sessions accurate.
+    bond = ""
+    milestone = ""
+    try:
+        from . import pet_state
+        state = pet_state.load_state()
+        # Make sure we have an identity (no-op if state.has_identity).
+        state, changed = pet_state.ensure_identity(state, session_id=session_id,
+                                                    custom_name=custom_name)
+        # Bump total_sessions when session_id changes (once per Claude Code session).
+        state, bumped = pet_state.record_session(state, session_id)
+        if changed or bumped:
+            pet_state.save_state(state)
+        days = pet_state.bond_age_days(state)
+        bond = pet_state.bond_marker(days)
+        milestone = pet_state.milestone_emoji(state)
+    except Exception:
+        # Persistent identity is a nice-to-have; never let it break rendering.
+        pass
+
+    pieces = []
+    if milestone:
+        pieces.append(milestone)
+    pieces.append(face)
+    name_with_bond = f"{name} {bond}" if bond else name
+    pieces.append(f"{name_with_bond}:{status}")
+    return " ".join(pieces)
 
 
 def get_countdown_emoji(minutes_to_reset: Optional[int]) -> str:
