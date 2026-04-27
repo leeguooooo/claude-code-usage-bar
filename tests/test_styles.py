@@ -108,3 +108,35 @@ def test_capsule_does_not_eat_emoji_prefix():
                   model="Opus 4.7", lang_body=body,
                   bypass=False, warning_threshold=30.0, critical_threshold=70.0)
     assert body in out, "language body content was mangled"
+
+
+# v3.1.0 — cost_text segment
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_cost_text_rendered_when_passed(style):
+    out = render(style, theme=get_theme("graphite"), use_color=False,
+                  msgs_pct=42, weekly_pct=18, reset_5h="2h", reset_7d="3d",
+                  model="Opus 4.7", lang_body="", cost_text="0.42",
+                  bypass=False, warning_threshold=30.0, critical_threshold=70.0)
+    assert "0.42" in out
+    assert "$" in out
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_cost_text_omitted_when_empty(style):
+    out = render(style, theme=get_theme("graphite"), use_color=False,
+                  msgs_pct=42, weekly_pct=18, reset_5h="2h", reset_7d="3d",
+                  model="Opus 4.7", lang_body="", cost_text="",
+                  bypass=False, warning_threshold=30.0, critical_threshold=70.0)
+    assert "$" not in out
+
+
+def test_cost_text_position_after_model_in_classic():
+    """In classic style cost should appear after model, before language."""
+    out = render("classic", theme=get_theme("graphite"), use_color=False,
+                  msgs_pct=42, weekly_pct=18, reset_5h="2h", reset_7d="3d",
+                  model="Opus 4.7", lang_body="EN:6.0↑", cost_text="0.42",
+                  bypass=False, warning_threshold=30.0, critical_threshold=70.0)
+    model_pos = out.index("Opus 4.7")
+    cost_pos  = out.index("0.42")
+    lang_pos  = out.index("📚")
+    assert model_pos < cost_pos < lang_pos

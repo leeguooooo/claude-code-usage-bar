@@ -161,3 +161,17 @@ def test_thresholds_can_be_widened_in_correct_order(tmp_path: Path):
     cfg = cfg_mod.load_config(p)
     assert cfg.warning_threshold == 80.0
     assert cfg.critical_threshold == 90.0
+
+
+# v3.1.0
+def test_show_cost_default_false(tmp_path: Path):
+    cfg = cfg_mod.load_config(tmp_path / "missing.json")
+    assert cfg.show_cost is False
+
+
+def test_show_cost_persists(tmp_path: Path):
+    p = tmp_path / "cfg.json"
+    cfg_mod.set_value("show_cost", "true", p)
+    assert cfg_mod.load_config(p).show_cost is True
+    cfg_mod.set_value("show_cost", "false", p)
+    assert cfg_mod.load_config(p).show_cost is False

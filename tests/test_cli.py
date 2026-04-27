@@ -122,3 +122,29 @@ def test_subcommand_skips_heavy_imports(monkeypatch):
             if k.startswith("claude_statusbar"):
                 del _sys.modules[k]
         _sys.modules.update(saved)
+
+
+def test_config_reset_removes_file(monkeypatch, tmp_path):
+    """`cs config reset` deletes the config file. Idempotent on missing."""
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text('{"style": "capsule"}', encoding="utf-8")
+
+    from claude_statusbar import config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", cfg_path)
+
+    monkeypatch.setattr(sys, "argv", ["cs", "config", "reset"])
+    assert cli.main() == 0
+    assert not cfg_path.exists()
+
+    # second run on missing file must also succeed
+    monkeypatch.setattr(sys, "argv", ["cs", "config", "reset"])
+    assert cli.main() == 0
+
+
+def test_config_reset_unknown_action_returns_2(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["cs", "config", "frobnicate"])
+    rc = cli.main()
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "unknown config action" in err
+    assert "reset" in err  # the help line should mention it now
