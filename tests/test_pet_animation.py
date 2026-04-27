@@ -164,3 +164,33 @@ def test_nervous_mood_now_has_visible_tail():
     has_flick = any(any(g in face for g in flick_glyphs) for face in seen)
     has_wag = any(any(g in face for g in wag_glyphs) for face in seen)
     assert has_flick and not has_wag, "nervous should flick, not wag"
+
+
+def test_tail_lives_LEFT_of_butt_glyph():
+    """ᗢ is the head, ᓚ is the butt. The tail attaches to the butt and
+    extends leftward — NOT the right (anatomical regression)."""
+    # chill mood always has a tail; sample several frames
+    for i in range(8):
+        face = anim.compose_face("chill", i * 0.1, "x")
+        butt_idx = face.index("ᓚ")
+        head_idx = face.index("ᗢ")
+        # Find any tail glyph
+        for tg in anim.TAIL_FRAMES:
+            if tg in face:
+                tail_idx = face.index(tg)
+                assert tail_idx < butt_idx, (
+                    f"tail {tg!r} at {tail_idx} not left of butt at {butt_idx}: {face!r}"
+                )
+                assert tail_idx < head_idx, "tail must be left of head too"
+                break
+
+
+def test_nervous_flick_also_left_of_butt():
+    for i in range(8):
+        face = anim.compose_face("nervous", i * 0.13, "x")
+        butt_idx = face.index("ᓚ")
+        for fg in anim.TAIL_FLICK_FRAMES:
+            if fg in face:
+                assert face.index(fg) < butt_idx, \
+                    f"nervous flick {fg!r} on wrong side: {face!r}"
+                break

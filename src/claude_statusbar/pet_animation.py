@@ -172,28 +172,37 @@ def compose_face(
 ) -> str:
     """Render one frame of the cat face.
 
-    Output shape:  [aura_prefix] body [tail] [aura_suffix]
-    Examples:
-        chill, normal:  ᓚᘏᗢ⌒
-        chill, blink:   ᓚ-ᗢ⌒
-        chill, ear:     ᓛᘏᗢ⌒
-        chill, breath:  ᓚᘏᗢ ⌒   (one space before tail)
-        hype:           ✦ᓚ✦ᗢ~
-        panic:          ⚡ᓚxᗢ
-        sleepy:         ᓚ_ᗢ ᶻᶻ
+    Anatomy of the kawaii cat ``ᓚᘏᗢ``:
+        - ``ᗢ`` is the head (the W-shape reads as whiskers + mouth)
+        - ``ᘏ`` is the body
+        - ``ᓚ`` is the butt — the tail attaches HERE, extending leftward.
+
+    The cat faces *right*. So the layout is::
+
+        [aura_far_left]  [tail]  ᓚ <eye> ᗢ  [aura_right]
+
+    Examples::
+
+        chill, normal:  ⌒ᓚᘏᗢ
+        chill, blink:   ⌒ᓚ-ᗢ
+        chill, breath:  ⌒ ᓚᘏᗢ      (gap pushes the tail away from the body)
+        ear twitch:     ⌒ᓛᘏᗢ
+        nervous flick:  ,ᓚ•ᗢ
+        hype sparkle:   ✦⌒ᓚᘏᗢ
+        panic:          ⚡ᓚxᗢ      (no tail — frozen)
+        sleepy:         ᓚ_ᗢ ᶻᶻ    (Z's float right of the head)
     """
-    # Eye selection: blink overrides everything except sleepy/panic where
-    # the closed-eye glyph IS the mood signal (a blink there would be invisible).
+    # Eye selection — see _MOOD_EYE.
     eye = _MOOD_EYE.get(mood, EYE_DEFAULT)
     if is_blinking(t, session_id) and mood not in ("sleepy", "panic"):
         eye = EYE_BLINK
 
-    # Ear: rare twitch swaps left ear glyph.
-    left_ear = "ᓛ" if is_ear_twitching(t, session_id) else "ᓚ"
+    # Left "ear" / butt char — rare twitch swaps to alt glyph.
+    butt = "ᓛ" if is_ear_twitching(t, session_id) else "ᓚ"
 
-    body = f"{left_ear}{eye}ᗢ"
+    body = f"{butt}{eye}ᗢ"
 
-    # Tail — relaxed wag, jittery flick, or none.
+    # Tail — relaxed wag, jittery flick, or none. Lives to the LEFT of butt.
     if mood in _MOOD_TAIL_WAGS:
         tail = tail_frame(t)
     elif mood in _MOOD_TAIL_FLICKS:
@@ -201,25 +210,19 @@ def compose_face(
     else:
         tail = ""
 
-    # Breath — insert a single-space "exhale" between body and tail every
-    # ~700ms. Subtle but ever-present.
+    # Breath — push tail one cell further from the body every ~700ms.
     breath_gap = " " if breath_phase(t) and tail else ""
 
-    # Aura — mood-dependent particle stream.
-    aura_palette = _MOOD_AURA.get(mood, AURA_NONE)
-    aura = aura_frame(t, aura_palette)
+    # Aura particles. Sleepy Z's drift right of the head; everything else
+    # decorates the far-left edge.
+    aura = aura_frame(t, _MOOD_AURA.get(mood, AURA_NONE))
 
     if mood == "sleepy":
-        # Z's drift to the right.
         return f"{body} {aura}".rstrip()
     if mood == "panic":
-        # Lightning brackets the body, no tail.
         return f"{aura}{body}".rstrip() if aura.strip() else body
-    if mood in ("hype", "refreshed", "leveling") and aura:
-        # Sparkle prefix.
-        return f"{aura}{body}{breath_gap}{tail}"
-
-    return f"{body}{breath_gap}{tail}"
+    # Default layout: aura · tail · breath_gap · body
+    return f"{aura}{tail}{breath_gap}{body}"
 
 
 # Public re-exports for tests
