@@ -122,10 +122,11 @@ Override per-invocation via `--style` / `--theme` flags or `CLAUDE_STATUSBAR_STY
 
 ### Install as a Claude Code plugin
 
-The repo also ships a `.claude-plugin/plugin.json` so you can install everything (slash commands + this README) directly from inside Claude Code:
+The repo ships a `.claude-plugin/plugin.json`, distributed via the **leeguooooo/plugins** marketplace. Inside Claude Code:
 
 ```
-/plugin install https://github.com/leeguooooo/claude-code-usage-bar
+/plugin marketplace add leeguooooo/plugins
+/plugin install claude-statusbar@leeguooooo-plugins
 ```
 
 You still need the `cs` CLI (`pip install claude-statusbar` or `uv tool install claude-statusbar`) — the plugin only carries the slash commands; the heavy lifting is the Python package.
