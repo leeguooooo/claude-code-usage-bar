@@ -124,61 +124,40 @@ def test_has_stdin_unset_when_stdin_empty(monkeypatch, isolated_cache):
 
 
 # ---------------------------------------------------------------------------
-# Time-based window rollover.
-# Anthropic only pushes fresh rate_limits when a request actually fires.
-# Between requests, the value we have can describe an already-expired
-# window. Showing "99%" hours after the reset is misleading; once
-# resets_at < now() we MUST roll over to 0% in the new window.
+# Time-based window rollover (cached-fallback only).
+# Fresh stdin from Anthropic is trusted verbatim — comparing its resets_at
+# against the local clock can spuriously zero out a still-valid window on
+# 1-second boundary, which made the statusbar flip between the real pct
+# and 0% across renders.
+# Rollover applies only to the cached fallback path, where it returns
+# None (renders as "--", not authoritative 0%).
 # ---------------------------------------------------------------------------
 import time as _time
 
 
-def test_5h_window_rollover_when_resets_at_in_past(monkeypatch, isolated_cache):
-    """Anthropic sent 99% with resets_at = 1h ago. We must show 0%, with
-    resets_at advanced into the future."""
+def test_fresh_stdin_pct_is_trusted_even_if_resets_at_just_passed(monkeypatch, isolated_cache):
+    """Fresh stdin from Anthropic must NOT be mutated by a local clock
+    comparison. resets_at sliding 1s past now() is a boundary artifact, not
+    a window rollover."""
     now = _time.time()
-    expired_resets_at = int(now - 3600)  # 1 hour ago
+    just_past = int(now - 1)
     _stdin_with({
         "rate_limits": {
-            "five_hour": {"used_percentage": 99, "resets_at": expired_resets_at},
+            "five_hour": {"used_percentage": 47, "resets_at": just_past},
+            "seven_day": {"used_percentage": 12, "resets_at": just_past},
         },
     }, monkeypatch)
     out = core.parse_stdin_data()
-    assert out["rate_limit_pct"] == 0, "stale 99% leaked into a new window"
-    assert out["rate_limit_resets_at"] > now, "resets_at must be in the future"
+    assert out["rate_limit_pct"] == 47
+    assert out["rate_limit_resets_at"] == just_past
+    assert out["rate_limit_7d_pct"] == 12
+    assert out["rate_limit_7d_resets_at"] == just_past
 
 
-def test_7d_window_rollover_when_resets_at_in_past(monkeypatch, isolated_cache):
+def test_fresh_stdin_preserves_pct_when_window_still_active(monkeypatch, isolated_cache):
+    """resets_at in the future → render verbatim."""
     now = _time.time()
-    expired = int(now - 86400 * 2)  # 2 days ago
-    _stdin_with({
-        "rate_limits": {
-            "seven_day": {"used_percentage": 88, "resets_at": expired},
-        },
-    }, monkeypatch)
-    out = core.parse_stdin_data()
-    assert out["rate_limit_7d_pct"] == 0
-    assert out["rate_limit_7d_resets_at"] > now
-
-
-def test_rollover_advances_through_multiple_expired_windows(monkeypatch, isolated_cache):
-    """If user was offline for 2 weeks, the 7d window has rolled over twice.
-    resets_at should land in the FUTURE, not 1 day ago."""
-    now = _time.time()
-    very_old = int(now - 86400 * 14)  # 14 days ago
-    _stdin_with({
-        "rate_limits": {
-            "seven_day": {"used_percentage": 100, "resets_at": very_old},
-        },
-    }, monkeypatch)
-    out = core.parse_stdin_data()
-    assert out["rate_limit_7d_resets_at"] > now
-
-
-def test_no_rollover_when_window_still_active(monkeypatch, isolated_cache):
-    """resets_at in the future → leave pct alone."""
-    now = _time.time()
-    future = int(now + 3600)  # 1 hour from now
+    future = int(now + 3600)
     _stdin_with({
         "rate_limits": {
             "five_hour": {"used_percentage": 47, "resets_at": future},
@@ -189,21 +168,66 @@ def test_no_rollover_when_window_still_active(monkeypatch, isolated_cache):
     assert out["rate_limit_resets_at"] == future
 
 
-def test_cached_stdin_is_also_rolled_over(monkeypatch, isolated_cache, tmp_path):
-    """When current stdin lacks rate_limits, we read from
-    last_stdin.json. That cached value's resets_at can also be expired —
-    rollover must apply there too."""
-    # Pre-populate cache with stale data
+def test_cached_fallback_expired_window_returns_none(monkeypatch, isolated_cache, tmp_path):
+    """When current stdin lacks rate_limits and the cached value's window
+    has expired, render unknown (None → '--'), not authoritative 0%."""
     cache_dir = tmp_path / ".cache" / "claude-statusbar"
     cache_dir.mkdir(parents=True)
-    expired = int(_time.time() - 3600)
-    cache_dir.joinpath("last_stdin.json").write_text(json.dumps({
+    now = _time.time()
+    expired = int(now - 3600)
+    cache_path = cache_dir / "last_stdin.json"
+    cache_path.write_text(json.dumps({
         "rate_limits": {
             "five_hour": {"used_percentage": 99, "resets_at": expired},
         },
     }), encoding="utf-8")
+    # Cache mtime must be fresh so the age gate doesn't skip the read.
+    os.utime(cache_path, (now, now))
 
-    # Current stdin has NO rate_limits
     _stdin_with({"session_id": "abc"}, monkeypatch)
     out = core.parse_stdin_data()
-    assert out.get("rate_limit_pct") == 0, "rolled-over cache fallback failed"
+    assert out.get("rate_limit_pct") is None, "expired cached pct must not render as 0%"
+    assert out.get("rate_limit_resets_at", 0) > now
+
+
+def test_cached_fallback_active_window_renders_pct(monkeypatch, isolated_cache, tmp_path):
+    """Cache fallback with a still-active window renders the cached pct."""
+    cache_dir = tmp_path / ".cache" / "claude-statusbar"
+    cache_dir.mkdir(parents=True)
+    now = _time.time()
+    future = int(now + 1800)
+    cache_path = cache_dir / "last_stdin.json"
+    cache_path.write_text(json.dumps({
+        "rate_limits": {
+            "five_hour": {"used_percentage": 47, "resets_at": future},
+        },
+    }), encoding="utf-8")
+    os.utime(cache_path, (now, now))
+
+    _stdin_with({"session_id": "abc"}, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out["rate_limit_pct"] == 47
+    assert out["rate_limit_resets_at"] == future
+
+
+def test_cached_fallback_skipped_when_cache_too_old(monkeypatch, isolated_cache, tmp_path):
+    """A cache file older than LAST_STDIN_FALLBACK_MAX_AGE_S (5 min) must
+    not be read — its values would be misleading regardless of rollover."""
+    cache_dir = tmp_path / ".cache" / "claude-statusbar"
+    cache_dir.mkdir(parents=True)
+    now = _time.time()
+    future = int(now + 1800)
+    cache_path = cache_dir / "last_stdin.json"
+    cache_path.write_text(json.dumps({
+        "rate_limits": {
+            "five_hour": {"used_percentage": 99, "resets_at": future},
+        },
+    }), encoding="utf-8")
+    # Backdate cache mtime to 10 minutes ago.
+    old = now - 600
+    os.utime(cache_path, (old, old))
+
+    _stdin_with({"session_id": "abc"}, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out.get("rate_limit_pct") is None
+    assert out.get("rate_limit_resets_at") is None

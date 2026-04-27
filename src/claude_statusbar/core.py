@@ -491,60 +491,64 @@ def parse_stdin_data() -> Dict[str, Any]:
                 return 0
             return max(0, int(round(f)))
 
-        # Time-based window rollover.
+        # Time-based window rollover (cached-fallback only).
         # Anthropic only pushes fresh rate_limits when the user actually
-        # makes a request. Between requests, both the value we receive and
-        # any cached value can describe a window that has already expired.
-        # Showing "99%" hours after the window reset is misleading.
+        # makes a request. Fresh stdin we trust verbatim — comparing its
+        # resets_at against local clock can spuriously zero out a still-
+        # valid window on a 1-second boundary, which makes the statusbar
+        # flip between the real pct and 0% across renders.
         #
-        # If resets_at is in the past, the old window has clearly rolled
-        # over (possibly multiple times). The new window's pct is 0 and
-        # its resets_at = old + N × window_length.
+        # For the cached fallback path, if resets_at is in the past the
+        # old window has rolled over and the cached pct is meaningless;
+        # signal "unknown" (None) so the renderer shows "--", not a
+        # bogus authoritative 0%.
         FIVE_HOUR_S  = 5 * 3600
         SEVEN_DAY_S  = 7 * 86400
+        # Don't fall back to a stale cache; if no session has refreshed
+        # last_stdin.json in this long, assume we don't know the value.
+        LAST_STDIN_FALLBACK_MAX_AGE_S = 300
 
-        def _rollover(pct, resets_at, window_s):
+        def _rollover_cached(pct, resets_at, window_s):
             try:
                 resets_at_f = float(resets_at) if resets_at is not None else None
             except (TypeError, ValueError):
                 return pct, resets_at
             if resets_at_f is None:
                 return pct, resets_at
-            now = _time.time()
-            if resets_at_f > now:
+            if resets_at_f > _time.time():
                 return pct, resets_at  # current window still active
-            # Advance through however many windows have elapsed.
-            elapsed = now - resets_at_f
+            # Window expired — pct is unknown until fresh data arrives.
+            elapsed = _time.time() - resets_at_f
             windows_passed = int(elapsed // window_s) + 1
-            return 0, int(resets_at_f + windows_passed * window_s)
+            return None, int(resets_at_f + windows_passed * window_s)
         rl = data.get('rate_limits', {})
         fh = rl.get('five_hour', {})
         if fh:
-            p, ra = _rollover(_pct(fh.get('used_percentage', 0)),
-                               fh.get('resets_at'), FIVE_HOUR_S)
-            result['rate_limit_pct'] = p
-            result['rate_limit_resets_at'] = ra
+            # Trust Anthropic's fresh values verbatim.
+            result['rate_limit_pct'] = _pct(fh.get('used_percentage', 0))
+            result['rate_limit_resets_at'] = fh.get('resets_at')
         sd = rl.get('seven_day', {})
         if sd:
-            p, ra = _rollover(_pct(sd.get('used_percentage', 0)),
-                               sd.get('resets_at'), SEVEN_DAY_S)
-            result['rate_limit_7d_pct'] = p
-            result['rate_limit_7d_resets_at'] = ra
+            result['rate_limit_7d_pct'] = _pct(sd.get('used_percentage', 0))
+            result['rate_limit_7d_resets_at'] = sd.get('resets_at')
 
-        # Fallback: load rate_limits from previous session's cached stdin
+        # Fallback: load rate_limits from previous session's cached stdin,
+        # but only if the cache is fresh enough to be trustworthy.
         if not fh and not sd:
             try:
+                if _time.time() - debug_file.stat().st_mtime > LAST_STDIN_FALLBACK_MAX_AGE_S:
+                    raise OSError("cache too old")
                 cached = json.loads(debug_file.read_text(encoding="utf-8"))
                 cached_rl = cached.get('rate_limits', {})
                 cached_fh = cached_rl.get('five_hour', {})
                 cached_sd = cached_rl.get('seven_day', {})
                 if cached_fh:
-                    p, ra = _rollover(_pct(cached_fh.get('used_percentage', 0)),
+                    p, ra = _rollover_cached(_pct(cached_fh.get('used_percentage', 0)),
                                        cached_fh.get('resets_at'), FIVE_HOUR_S)
                     result['rate_limit_pct'] = p
                     result['rate_limit_resets_at'] = ra
                 if cached_sd:
-                    p, ra = _rollover(_pct(cached_sd.get('used_percentage', 0)),
+                    p, ra = _rollover_cached(_pct(cached_sd.get('used_percentage', 0)),
                                        cached_sd.get('resets_at'), SEVEN_DAY_S)
                     result['rate_limit_7d_pct'] = p
                     result['rate_limit_7d_resets_at'] = ra
