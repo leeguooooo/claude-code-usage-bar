@@ -69,6 +69,41 @@ def _run_themes_subcommand():
     return 0
 
 
+def _run_pet_subcommand(rest):
+    """`cs pet [--watch] [--fps N] [--once]` — daemon-mode pet animator.
+
+    Without --watch, prints a help blurb. With --watch, enters the loop
+    and renders the pet at FPS until Ctrl+C.
+    """
+    if not rest or "--help" in rest or "-h" in rest:
+        print("Usage: cs pet --watch [--fps N] [--once]")
+        print()
+        print("Run a self-driven pet animation in this terminal pane. Unlike")
+        print("the Claude Code statusLine — which only redraws on session")
+        print("events — this loops at a fixed FPS so the cat is always alive.")
+        print()
+        print("Tip: drop it into a tmux split or iTerm pane next to your")
+        print("Claude Code session.")
+        return 0
+
+    if "--watch" not in rest:
+        print("error: cs pet requires --watch (or --once for a single frame).",
+              file=sys.stderr)
+        return 2
+
+    fps = 12
+    if "--fps" in rest:
+        try:
+            fps = int(rest[rest.index("--fps") + 1])
+        except (ValueError, IndexError):
+            print("error: --fps requires an integer", file=sys.stderr)
+            return 2
+
+    once = "--once" in rest
+    from .pet_watch import run as run_watch
+    return run_watch(fps=fps, once=once)
+
+
 def _run_styles_subcommand():
     from .styles import list_styles
     descriptions = {
@@ -85,7 +120,7 @@ def _run_styles_subcommand():
 def main():
     """Main CLI entry point"""
     # Subcommands hijack argv before argparse so they coexist with flags.
-    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands"):
+    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands", "pet"):
         sub = sys.argv[1]
         rest = sys.argv[2:]
         if sub == "config":
@@ -105,6 +140,8 @@ def main():
                 or not sys.stdout.isatty()
             )
             return run_preview(use_color=not no_color)
+        if sub == "pet":
+            return _run_pet_subcommand(rest)
         if sub == "install-commands":
             from .setup import install_commands, COMMANDS_DIR
             force = "--force" in rest
