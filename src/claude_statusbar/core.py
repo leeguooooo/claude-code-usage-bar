@@ -506,7 +506,10 @@ def parse_stdin_data() -> Dict[str, Any]:
         SEVEN_DAY_S  = 7 * 86400
         # Don't fall back to a stale cache; if no session has refreshed
         # last_stdin.json in this long, assume we don't know the value.
-        LAST_STDIN_FALLBACK_MAX_AGE_S = 300
+        # 10 min covers low-frequency status-bar pollers (some tmux/i3bar
+        # configs refresh every several minutes) without re-introducing
+        # the multi-session contention window.
+        LAST_STDIN_FALLBACK_MAX_AGE_S = 600
 
         def _rollover_cached(pct, resets_at, window_s):
             try:

@@ -211,7 +211,7 @@ def test_cached_fallback_active_window_renders_pct(monkeypatch, isolated_cache, 
 
 
 def test_cached_fallback_skipped_when_cache_too_old(monkeypatch, isolated_cache, tmp_path):
-    """A cache file older than LAST_STDIN_FALLBACK_MAX_AGE_S (5 min) must
+    """A cache file older than LAST_STDIN_FALLBACK_MAX_AGE_S (10 min) must
     not be read — its values would be misleading regardless of rollover."""
     cache_dir = tmp_path / ".cache" / "claude-statusbar"
     cache_dir.mkdir(parents=True)
@@ -223,8 +223,8 @@ def test_cached_fallback_skipped_when_cache_too_old(monkeypatch, isolated_cache,
             "five_hour": {"used_percentage": 99, "resets_at": future},
         },
     }), encoding="utf-8")
-    # Backdate cache mtime to 10 minutes ago.
-    old = now - 600
+    # Backdate cache mtime to 20 minutes ago (well past the 10-min gate).
+    old = now - 1200
     os.utime(cache_path, (old, old))
 
     _stdin_with({"session_id": "abc"}, monkeypatch)
