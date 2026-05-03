@@ -42,7 +42,7 @@ def _severity_color(theme: Theme, pct: Optional[float],
 # ---------------------------------------------------------------------------
 def render_capsule(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", cost_text="", bypass=False,
+    lang_body="", cost_text="", cache_age_text="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
@@ -93,6 +93,11 @@ def render_capsule(
     if lang_body:
         parts.append(pill(theme.pill_lang, f"📚 {lang_body}"))
 
+    if cache_age_text:
+        is_cold = cache_age_text == "COLD"
+        bg = theme.s_hot if is_cold else theme.pill_lang
+        parts.append(pill(bg, f"⏱ {cache_age_text}"))
+
     line = spacer.join(parts)
 
     if bypass:
@@ -108,7 +113,7 @@ def render_capsule(
 # ---------------------------------------------------------------------------
 def render_hairline(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", cost_text="", bypass=False,
+    lang_body="", cost_text="", cache_age_text="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
@@ -157,6 +162,10 @@ def render_hairline(
     if lang_body:
         parts.append(f"{MUTE}{lang_body}{RESET}")
 
+    if cache_age_text:
+        col = _fg(theme.s_hot) if cache_age_text == "COLD" else MUTE
+        parts.append(f"{col}⏱ {cache_age_text}{RESET}")
+
     if bypass:
         parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
 
@@ -171,7 +180,7 @@ def render_hairline(
 # ---------------------------------------------------------------------------
 def render_classic(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", cost_text="", bypass=False,
+    lang_body="", cost_text="", cache_age_text="", bypass=False,
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     countdown_emoji: str = "",
@@ -181,7 +190,7 @@ def render_classic(
     # Classic re-builds the styled language segment from raw body (mirrors
     # the legacy format_language_segment output: `📚 EN:6.0↑`).
     lang_text = colorize(f"📚 {lang_body}", GREEN, use_color) if lang_body else ""
-    return format_status_line(
+    result = format_status_line(
         msgs_pct=msgs_pct, tkns_pct=None,
         reset_time=reset_5h, model=model,
         weekly_pct=weekly_pct, reset_time_7d=reset_7d or "",
@@ -192,6 +201,9 @@ def render_classic(
         lang_text=lang_text,
         cost_text=cost_text,
     )
+    if cache_age_text:
+        result += f" | ⏱ {cache_age_text}"
+    return result
 
 
 RENDERERS = {
