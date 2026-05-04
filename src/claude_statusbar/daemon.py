@@ -234,6 +234,13 @@ def _render_payload(payload: str) -> Optional[str]:
     pathological session (e.g. multi-GB JSONL on slow NFS) can't starve the
     others. Daemon is POSIX-only; on Windows signal.alarm doesn't exist and
     we silently skip the timeout.
+
+    Subprocess cleanup caveat: if SIGALRM fires while core_main() is blocked
+    inside subprocess.run() (claude-monitor analysis), the inner subprocess
+    becomes an orphan — Popen's __exit__/cleanup path is bypassed by the
+    exception. The orphan re-parents to PID 1 and self-terminates within
+    its own ~10s subprocess timeout. Acceptable: at most one orphan per
+    timeout event, lifetime bounded.
     """
     buf = io.StringIO()
     saved_stdin = sys.stdin

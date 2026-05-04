@@ -999,12 +999,18 @@ def get_cache_age_text(ttl_seconds: int = 300) -> str:
     remaining_int = int(remaining) if remaining == int(remaining) else int(remaining) + 1
 
     # Adaptive granularity: precision matches urgency.
-    # >= 1h remaining: "Xh"        (1h-cache users; less actionable, less detail)
+    # >= 1h remaining: "XhYm"      (e.g. "1h59m" / "1h05m" — minute precision
+    #                                preserved at the hour scale, otherwise
+    #                                a 2h-cache user sees "1h" for 59 minutes)
     # 5min..1h:        "Xm"        (still plenty of time; minute granularity)
     # 1..5min:         "XmYYs"     (countdown territory; user might press send soon)
     # < 1min:          "Ys"        (warning state; styles layer flips to yellow)
     if remaining_int >= 3600:
-        return f"{remaining_int // 3600}h"
+        hours = remaining_int // 3600
+        mins = (remaining_int % 3600) // 60
+        if mins == 0:
+            return f"{hours}h"
+        return f"{hours}h{mins:02d}m"
     mins = remaining_int // 60
     secs = remaining_int % 60
     if mins >= 5:

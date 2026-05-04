@@ -508,6 +508,38 @@ def test_ensure_statusline_preserves_fast_mode(tmp_path: Path, monkeypatch):
     )
 
 
+def test_render_payload_signal_alarm_aborts_slow_render(monkeypatch):
+    """Codex-flagged gap: the signal.alarm timeout in _render_payload was
+    never exercised by tests. Mock core.main with time.sleep > timeout and
+    verify _render_payload returns None within the timeout window.
+
+    POSIX-only (signal.alarm); skipped on Windows.
+    """
+    import signal as _sig
+    if not hasattr(_sig, "SIGALRM"):
+        import pytest
+        pytest.skip("signal.alarm not available on this platform")
+
+    import claude_statusbar.core as core_mod
+    import time as _time
+
+    # Shorten timeout so the test runs in ~1s.
+    monkeypatch.setattr(_d, "RENDER_TIMEOUT_S", 1)
+
+    def slow_core_main(**kwargs):
+        _time.sleep(5)  # would exceed 1s alarm
+        sys.stdout.write("LATE")
+
+    monkeypatch.setattr(core_mod, "main", slow_core_main)
+
+    t0 = _time.time()
+    out = _d._render_payload("{}")
+    elapsed = _time.time() - t0
+    assert out is None, f"timeout path should return None, got {out!r}"
+    # Should bail in ~1s + epsilon, not the full 5s sleep.
+    assert elapsed < 3.0, f"timeout took {elapsed:.1f}s — alarm not firing"
+
+
 def test_render_payload_captures_stdout(monkeypatch):
     """Daemon's _render_payload must capture core.main()'s stdout into a string.
 

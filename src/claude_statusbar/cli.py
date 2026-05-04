@@ -186,17 +186,38 @@ def main():
                 or not sys.stdout.isatty()
             )
             # Optional --theme NAME / --style NAME filter: render only the
-            # requested combo instead of all 21. Skip the leading "--no-color".
+            # requested combo instead of all 21. Accepts both `--theme nord`
+            # and `--theme=nord`; rejects `--theme` with no value (silent
+            # fall-through would render all 21, surprising the user).
             theme_filter = None
             style_filter = None
             i = 0
             while i < len(rest):
                 tok = rest[i]
-                if tok == "--theme" and i + 1 < len(rest):
-                    theme_filter = rest[i + 1]; i += 2; continue
-                if tok == "--style" and i + 1 < len(rest):
-                    style_filter = rest[i + 1]; i += 2; continue
-                i += 1
+                for flag, setter in (("--theme", "theme"), ("--style", "style")):
+                    if tok == flag:
+                        if i + 1 >= len(rest) or rest[i + 1].startswith("--"):
+                            print(f"{flag} requires a value", file=sys.stderr)
+                            return 2
+                        if setter == "theme":
+                            theme_filter = rest[i + 1]
+                        else:
+                            style_filter = rest[i + 1]
+                        i += 2
+                        break
+                    if tok.startswith(flag + "="):
+                        val = tok[len(flag) + 1:]
+                        if not val:
+                            print(f"{flag}= requires a value", file=sys.stderr)
+                            return 2
+                        if setter == "theme":
+                            theme_filter = val
+                        else:
+                            style_filter = val
+                        i += 1
+                        break
+                else:
+                    i += 1
             return run_preview(
                 use_color=not no_color,
                 theme_filter=theme_filter,
