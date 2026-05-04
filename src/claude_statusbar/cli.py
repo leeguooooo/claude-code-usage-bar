@@ -27,6 +27,9 @@ def _run_config_subcommand(rest):
         print(f"auto_compact_width = {cfg.auto_compact_width or '(disabled)'}")
         print(f"show_weekly        = {cfg.show_weekly}")
         print(f"show_language      = {cfg.show_language}")
+        print(f"show_cost          = {cfg.show_cost}")
+        print(f"show_cache_age     = {cfg.show_cache_age}")
+        print(f"cache_ttl_seconds  = {cfg.cache_ttl_seconds}")
         print(f"warning_threshold  = {cfg.warning_threshold}")
         print(f"critical_threshold = {cfg.critical_threshold}")
         print(f"\nfile: {cfg_mod.CONFIG_PATH}")
@@ -158,12 +161,14 @@ Integration:
         """,
     )
 
-    # Deferred: only resolve __version__ when --version is actually parsed
-    # (still cheap compared to having it at module import).
-    from . import __version__ as _ver
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {_ver}"
-    )
+    # `from . import __version__` triggers importlib.metadata, which pulls
+    # email.message + zipfile + ~20ms of cumulative imports on every render.
+    # Only register the action when the user actually asked for --version.
+    if "--version" in sys.argv[1:]:
+        from . import __version__ as _ver
+        parser.add_argument(
+            "--version", action="version", version=f"%(prog)s {_ver}"
+        )
 
     parser.add_argument(
         "--setup",

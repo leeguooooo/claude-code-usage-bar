@@ -199,3 +199,17 @@ def test_cache_text_empty_when_no_transcript_path(tmp_path: Path, monkeypatch):
     """No transcript_path field → no signal at all; segment hidden."""
     _install_fake_cache(monkeypatch, tmp_path, {"some_other_field": "x"})
     assert core.get_cache_age_text() == ""
+
+
+def test_cache_text_respects_custom_ttl(tmp_path: Path, monkeypatch):
+    """Users on the 1h Anthropic cache pass ttl_seconds=3600; entries between
+    300s and 3600s should still report warm, not COLD."""
+    transcript = tmp_path / "t.jsonl"
+    ts = datetime.now(timezone.utc) - timedelta(seconds=600)  # 10 min old
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    # Default 300s TTL → COLD
+    assert core.get_cache_age_text(300) == "COLD"
+    # 1h TTL → still warm, formatted as 10m
+    out = core.get_cache_age_text(3600)
+    assert out.startswith("10m"), f"expected 10m..., got {out!r}"
