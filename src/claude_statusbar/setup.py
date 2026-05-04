@@ -60,9 +60,17 @@ def _resolve_cs_command() -> str:
     return "cs"
 
 
-def _statusline_config() -> dict:
-    """Build the statusLine entry we want to write."""
-    return {"type": "command", "command": _resolve_cs_command()}
+def _statusline_config(fast: bool = False) -> dict:
+    """Build the statusLine entry we want to write.
+
+    `fast=True` emits ``cs render`` (Phase B daemon thin client). The bare
+    ``cs`` form keeps the legacy inline path so existing users aren't
+    affected by this change.
+    """
+    cmd = _resolve_cs_command()
+    if fast:
+        cmd = f"{cmd} render"
+    return {"type": "command", "command": cmd}
 
 
 def _is_our_statusline(entry: object) -> bool:
@@ -99,7 +107,7 @@ def is_statusline_configured() -> bool:
     return _is_our_statusline(settings.get("statusLine"))
 
 
-def ensure_statusline_configured() -> Tuple[bool, str]:
+def ensure_statusline_configured(fast: bool = False) -> Tuple[bool, str]:
     """Silently ensure settings.json has *our* statusLine config.
 
     Behavior:
@@ -108,11 +116,14 @@ def ensure_statusline_configured() -> Tuple[bool, str]:
       - our cmd, stale path (different `command`) → refresh path
       - our cmd, current → no-op
 
+    `fast=True` writes the Phase B ``cs render`` command instead of bare
+    ``cs``. Both forms pass _is_our_statusline (basename check).
+
     Returns (changed, message).
     """
     settings = _read_settings()
     existing = settings.get("statusLine")
-    desired  = _statusline_config()
+    desired  = _statusline_config(fast=fast)
 
     if existing is None:
         settings["statusLine"] = desired
@@ -182,12 +193,16 @@ def install_commands(force: bool = False) -> Tuple[int, list[str]]:
     return installed, skipped
 
 
-def run_setup(verbose: bool = True, install_cmds: bool = True) -> int:
+def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = False) -> int:
     """Interactive setup: configure the statusLine and install slash commands.
+
+    `fast=True` opts into Phase B daemon mode (statusLine command becomes
+    ``cs render``). Also kicks off ``cs daemon start`` so the user sees
+    the speedup immediately.
 
     Returns exit code (0 success, 1 partial failure, 2 unrecoverable).
     """
-    changed, message = ensure_statusline_configured()
+    changed, message = ensure_statusline_configured(fast=fast)
     statusline_ok = changed or "already configured" in message
 
     if verbose:
@@ -210,6 +225,18 @@ def run_setup(verbose: bool = True, install_cmds: bool = True) -> int:
                 for s in skipped:
                     print(f"    {s}")
             print("  Try /statusbar in Claude Code.")
+
+    if fast:
+        # Spin up the daemon now so the next status-line tick benefits.
+        # Failure isn't fatal — render_thin will lazy-spawn anyway.
+        try:
+            from . import daemon as _d
+            rc = _d.cmd_start(detach=True)
+            if verbose and rc == 0:
+                print("✓ Daemon started — status bar renders should be ~5ms each tick.")
+        except Exception as e:
+            if verbose:
+                print(f"! Could not pre-start daemon: {e} (lazy-spawn will retry)")
 
     if statusline_ok and cmds_ok:
         return 0

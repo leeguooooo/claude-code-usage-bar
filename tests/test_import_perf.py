@@ -77,3 +77,39 @@ def test_init_module_does_not_import_metadata():
         "importlib.metadata loaded just by `import claude_statusbar` — the "
         "lazy __version__ accessor in __init__.py was bypassed."
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase B: render_thin must stay tiny
+# ---------------------------------------------------------------------------
+RENDER_THIN_BANNED = {
+    # Heavy first-party modules that defeat the daemon speedup if pulled in
+    # on the fast path.
+    "claude_statusbar.core",
+    "claude_statusbar.styles",
+    "claude_statusbar.themes",
+    "claude_statusbar.progress",
+    "claude_statusbar.setup",
+    "claude_statusbar.daemon",
+    # Heavy stdlib already covered above:
+    "importlib.metadata",
+    "subprocess",
+    "shutil",
+    "argparse",
+}
+
+
+def test_render_thin_imports_stay_minimal():
+    """`cs render` (Phase B fast path) must import none of the heavy modules.
+
+    If the daemon is alive and rendered.ansi is fresh, the entire render is
+    just `read file → write to stdout`. Pulling core/styles/themes into the
+    happy path would add ~10ms per tick × 60 ticks/min = pure regression.
+    """
+    loaded = _list_imports_for("claude_statusbar.render_thin")
+    leaked = sorted(RENDER_THIN_BANNED & loaded)
+    assert not leaked, (
+        f"cs render fast-path import regression: {leaked} are loaded just "
+        f"by importing claude_statusbar.render_thin. Move them to lazy "
+        f"local imports in the fallback path only."
+    )

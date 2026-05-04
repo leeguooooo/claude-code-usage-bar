@@ -124,6 +124,21 @@ Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs
 
 Override per-invocation via `--style` / `--theme` flags or `CLAUDE_STATUSBAR_STYLE` / `CLAUDE_STATUSBAR_THEME` env vars.
 
+### Fast mode — for `refreshInterval: 1`
+
+If you've set `"refreshInterval": 1` in `settings.json` (so the cache-age widget ticks every second), the default `cs` command runs ~45ms per render = ~4% CPU continuously. Fast mode brings that down to ~3-5ms per render = under 1% CPU by keeping a long-lived `cs daemon` that pre-renders into `~/.cache/claude-statusbar/rendered.ansi`. The statusLine command becomes `cs render` — a thin reader that just `cat`s the file.
+
+```bash
+cs --setup --fast        # writes settings.json + spins up the daemon
+cs daemon status         # check it's alive
+cs daemon stop           # stop the daemon (statusLine falls back to inline)
+cs daemon start          # start it again
+```
+
+Crash safety: if the daemon dies or freezes, `cs render` notices `rendered.meta.json` is older than 5s and falls back to inline render — and lazily re-spawns the daemon in the background. You never see a frozen status line.
+
+To revert: `cs --setup` (no `--fast`) restores the bare-`cs` legacy command.
+
 ### `cs doctor` — self-diagnostic
 
 If the status bar isn't behaving the way you expect, run:
@@ -137,6 +152,7 @@ It prints (with red ✗ for anything off):
 - Which `cs` binary the OS will resolve, plus its version + Python interpreter
 - Whether `~/.claude/settings.json` has *our* statusLine entry (vs missing / vs another tool's)
 - How fresh `~/.cache/claude-statusbar/last_stdin.json` is (so you can tell if Claude Code is actually pushing data)
+- If the daemon is running (fast mode) — its pid and how stale `rendered.ansi` is
 - Terminal size and `TERM`
 - Current resolved `style` / `theme` / all `show_*` toggles
 - Slash commands installed under `~/.claude/commands/`
