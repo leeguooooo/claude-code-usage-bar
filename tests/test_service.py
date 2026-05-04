@@ -75,6 +75,27 @@ def test_install_unsupported_platform(monkeypatch):
     assert "not supported" in msg.lower()
 
 
+def test_plist_body_parses_as_valid_xml():
+    """A nice-to-have but cheap insurance: plist text must be parseable XML.
+
+    Unescaped path characters (& < >) in $HOME would silently produce
+    malformed XML that launchctl rejects. The xml.sax.saxutils.escape
+    fix means even paths with `&` survive.
+    """
+    import xml.etree.ElementTree as ET
+    body = service._build_launchd_plist("/path/with/&-and-<-and->")
+    # Must not raise.
+    root = ET.fromstring(body)
+    assert root.tag == "plist"
+
+
+def test_systemd_exec_start_quotes_paths_with_spaces():
+    """A path with spaces must be shell-quoted in ExecStart."""
+    body = service._build_systemd_unit("/path with spaces/cs")
+    # shlex.quote wraps in single quotes; verify the path survived intact.
+    assert "ExecStart='/path with spaces/cs' daemon _run" in body
+
+
 def test_uninstall_idempotent_when_nothing_installed(monkeypatch, tmp_path: Path):
     """Calling uninstall when no plist/unit exists should report success."""
     if service._platform() == "macos":
