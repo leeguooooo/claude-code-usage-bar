@@ -55,16 +55,55 @@ def test_is_alive_for_dead_pid():
 
 
 # ---------------------------------------------------------------------------
-# Atomic publish / meta freshness
+# Per-session render (v3.3.0+)
 # ---------------------------------------------------------------------------
-def test_publish_writes_both_files(monkeypatch, tmp_path: Path):
+def test_render_session_writes_per_session_files(monkeypatch, tmp_path: Path):
+    """_render_session must write rendered.ansi + meta.json into the
+    per-session subdir, not the legacy top-level paths."""
     monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
-    _d._publish("hello world")
-    assert (tmp_path / "rendered.ansi").read_text(encoding="utf-8") == "hello world\n"
-    meta = json.loads((tmp_path / "rendered.meta.json").read_text(encoding="utf-8"))
-    assert meta["pid"] == os.getpid()
-    assert meta["stale_after_seconds"] == _d.META_STALE_AFTER
-    assert abs(meta["generated_at"] - time.time()) < 5.0
+    sid = "abcd-1234"
+    sdir = tmp_path / "sessions" / sid
+    sdir.mkdir(parents=True)
+    (sdir / "last_stdin.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(_d, "_render_payload", lambda payload: "FAKE LINE")
+
+    assert _d._render_session(sid) is True
+    rendered = sdir / "rendered.ansi"
+    meta = sdir / "rendered.meta.json"
+    assert rendered.read_text() == "FAKE LINE\n"
+    m = json.loads(meta.read_text())
+    assert m["session_id"] == sid
+    assert m["pid"] == os.getpid()
+
+
+def test_active_sessions_lists_recent_buckets(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+    sroot = tmp_path / "sessions"
+    sroot.mkdir(parents=True)
+    fresh = sroot / "fresh-sid"
+    fresh.mkdir()
+    (fresh / "last_stdin.json").write_text("{}", encoding="utf-8")
+    # Stale: mtime > GC threshold
+    stale = sroot / "stale-sid"
+    stale.mkdir()
+    p = stale / "last_stdin.json"
+    p.write_text("{}", encoding="utf-8")
+    old = time.time() - (_d.SESSION_GC_AFTER_S + 60)
+    os.utime(p, (old, old))
+
+    sids = _d._active_sessions()
+    assert "fresh-sid" in sids
+    assert "stale-sid" not in sids
+
+
+def test_session_dir_sanitises_session_id(monkeypatch, tmp_path: Path):
+    """Defensive: a malicious session_id with path traversal must not
+    escape sessions/ directory."""
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+    d = _d.session_dir("../../etc/passwd")
+    # Result must be inside sessions/, not the literal traversal path.
+    assert (tmp_path / "sessions") in d.parents
 
 
 # ---------------------------------------------------------------------------
@@ -87,34 +126,42 @@ def test_thin_client_handles_missing_fields():
     assert render_thin._is_fresh({"generated_at": "not-a-number"}) is False
 
 
-def test_thin_client_read_meta_missing(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(render_thin, "_META", tmp_path / "nope.json")
-    assert render_thin._read_meta() is None
+def test_thin_client_read_meta_missing(tmp_path: Path):
+    assert render_thin._read_meta(tmp_path / "nope.json") is None
 
 
-def test_thin_client_read_meta_corrupt(monkeypatch, tmp_path: Path):
+def test_thin_client_read_meta_corrupt(tmp_path: Path):
     p = tmp_path / "meta.json"
     p.write_text("not json", encoding="utf-8")
-    monkeypatch.setattr(render_thin, "_META", p)
-    assert render_thin._read_meta() is None
+    assert render_thin._read_meta(p) is None
+
+
+def _setup_session_paths(monkeypatch, tmp_path: Path):
+    """Common helper: rebase render_thin's cache + sessions root to tmp_path."""
+    monkeypatch.setattr(render_thin, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(render_thin, "_SESSIONS_DIR", tmp_path / "sessions")
+    monkeypatch.setattr(render_thin, "_LEGACY_STDIN_CACHE", tmp_path / "last_stdin.json")
 
 
 # ---------------------------------------------------------------------------
 # Thin client end-to-end: fresh daemon output → fast path (no core import)
 # ---------------------------------------------------------------------------
 def test_thin_client_fast_path_prints_rendered(monkeypatch, tmp_path: Path, capsys):
-    """When meta is fresh, cs render must just write rendered.ansi to stdout."""
-    rendered = tmp_path / "rendered.ansi"
-    meta = tmp_path / "rendered.meta.json"
-    rendered.write_text("FAKE STATUS LINE\n", encoding="utf-8")
-    meta.write_text(json.dumps({
+    """When meta is fresh, cs render must just write the per-session
+    rendered.ansi to stdout."""
+    _setup_session_paths(monkeypatch, tmp_path)
+    sid = "test-session"
+    sdir = tmp_path / "sessions" / sid
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("FAKE STATUS LINE\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
         "generated_at": time.time(),
         "stale_after_seconds": 5.0,
         "pid": 9999,
     }), encoding="utf-8")
-    monkeypatch.setattr(render_thin, "_RENDERED", rendered)
-    monkeypatch.setattr(render_thin, "_META", meta)
-    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: None)
+
+    payload = json.dumps({"session_id": sid}).encode()
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload)
 
     rc = render_thin.render()
     out = capsys.readouterr().out
@@ -122,46 +169,50 @@ def test_thin_client_fast_path_prints_rendered(monkeypatch, tmp_path: Path, caps
     assert out == "FAKE STATUS LINE\n"
 
 
-def test_thin_client_forwards_stdin_to_cache(monkeypatch, tmp_path: Path, capsys):
-    """Critical Phase B regression: the thin client MUST persist stdin so
-    the daemon sees fresh rate_limits on its next tick. Without this the
-    7d% / 5h% counters freeze the moment fast-mode is enabled."""
-    rendered = tmp_path / "rendered.ansi"
-    meta = tmp_path / "rendered.meta.json"
-    cache = tmp_path / "last_stdin.json"
-    rendered.write_text("X\n", encoding="utf-8")
-    meta.write_text(json.dumps({
-        "generated_at": time.time(),
-        "stale_after_seconds": 5.0,
-    }), encoding="utf-8")
-    monkeypatch.setattr(render_thin, "_RENDERED", rendered)
-    monkeypatch.setattr(render_thin, "_META", meta)
-    monkeypatch.setattr(render_thin, "_CACHE_DIR", tmp_path)
-    monkeypatch.setattr(render_thin, "_LAST_STDIN_CACHE", cache)
+def test_thin_client_forwards_stdin_to_per_session_cache(monkeypatch, tmp_path: Path):
+    """v3.3.0 critical: the thin client must persist stdin to PER-SESSION
+    last_stdin.json so the daemon renders this session's data, not whatever
+    other window most recently called cs render."""
+    _setup_session_paths(monkeypatch, tmp_path)
+    sid_a = "session-aaa"
+    sid_b = "session-bbb"
 
-    fresh_payload = b'{"rate_limits": {"seven_day": {"used_percentage": 79}}}'
-    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: fresh_payload)
+    payload_a = json.dumps({"session_id": sid_a, "marker": "A"}).encode()
+    payload_b = json.dumps({"session_id": sid_b, "marker": "B"}).encode()
 
+    monkeypatch.setattr(render_thin, "_spawn_daemon_async", lambda: None)
+    monkeypatch.setattr(render_thin, "_fallback_inline", lambda: 0)
+
+    # Simulate window A then window B both calling cs render.
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload_a)
     render_thin.render()
-    assert cache.exists(), "thin client must write stdin to last_stdin.json"
-    assert cache.read_bytes() == fresh_payload
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload_b)
+    render_thin.render()
+
+    # Both must have their own bucket; B did NOT overwrite A's stdin.
+    a_stdin = tmp_path / "sessions" / sid_a / "last_stdin.json"
+    b_stdin = tmp_path / "sessions" / sid_b / "last_stdin.json"
+    assert a_stdin.read_bytes() == payload_a, (
+        "session A's stdin was overwritten — multi-session race not fixed"
+    )
+    assert b_stdin.read_bytes() == payload_b
 
 
 def test_thin_client_fallback_when_meta_stale(monkeypatch, tmp_path: Path):
     """Stale meta → must NOT use rendered.ansi, must call inline fallback."""
-    rendered = tmp_path / "rendered.ansi"
-    meta = tmp_path / "rendered.meta.json"
-    rendered.write_text("STALE GARBAGE\n", encoding="utf-8")
-    meta.write_text(json.dumps({
-        "generated_at": time.time() - 60.0,  # 1 minute ago
+    _setup_session_paths(monkeypatch, tmp_path)
+    sid = "stale-sid"
+    sdir = tmp_path / "sessions" / sid
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("STALE GARBAGE\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time() - 60.0,
         "stale_after_seconds": 5.0,
     }), encoding="utf-8")
-    monkeypatch.setattr(render_thin, "_RENDERED", rendered)
-    monkeypatch.setattr(render_thin, "_META", meta)
-    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: None)
+    payload = json.dumps({"session_id": sid}).encode()
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload)
 
-    fallback_called = []
-    spawn_called = []
+    fallback_called, spawn_called = [], []
     monkeypatch.setattr(render_thin, "_fallback_inline",
                         lambda: (fallback_called.append(True), 0)[1])
     monkeypatch.setattr(render_thin, "_spawn_daemon_async",
@@ -169,13 +220,12 @@ def test_thin_client_fallback_when_meta_stale(monkeypatch, tmp_path: Path):
 
     rc = render_thin.render()
     assert rc == 0
-    assert fallback_called == [True], "stale meta should hit inline fallback"
-    assert spawn_called == [True], "stale meta should kick off lazy daemon spawn"
+    assert fallback_called == [True]
+    assert spawn_called == [True]
 
 
 def test_thin_client_fallback_when_no_meta(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(render_thin, "_RENDERED", tmp_path / "nope.ansi")
-    monkeypatch.setattr(render_thin, "_META", tmp_path / "nope.json")
+    _setup_session_paths(monkeypatch, tmp_path)
     monkeypatch.setattr(render_thin, "_consume_stdin", lambda: None)
     fallback_called = []
     monkeypatch.setattr(render_thin, "_fallback_inline",
@@ -186,13 +236,9 @@ def test_thin_client_fallback_when_no_meta(monkeypatch, tmp_path: Path):
 
 
 def test_thin_client_fallback_replays_stdin_for_core_main(monkeypatch, tmp_path: Path):
-    """When falling back to inline render, the captured stdin bytes must be
-    replayed into sys.stdin so core.main()'s parse_stdin_data() sees them."""
-    monkeypatch.setattr(render_thin, "_RENDERED", tmp_path / "nope.ansi")
-    monkeypatch.setattr(render_thin, "_META", tmp_path / "nope.json")
-    monkeypatch.setattr(render_thin, "_CACHE_DIR", tmp_path)
-    monkeypatch.setattr(render_thin, "_LAST_STDIN_CACHE", tmp_path / "ls.json")
-    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: b'{"hello": "world"}')
+    _setup_session_paths(monkeypatch, tmp_path)
+    payload = b'{"session_id": "x", "hello": "world"}'
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload)
     monkeypatch.setattr(render_thin, "_spawn_daemon_async", lambda: None)
 
     seen = {}
@@ -202,9 +248,17 @@ def test_thin_client_fallback_replays_stdin_for_core_main(monkeypatch, tmp_path:
     monkeypatch.setattr(render_thin, "_fallback_inline", fake_inline)
 
     render_thin.render()
-    assert seen["stdin"] == '{"hello": "world"}', (
+    assert seen["stdin"] == payload.decode(), (
         f"fallback path must see replayed stdin; got {seen.get('stdin')!r}"
     )
+
+
+def test_extract_session_id_handles_missing_field():
+    """Old Claude Code versions or malformed payloads → fall back to "default"
+    bucket so the daemon still renders something."""
+    assert render_thin._extract_session_id(b"{}") == "default"
+    assert render_thin._extract_session_id(b"not-json") == "default"
+    assert render_thin._extract_session_id(b'{"session_id": "abc-123"}') == "abc-123"
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +360,7 @@ def test_running_global_is_reset_per_run_forever_call(monkeypatch, tmp_path: Pat
     We don't actually loop here — we just verify the flag gets reset.
     """
     monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
-    monkeypatch.setattr(_d, "_render_once", lambda: None)  # nothing to publish
+    monkeypatch.setattr(_d, "_render_all_sessions", lambda: 0)
 
     _d._running = False  # simulate previous shutdown
     # Patch acquire to fail immediately so run_forever returns without
@@ -353,15 +407,12 @@ def test_ensure_statusline_preserves_fast_mode(tmp_path: Path, monkeypatch):
     )
 
 
-def test_render_once_captures_stdout(monkeypatch, tmp_path: Path):
-    """Daemon's _render_once must capture core.main()'s stdout into a string.
+def test_render_payload_captures_stdout(monkeypatch):
+    """Daemon's _render_payload must capture core.main()'s stdout into a string.
 
     If core.main ever stops printing (e.g., switches to logging), the daemon
     would silently produce empty output. This test pins the contract.
     """
-    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
-    (tmp_path / "last_stdin.json").write_text("{}", encoding="utf-8")
-
     captured_kwargs = {}
 
     def fake_core_main(**kwargs):
@@ -372,7 +423,7 @@ def test_render_once_captures_stdout(monkeypatch, tmp_path: Path):
     import claude_statusbar.core as core_mod
     monkeypatch.setattr(core_mod, "main", fake_core_main)
 
-    out = _d._render_once()
+    out = _d._render_payload("{}")
     assert out == "FAKE RENDERED LINE", f"capture failed; got {out!r}"
     assert captured_kwargs.get("_suppress_side_effects") is True, (
         "daemon must call core.main with _suppress_side_effects=True so it "
