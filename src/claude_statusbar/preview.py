@@ -52,12 +52,25 @@ def _real_data() -> Optional[dict]:
     size = cw.get("context_window_size", 0)
     if size > 0:
         name = f"{name}({_fmt_num(used)}/{_fmt_num(size)})"
+
+    # Optional segments — compute the same way core.main does so preview
+    # actually shows what the live status line shows.
+    from .core import get_cache_age_text
+    cache_age_text = get_cache_age_text(300)
+
+    cost_text = ""
+    sc = raw.get("session_cost_usd") or (raw.get("cost") or {}).get("total_cost_usd")
+    if isinstance(sc, (int, float)) and sc >= 0:
+        cost_text = f"{sc:.2f}"
+
     return dict(
         msgs_pct=int(round(fh.get("used_percentage", 0))),
         weekly_pct=int(round(sd.get("used_percentage", 0))),
         reset_5h=_fmt_reset(fh.get("resets_at")),
         reset_7d=_fmt_reset(sd.get("resets_at")),
         model=name,
+        cache_age_text=cache_age_text,
+        cost_text=cost_text,
     )
 
 
@@ -66,6 +79,8 @@ def _demo_data() -> dict:
         msgs_pct=42, weekly_pct=18,
         reset_5h="3h28m", reset_7d="5d12h",
         model="Opus 4.7(45.0k/1.0M)",
+        cache_age_text="3m24s",  # warm — demo what countdown looks like
+        cost_text="2.18",
     )
 
 
@@ -106,7 +121,10 @@ def run(use_color: bool = True) -> int:
                 msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],
                 reset_5h=data["reset_5h"], reset_7d=data["reset_7d"],
                 model=data["model"],
-                lang_body="", bypass=False,
+                lang_body="",
+                cost_text=data.get("cost_text", ""),
+                cache_age_text=data.get("cache_age_text", ""),
+                bypass=False,
                 use_color=use_color,
                 warning_threshold=30.0, critical_threshold=70.0,
             )
@@ -118,7 +136,10 @@ def run(use_color: bool = True) -> int:
                 msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],
                 reset_5h=data["reset_5h"], reset_7d=data["reset_7d"],
                 model=data["model"],
-                lang_body="", bypass=False,
+                lang_body="",
+                cost_text=data.get("cost_text", ""),
+                cache_age_text=data.get("cache_age_text", ""),
+                bypass=False,
                 use_color=use_color,
                 warning_threshold=30.0, critical_threshold=70.0,
             )
