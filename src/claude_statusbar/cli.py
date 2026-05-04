@@ -196,11 +196,6 @@ Integration:
         help="Show detailed breakdown of usage data and limits",
     )
     parser.add_argument(
-        "--watch",
-        action="store_true",
-        help="Live refresh mode: re-render status bar every 5 seconds",
-    )
-    parser.add_argument(
         "--plan",
         type=str,
         help=(
@@ -326,41 +321,16 @@ Integration:
         # Pull in the heavy render path only now (after we've definitely
         # decided to render — subcommands have already returned by here).
         from .core import main as statusbar_main
-
-        if args.watch:
-            # Watch mode: re-render every 5 seconds
-            import time
-            print("📡 Watch mode: Press Ctrl+C to stop", file=sys.stderr)
-            try:
-                while True:
-                    # Clear line and re-render
-                    sys.stdout.write("\r\033[K")
-                    sys.stdout.flush()
-                    statusbar_main(
-                        json_output=json_output,
-                        reset_hour=reset_hour,
-                        use_color=use_color,
-                        detail=args.detail,
-                        warning_threshold=warning_threshold,
-                        critical_threshold=critical_threshold,
-                        style_override=args.style,
-                        theme_override=args.theme,
-                    )
-                    time.sleep(5)
-            except KeyboardInterrupt:
-                print("\n✓ Watch mode stopped", file=sys.stderr)
-                return 0
-        else:
-            statusbar_main(
-                json_output=json_output,
-                reset_hour=reset_hour,
-                use_color=use_color,
-                detail=args.detail,
-                warning_threshold=warning_threshold,
-                critical_threshold=critical_threshold,
-                style_override=args.style,
-                theme_override=args.theme,
-            )
+        statusbar_main(
+            json_output=json_output,
+            reset_hour=reset_hour,
+            use_color=use_color,
+            detail=args.detail,
+            warning_threshold=warning_threshold,
+            critical_threshold=critical_threshold,
+            style_override=args.style,
+            theme_override=args.theme,
+        )
         return 0
     except KeyboardInterrupt:
         return 130
