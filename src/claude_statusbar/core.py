@@ -991,7 +991,16 @@ def main(json_output: bool = False,
          detail: bool = False,
          warning_threshold: float = 30.0, critical_threshold: float = 70.0,
          style_override: Optional[str] = None,
-         theme_override: Optional[str] = None):
+         theme_override: Optional[str] = None,
+         _suppress_side_effects: bool = False):
+    """Main render entry point.
+
+    `_suppress_side_effects` is set by the daemon mode (Phase B): when the
+    long-lived daemon is doing the rendering, we don't want it firing the
+    per-render auto-update / settings-repair checks (those run on their own
+    cadence elsewhere, and the daemon shouldn't accidentally re-trigger them
+    1Hz).
+    """
     """Main function"""
     from . import config as _cfg
     # Heavier imports (.styles + .themes + .progress) happen lazily below
@@ -1038,7 +1047,7 @@ def main(json_output: bool = False,
     cache_age_text = get_cache_age_text(cfg.cache_ttl_seconds) if cfg.show_cache_age else ""
 
     try:
-        if not json_output:
+        if not json_output and not _suppress_side_effects:
             check_for_updates(stdin_data.get('session_id', ''))
             # Silently restore statusLine config if a Claude Code upgrade wiped
             # it. Throttled to once per day — settings.json doesn't change

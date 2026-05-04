@@ -118,6 +118,28 @@ def run() -> int:
         _line("last_stdin cache",
               _dim("not yet — Claude Code hasn't pushed any payload"))
 
+    # --- daemon (Phase B) ---
+    try:
+        from . import daemon as _d
+        pid = _d.read_pidfile()
+        if pid is None:
+            _line("daemon", _dim("not running (statusLine in inline mode — fine, but slower)"))
+        elif _d.is_alive(pid):
+            try:
+                meta = json.loads(_d.meta_path().read_text(encoding="utf-8"))
+                age = _dt.datetime.now().timestamp() - float(meta.get("generated_at", 0))
+                stale = float(meta.get("stale_after_seconds", 5.0))
+                if age <= stale:
+                    _line("daemon", f"pid {pid} alive  rendered.ansi {age:.1f}s old", ok=True)
+                else:
+                    _line("daemon", _red(f"pid {pid} alive but rendered.ansi is {age:.1f}s old (stale > {stale}s)"), ok=False)
+            except (OSError, ValueError, json.JSONDecodeError) as e:
+                _line("daemon", _red(f"pid {pid} alive but meta unreadable: {e}"), ok=False)
+        else:
+            _line("daemon", _red(f"pidfile says {pid} but process is gone — run: cs daemon stop"), ok=False)
+    except Exception as e:
+        _line("daemon", _dim(f"check skipped: {e}"))
+
     # --- terminal ---
     try:
         size = os.get_terminal_size()

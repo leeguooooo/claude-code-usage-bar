@@ -99,12 +99,65 @@ def _run_styles_subcommand():
     return 0
 
 
+def _run_daemon_subcommand(rest):
+    """Handle `cs daemon <action> [args]`. Returns exit code."""
+    if not rest:
+        rest = ["status"]
+    action = rest[0]
+    extra = rest[1:]
+    from . import daemon as _d
+
+    if action == "status":
+        return _d.cmd_status()
+    if action == "stop":
+        return _d.cmd_stop()
+    if action == "start":
+        # `cs daemon start --foreground` for debugging; default detaches.
+        foreground = "--foreground" in extra
+        interval = _d.DEFAULT_RENDER_INTERVAL
+        for i, a in enumerate(extra):
+            if a == "--render-interval" and i + 1 < len(extra):
+                try:
+                    interval = float(extra[i + 1])
+                except ValueError:
+                    print(f"invalid --render-interval: {extra[i + 1]!r}", file=sys.stderr)
+                    return 2
+        return _d.cmd_start(detach=not foreground, render_interval=interval)
+    if action == "_run":
+        # Internal: child process invocation from cmd_start(detach=True).
+        # Not part of the public CLI; the leading underscore signals that.
+        interval = _d.DEFAULT_RENDER_INTERVAL
+        for i, a in enumerate(extra):
+            if a == "--render-interval" and i + 1 < len(extra):
+                try:
+                    interval = float(extra[i + 1])
+                except ValueError:
+                    pass
+        return _d.run_forever(render_interval=interval)
+    print(
+        f"unknown daemon action: {action!r} "
+        "(usage: cs daemon [start|stop|status])",
+        file=sys.stderr,
+    )
+    return 2
+
+
 def main():
     """Main CLI entry point"""
+    # Render fast-path: `cs render` is what Claude Code calls 60×/min when
+    # the user has switched to daemon mode (`cs setup --fast`). It must
+    # avoid heavy imports — argparse + the rest of the CLI only loads on
+    # the inline-fallback path, deep inside render_thin.
+    if len(sys.argv) >= 2 and sys.argv[1] == "render":
+        from .render_thin import render
+        return render()
+
     # Subcommands hijack argv before argparse so they coexist with flags.
-    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands", "doctor"):
+    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands", "doctor", "daemon"):
         sub = sys.argv[1]
         rest = sys.argv[2:]
+        if sub == "daemon":
+            return _run_daemon_subcommand(rest)
         if sub == "config":
             return _run_config_subcommand(rest)
         if sub == "themes":
@@ -174,6 +227,15 @@ Integration:
         "--setup",
         action="store_true",
         help="Configure ~/.claude/settings.json to show the status bar in Claude Code",
+    )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help=(
+            "When used with --setup, install the Phase B daemon mode: "
+            "statusLine command becomes `cs render` (3-5ms) backed by a "
+            "long-lived daemon. Use this when refreshInterval is 1 second."
+        ),
     )
     parser.add_argument(
         "--install-deps",
@@ -289,7 +351,7 @@ Integration:
 
     if args.setup:
         from .setup import run_setup
-        return run_setup(verbose=True)
+        return run_setup(verbose=True, fast=args.fast)
 
     if args.install_deps:
         print("Installing claude-monitor for full functionality...")
