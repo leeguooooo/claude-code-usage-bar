@@ -134,9 +134,20 @@ def _run_daemon_subcommand(rest):
                 except ValueError:
                     pass
         return _d.run_forever(render_interval=interval)
+    if action in ("install", "uninstall", "service"):
+        from . import service as _svc
+        if action == "install":
+            ok, msg = _svc.install()
+        elif action == "uninstall":
+            ok, msg = _svc.uninstall()
+        else:  # service → status
+            ok, msg = _svc.status()
+        marker = "✓" if ok else "!"
+        print(f"{marker} {msg}")
+        return 0 if ok else 1
     print(
         f"unknown daemon action: {action!r} "
-        "(usage: cs daemon [start|stop|status])",
+        "(usage: cs daemon [start|stop|status|install|uninstall|service])",
         file=sys.stderr,
     )
     return 2

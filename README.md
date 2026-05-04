@@ -139,6 +139,19 @@ Crash safety: if the daemon dies or freezes, `cs render` notices `rendered.meta.
 
 To revert: `cs --setup` (no `--fast`) restores the bare-`cs` legacy command.
 
+#### Optional: auto-start on login (launchd / systemd)
+
+Lazy-spawn (above) covers most cases — the daemon comes up on first `cs render`. If you want stronger guarantees (auto-start at login, OS restarts the daemon on crash, survives reboots without `cs render` needing to fire first):
+
+```bash
+cs daemon install        # installs ~/Library/LaunchAgents (macOS) or
+                          # ~/.config/systemd/user (Linux), starts the daemon
+cs daemon service        # report whether the OS-level service is registered
+cs daemon uninstall      # remove the LaunchAgent / systemd unit
+```
+
+On macOS, the LaunchAgent has `KeepAlive=true` and `ThrottleInterval=10` — kill the daemon and launchd respawns it within 10 seconds. On Linux, the systemd user unit uses `Restart=always` (you may need `loginctl enable-linger $USER` for the daemon to survive logout).
+
 ### `cs doctor` — self-diagnostic
 
 If the status bar isn't behaving the way you expect, run:
