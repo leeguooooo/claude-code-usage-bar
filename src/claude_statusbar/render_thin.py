@@ -28,14 +28,26 @@ from pathlib import Path
 # Same constants as daemon.py — keep in sync. Duplicated rather than
 # imported so the happy path doesn't pull daemon.py in.
 _CACHE_DIR = Path.home() / ".cache" / "claude-statusbar"
-_RENDERED = _CACHE_DIR / "rendered.ansi"
-_META = _CACHE_DIR / "rendered.meta.json"
+_SESSIONS_DIR = _CACHE_DIR / "sessions"
 _STALE_AFTER_DEFAULT = 5.0  # seconds
 
 
-def _read_meta() -> dict | None:
+def _sanitize_session_id(sid: str) -> str:
+    """Same sanitisation as daemon.session_dir(). Duplicated to keep this
+    module dependency-free."""
+    safe = "".join(c for c in (sid or "default") if c.isalnum() or c in "-_")[:64]
+    return safe or "default"
+
+
+def _session_paths(sid: str) -> tuple[Path, Path, Path]:
+    """Return (stdin, rendered, meta) for one session bucket."""
+    d = _SESSIONS_DIR / _sanitize_session_id(sid)
+    return d / "last_stdin.json", d / "rendered.ansi", d / "rendered.meta.json"
+
+
+def _read_meta(meta_path: Path) -> dict | None:
     try:
-        return json.loads(_META.read_text(encoding="utf-8"))
+        return json.loads(meta_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         return None
 
@@ -60,16 +72,19 @@ def _is_fresh(meta: dict) -> bool:
     return delta <= stale_after
 
 
-_LAST_STDIN_CACHE = _CACHE_DIR / "last_stdin.json"
+# Legacy single-file path: still written for backward compat (old tooling
+# / cs doctor / preview that look at top-level last_stdin.json), but the
+# daemon reads from per-session paths now.
+_LEGACY_STDIN_CACHE = _CACHE_DIR / "last_stdin.json"
 
 
 def _consume_stdin() -> bytes | None:
     """Read Claude Code's stdin payload (bytes) and return it.
 
     Returns None if stdin is interactive or empty. Caller is responsible
-    for both (a) writing it to last_stdin.json so the daemon sees it on
-    the next tick, and (b) replaying it into sys.stdin if the inline
-    fallback path needs to consume it.
+    for both (a) writing it to per-session + legacy last_stdin.json so the
+    daemon sees it on the next tick, and (b) replaying it into sys.stdin
+    if the inline fallback path needs to consume it.
     """
     try:
         if sys.stdin.isatty():
@@ -83,30 +98,45 @@ def _consume_stdin() -> bytes | None:
     return data or None
 
 
-def _persist_stdin_bytes(data: bytes) -> None:
-    """Atomic write of raw bytes to last_stdin.json. No JSON parse — the
-    daemon validates on its next tick. ~1ms cost, never fatal.
-
-    Why we MUST do this: Claude Code injects the *current* model +
-    rate_limits + transcript path on every statusline invocation. The
-    daemon re-reads last_stdin.json to pick up changes. Without this
-    forwarding step, the daemon would be permanently stuck on whatever
-    snapshot was captured the last time `core.main()` ran — token
-    counters and 7d% would freeze the moment fast-mode was enabled.
-    """
+def _extract_session_id(payload: bytes) -> str:
+    """Pull session_id out of the JSON payload. Falls back to "default" if
+    the payload is malformed or doesn't include one (e.g. very old Claude
+    Code versions). Cost: one json.loads call (~0.05ms for typical payload)."""
     try:
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        # Atomic: sibling tempfile + rename. Same pattern as
-        # cache.atomic_write_text but inlined to avoid pulling cache.py
-        # (and its imports) on the fast path.
-        tmp = _LAST_STDIN_CACHE.with_suffix(".json.thin.tmp")
+        d = json.loads(payload.decode("utf-8", errors="replace"))
+        sid = d.get("session_id") or "default"
+        return str(sid)
+    except (ValueError, json.JSONDecodeError):
+        return "default"
+
+
+def _atomic_write_bytes(target: Path, data: bytes) -> None:
+    """Sibling tempfile + os.replace. Inlined so the fast path doesn't
+    need to import cache.atomic_write_text."""
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(target.suffix + ".thin.tmp")
         with open(tmp, "wb") as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, _LAST_STDIN_CACHE)
+        os.replace(tmp, target)
     except OSError:
         pass
+
+
+def _persist_stdin_bytes(data: bytes, session_id: str) -> None:
+    """Write the stdin payload to BOTH the per-session bucket (so daemon
+    renders this session) AND the legacy top-level file (for cs doctor /
+    preview / inline fallback compatibility).
+
+    Why per-session: multiple Claude Code windows used to overwrite each
+    other's last_stdin.json, making the daemon flip-flop. Per-session
+    paths keep them isolated.
+    """
+    session_stdin = _SESSIONS_DIR / _sanitize_session_id(session_id) / "last_stdin.json"
+    _atomic_write_bytes(session_stdin, data)
+    _atomic_write_bytes(_LEGACY_STDIN_CACHE, data)
 
 
 def _spawn_daemon_async() -> None:
@@ -134,20 +164,25 @@ def render() -> int:
     """Main entry point for ``cs render``.
 
     Returns the exit code; mirrors how the legacy `cs` invocation behaved.
-    """
-    # Capture Claude Code's stdin payload first. Both paths need it:
-    #   - fast path: write to last_stdin.json so daemon's next tick is fresh
-    #   - fallback: same write + replay into sys.stdin for core.main()
-    payload = _consume_stdin()
-    if payload is not None:
-        _persist_stdin_bytes(payload)
 
-    # Fast path: if daemon's output is fresh, cat the file and return.
-    # No core/styles/themes import.
-    meta = _read_meta()
+    Multi-session safe (v3.3.0+): each Claude Code window's session_id
+    routes to its own bucket in ~/.cache/claude-statusbar/sessions/<sid>/.
+    Two windows side by side never overwrite each other's rendered.ansi.
+    """
+    # Capture Claude Code's stdin payload, route to per-session bucket.
+    payload = _consume_stdin()
+    session_id = "default"
+    if payload is not None:
+        session_id = _extract_session_id(payload)
+        _persist_stdin_bytes(payload, session_id)
+
+    # Fast path: if THIS session's daemon-rendered output is fresh, cat
+    # the file and return. No core/styles/themes import.
+    _, rendered_path, meta_path = _session_paths(session_id)
+    meta = _read_meta(meta_path)
     if meta is not None and _is_fresh(meta):
         try:
-            sys.stdout.write(_RENDERED.read_text(encoding="utf-8"))
+            sys.stdout.write(rendered_path.read_text(encoding="utf-8"))
             return 0
         except OSError:
             # rendered.ansi disappeared between the meta read and the read.

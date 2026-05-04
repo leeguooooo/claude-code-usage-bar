@@ -130,23 +130,33 @@ def run() -> int:
         _line("last_stdin cache",
               _dim("not yet — Claude Code hasn't pushed any payload"))
 
-    # --- daemon (Phase B) ---
+    # --- daemon (Phase B+) ---
     try:
         from . import daemon as _d
         pid = _d.read_pidfile()
         if pid is None:
             _line("daemon", _dim("not running (statusLine in inline mode — fine, but slower)"))
         elif _d.is_alive(pid):
-            try:
-                meta = json.loads(_d.meta_path().read_text(encoding="utf-8"))
-                age = _dt.datetime.now().timestamp() - float(meta.get("generated_at", 0))
-                stale = float(meta.get("stale_after_seconds", 5.0))
-                if age <= stale:
-                    _line("daemon", f"pid {pid} alive  rendered.ansi {age:.1f}s old", ok=True)
+            sids = _d._active_sessions()
+            if not sids:
+                _line("daemon", f"pid {pid} alive  (no active sessions yet)", ok=True)
+            else:
+                # Summarise across all per-session buckets (v3.3.0+).
+                ages = []
+                stale_count = 0
+                for sid in sids:
+                    try:
+                        meta = json.loads(_d.session_meta_path(sid).read_text(encoding="utf-8"))
+                        age = _dt.datetime.now().timestamp() - float(meta.get("generated_at", 0))
+                        ages.append(age)
+                        if age > _d.META_STALE_AFTER:
+                            stale_count += 1
+                    except (OSError, ValueError, json.JSONDecodeError):
+                        stale_count += 1
+                if stale_count == 0 and ages:
+                    _line("daemon", f"pid {pid} alive  {len(sids)} session(s)  freshest {min(ages):.1f}s", ok=True)
                 else:
-                    _line("daemon", _red(f"pid {pid} alive but rendered.ansi is {age:.1f}s old (stale > {stale}s)"), ok=False)
-            except (OSError, ValueError, json.JSONDecodeError) as e:
-                _line("daemon", _red(f"pid {pid} alive but meta unreadable: {e}"), ok=False)
+                    _line("daemon", _red(f"pid {pid} alive  {len(sids)} session(s)  {stale_count} STALE"), ok=False)
         else:
             _line("daemon", _red(f"pidfile says {pid} but process is gone — run: cs daemon stop"), ok=False)
     except Exception as e:

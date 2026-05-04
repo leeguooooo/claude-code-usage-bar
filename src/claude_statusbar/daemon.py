@@ -57,9 +57,50 @@ def _cache_dir() -> Path:
 
 
 def pid_path() -> Path: return _cache_dir() / "daemon.pid"
+def log_path() -> Path: return _cache_dir() / "daemon.log"
+
+
+# Per-session state (v3.3.0+) — multi-window safe.
+# Each Claude Code window has a unique session_id; we render each one to its
+# own bucket so two windows never overwrite each other's rendered.ansi.
+def sessions_root() -> Path:
+    d = _cache_dir() / "sessions"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def session_dir(session_id: str) -> Path:
+    """Per-session state directory. session_id comes from Claude Code's
+    stdin payload — a UUID-like string, safe to use as a path segment
+    after sanitisation."""
+    safe = "".join(c for c in (session_id or "default") if c.isalnum() or c in "-_")[:64]
+    if not safe:
+        safe = "default"
+    d = sessions_root() / safe
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def session_stdin_path(session_id: str) -> Path:
+    return session_dir(session_id) / "last_stdin.json"
+
+
+def session_rendered_path(session_id: str) -> Path:
+    return session_dir(session_id) / "rendered.ansi"
+
+
+def session_meta_path(session_id: str) -> Path:
+    return session_dir(session_id) / "rendered.meta.json"
+
+
+# Legacy: kept for inline-mode compatibility (cs without `render` subcmd
+# still writes here via parse_stdin_data). Not used by the daemon's
+# per-session render loop.
 def rendered_path() -> Path: return _cache_dir() / "rendered.ansi"
 def meta_path() -> Path: return _cache_dir() / "rendered.meta.json"
-def log_path() -> Path: return _cache_dir() / "daemon.log"
+
+
+SESSION_GC_AFTER_S = 24 * 60 * 60  # drop session dirs idle > 1 day
 
 
 # ---------------------------------------------------------------------------
@@ -179,20 +220,9 @@ def _process_is_our_daemon(pid: int) -> bool:
 # ---------------------------------------------------------------------------
 # Render — capture core.main()'s stdout into a string
 # ---------------------------------------------------------------------------
-def _render_once() -> Optional[str]:
-    """Drive core.main() through redirect_stdout to grab the rendered ANSI.
-
-    The daemon pretends to be Claude Code: it replays the cached stdin
-    payload (last_stdin.json) into sys.stdin, calls core.main with side
-    effects suppressed, and captures whatever is printed.
-    """
-    cache_file = _cache_dir() / "last_stdin.json"
-    try:
-        payload = cache_file.read_text(encoding="utf-8")
-    except OSError:
-        # No cached stdin yet — nothing to render. Daemon will retry next tick.
-        return None
-
+def _render_payload(payload: str) -> Optional[str]:
+    """Run core.main() with the given JSON payload as stdin and capture the
+    rendered ANSI string. Used by the per-session render loop below."""
     buf = io.StringIO()
     saved_stdin = sys.stdin
     sys.stdin = io.StringIO(payload)
@@ -205,24 +235,90 @@ def _render_once() -> Optional[str]:
         return None
     finally:
         sys.stdin = saved_stdin
-
     out = buf.getvalue().rstrip("\n")
     return out or None
 
 
-# ---------------------------------------------------------------------------
-# Atomic publish
-# ---------------------------------------------------------------------------
-def _publish(rendered: str) -> None:
-    """Write rendered.ansi + rendered.meta.json. Both atomic."""
+def _render_session(sid: str) -> bool:
+    """Render one session's status line and atomically publish it.
+
+    Returns True on success. False on any error (silent — daemon retries
+    next tick; thin client falls back to inline if meta goes stale).
+    """
+    stdin_file = session_stdin_path(sid)
+    try:
+        payload = stdin_file.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    rendered = _render_payload(payload)
+    if rendered is None:
+        return False
     now = time.time()
-    atomic_write_text(rendered_path(), rendered + "\n")
-    meta = {
+    atomic_write_text(session_rendered_path(sid), rendered + "\n")
+    atomic_write_text(session_meta_path(sid), json.dumps({
         "generated_at": now,
         "pid": os.getpid(),
         "stale_after_seconds": META_STALE_AFTER,
-    }
-    atomic_write_text(meta_path(), json.dumps(meta) + "\n")
+        "session_id": sid,
+    }) + "\n")
+    return True
+
+
+def _active_sessions() -> list[str]:
+    """List session_ids with a recent last_stdin.json. Sessions older than
+    SESSION_GC_AFTER_S are skipped (and pruned by _gc_old_sessions)."""
+    out = []
+    cutoff = time.time() - SESSION_GC_AFTER_S
+    try:
+        for d in sessions_root().iterdir():
+            if not d.is_dir():
+                continue
+            stdin = d / "last_stdin.json"
+            try:
+                if stdin.stat().st_mtime >= cutoff:
+                    out.append(d.name)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return out
+
+
+def _gc_old_sessions() -> None:
+    """Drop session dirs that haven't been touched for SESSION_GC_AFTER_S.
+
+    Called once per daemon-tick batch; cheap O(n) directory scan.
+    """
+    cutoff = time.time() - SESSION_GC_AFTER_S
+    try:
+        for d in sessions_root().iterdir():
+            if not d.is_dir():
+                continue
+            try:
+                stdin = d / "last_stdin.json"
+                if stdin.exists() and stdin.stat().st_mtime >= cutoff:
+                    continue
+                # Stale — remove the whole directory.
+                for f in d.iterdir():
+                    try:
+                        f.unlink()
+                    except OSError:
+                        pass
+                d.rmdir()
+                _log(f"gc'd stale session dir {d.name}")
+            except OSError:
+                continue
+    except OSError:
+        pass
+
+
+def _render_all_sessions() -> int:
+    """Render every active session. Returns the count rendered."""
+    n = 0
+    for sid in _active_sessions():
+        if _render_session(sid):
+            n += 1
+    return n
 
 
 # ---------------------------------------------------------------------------
@@ -264,12 +360,15 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
 
     _log(f"daemon started pid={os.getpid()} interval={render_interval}s")
 
+    last_gc = 0.0
+    GC_INTERVAL_S = 60 * 30  # garbage-collect stale session dirs every 30 min
     try:
         while _running:
             t0 = time.time()
-            rendered = _render_once()
-            if rendered is not None:
-                _publish(rendered)
+            _render_all_sessions()
+            if t0 - last_gc > GC_INTERVAL_S:
+                _gc_old_sessions()
+                last_gc = t0
             elapsed = time.time() - t0
             sleep_for = max(0.0, render_interval - elapsed)
             # Sleep in small chunks so signals are responsive.
@@ -286,8 +385,7 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
 # Subcommand handlers (called from cli.py)
 # ---------------------------------------------------------------------------
 def cmd_status() -> int:
-    """`cs daemon status` — report whether daemon is alive and rendered.ansi
-    freshness."""
+    """`cs daemon status` — daemon liveness + per-session rendered freshness."""
     pid = read_pidfile()
     if pid is None:
         print("daemon: not running (no pidfile)")
@@ -299,17 +397,26 @@ def cmd_status() -> int:
     print(f"daemon: pid {pid} {'alive' if alive else 'STALE pidfile (process gone)'}")
     if not alive:
         return 1
-    try:
-        meta = json.loads(meta_path().read_text(encoding="utf-8"))
-        age = time.time() - float(meta.get("generated_at", 0))
-        print(f"rendered.ansi: {age:.1f}s old (stale_after={meta.get('stale_after_seconds')}s)")
-        if age > META_STALE_AFTER:
-            print("WARNING: rendered output is stale — daemon may be wedged")
-            return 2
-    except (OSError, ValueError, json.JSONDecodeError) as e:
-        print(f"rendered.meta.json unreadable: {e}")
-        return 2
-    return 0
+
+    sids = _active_sessions()
+    if not sids:
+        print("sessions: none yet (daemon hasn't seen any cs render calls)")
+        return 0
+    print(f"sessions: {len(sids)} active")
+    bad = 0
+    for sid in sids:
+        try:
+            meta = json.loads(session_meta_path(sid).read_text(encoding="utf-8"))
+            age = time.time() - float(meta.get("generated_at", 0))
+            stale = age > META_STALE_AFTER
+            tag = " STALE" if stale else ""
+            print(f"  {sid[:8]}…  {age:.1f}s old{tag}")
+            if stale:
+                bad += 1
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            print(f"  {sid[:8]}…  meta unreadable: {e}")
+            bad += 1
+    return 0 if bad == 0 else 2
 
 
 def cmd_stop() -> int:
