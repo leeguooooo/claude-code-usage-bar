@@ -37,6 +37,23 @@ def _severity_color(theme: Theme, pct: Optional[float],
     return theme.s_ok
 
 
+def _cache_severity(theme: Theme, cache_text: str) -> tuple:
+    """Map a countdown cache string to a severity color.
+
+    "COLD"            → s_hot   (red, expired)
+    "<1m" remaining   → s_warn  (yellow, ~1min left)
+    otherwise         → s_ok    (green, comfortable)
+
+    The "<1m" detection works because the countdown formatter only emits
+    "Xm YYs" when minutes > 0; sub-minute remainders render as "Ys".
+    """
+    if cache_text == "COLD":
+        return theme.s_hot
+    if "m" not in cache_text:
+        return theme.s_warn
+    return theme.s_ok
+
+
 # ---------------------------------------------------------------------------
 # Style: capsule
 # ---------------------------------------------------------------------------
@@ -94,8 +111,7 @@ def render_capsule(
         parts.append(pill(theme.pill_lang, f"📚 {lang_body}"))
 
     if cache_age_text:
-        is_cold = cache_age_text == "COLD"
-        bg = theme.s_hot if is_cold else theme.s_ok
+        bg = _cache_severity(theme, cache_age_text)
         parts.append(pill(bg, f"cache {cache_age_text}"))
 
     line = spacer.join(parts)
@@ -163,7 +179,7 @@ def render_hairline(
         parts.append(f"{MUTE}{lang_body}{RESET}")
 
     if cache_age_text:
-        col = _fg(theme.s_hot) if cache_age_text == "COLD" else _fg(theme.s_ok)
+        col = _fg(_cache_severity(theme, cache_age_text))
         parts.append(f"{col}cache {cache_age_text}{RESET}")
 
     if bypass:
@@ -202,8 +218,16 @@ def render_classic(
         cost_text=cost_text,
     )
     if cache_age_text:
-        from .progress import GREEN, RED
-        col = RED if cache_age_text == "COLD" else GREEN
+        from .progress import GREEN, YELLOW, RED
+        # Three-level severity matching the countdown: COLD red, <1m
+        # remaining yellow, otherwise green. Same logic as the capsule /
+        # hairline _cache_severity helper, just on RGB ANSI codes.
+        if cache_age_text == "COLD":
+            col = RED
+        elif "m" not in cache_age_text:
+            col = YELLOW
+        else:
+            col = GREEN
         # Reset before our segment so it doesn't inherit the trailing color
         # from format_status_line's last colorized chunk.
         result += f"{RESET} | {colorize(f'cache {cache_age_text}', col, use_color)}"

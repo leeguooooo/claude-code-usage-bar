@@ -9,7 +9,7 @@
 Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage, reset timers, current model, context window, prompt-cache freshness, and (optionally) session cost — in a single compact line driven by Claude Code's `statusLine` hook.
 
 ```
-5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 0s
+5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s
 ```
 
 3 styles × 7 themes, configurable in one command. Auto-updates from PyPI. New in **v3.2**: a daemon mode that drops 1 Hz refresh CPU from ~6% to ~2% — same status line, ~5× cheaper.
@@ -35,7 +35,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 
 - **Daemon fast-mode** — `cs --setup --fast` swaps the statusLine command to `cs render` backed by a long-lived `cs daemon`. At `refreshInterval: 1` this cuts continuous CPU from ~6% to ~2%, render wall-clock from ~60ms to ~5ms. Crash-safe (auto-falls-back to inline render if the daemon dies; lazy-respawns).
 - **OS-managed daemon** — `cs daemon install` installs a launchd agent (macOS) or systemd user unit (Linux) so the daemon auto-starts on login and is restarted on crash by the OS.
-- **`cache 15s` segment** — opt-in via `cs config set show_cache_age true`. Shows time since Claude's last assistant turn, flips to `cache COLD` past Anthropic's 5-minute prompt-cache TTL. Configurable TTL via `cs config set cache_ttl_seconds 3600` for users on the 1-hour extended cache.
+- **`cache 4m23s` countdown** — opt-in via `cs config set show_cache_age true`. Counts down to Anthropic's prompt-cache expiry (default 5min TTL); flips through green → yellow (<1min) → red `cache COLD`. Configurable TTL via `cs config set cache_ttl_seconds 3600` for users on the 1-hour extended cache. The cache itself makes follow-up requests ~10× cheaper input-token cost — the widget tells you whether your next prompt will hit warm cache or pay full price.
 - **`cs doctor` 1Hz hint** — detects `refreshInterval ≤ 2s` with the inline command and recommends `cs --setup --fast`.
 - **Import-shaving on the inline path** — even users who don't opt into daemon mode get ~30% faster renders.
 
@@ -44,7 +44,7 @@ Existing users: nothing changes by default. Daemon mode is opt-in.
 ## What it shows
 
 ```
-5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 0s | $ 1.42
+5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s | $ 1.42
 ```
 
 | Segment | Meaning |
@@ -54,7 +54,7 @@ Existing users: nothing changes by default. Daemon mode is opt-in.
 | `7d[79%]` | 7-day rate-limit usage |
 | `⏰11h28m` | Time until the 7-day window resets |
 | `Opus 4.7(350.0k/1.0M)` | Model name + current context window usage |
-| `cache 0s` / `cache COLD` | Prompt-cache age — green warm, red cold (opt-in: `cs config set show_cache_age true`) |
+| `cache 4m23s` / `cache COLD` | Countdown to prompt-cache expiry (5min TTL by default). Green when comfortable, yellow under 1min, red on COLD. Cache hits cost ~10× less input tokens, so this tells you whether your next prompt is cheap. Opt-in: `cs config set show_cache_age true` |
 | `$ 1.42` | Session cost so far in USD (opt-in: `cs config set show_cost true`) |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
@@ -188,7 +188,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `auto_compact_width` | integer (e.g. `100`) | Force `hairline` when terminal narrower than this. `0` = disabled |
 | `show_weekly`, `show_language` | bool | Hide individual segments |
 | `show_cost` | bool, default `false` | Append a `$ X.XX` segment with the current session's cost (from Claude Code's stdin payload). Opt-in because the "session" boundary is what Claude Code reports — not necessarily what you intuitively call one |
-| `show_cache_age` | bool, default `false` | Append a `cache 15s` (green) / `cache COLD` (red) segment showing how long since Claude's last assistant turn. Anthropic's prompt cache TTL is 5 minutes — the segment flips to `COLD` past that. Useful to see at a glance whether your next request will hit the warm cache. **Requires `"refreshInterval": N` in your `~/.claude/settings.json` `statusLine` block** (e.g. `30`) — without it Claude Code only re-renders on activity, so the value freezes. Contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). |
+| `show_cache_age` | bool, default `false` | Append a `cache 4m23s` countdown to Anthropic's prompt-cache expiry. Three-level color: green (>1min remaining), yellow (<1min), red `cache COLD` (expired). Cache hits cost ~10× less input tokens, so the widget answers "will my next prompt be cheap?". **Requires `"refreshInterval": N` in your `~/.claude/settings.json` `statusLine` block** (e.g. `30`, or `1` for live ticking — pair with [fast mode](#fast-mode--for-refreshinterval-1) at 1Hz). Original implementation contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). |
 | `cache_ttl_seconds` | int, default `300` | TTL the `show_cache_age` segment uses to decide warm vs. `COLD`. Defaults to Anthropic's 5-minute prompt cache. Set to `3600` if you've enabled the [1-hour extended cache](https://docs.claude.com/en/docs/build-with-claude/prompt-caching) via `ENABLE_PROMPT_CACHING_1H`. |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
@@ -317,7 +317,7 @@ cs --json-output
 
 ## Data source
 
-Rate-limit percentages come directly from **Anthropic's official API headers**, surfaced into the JSON payload Claude Code injects on stdin to every `statusLine` command. Context-window usage comes from the same payload. The optional `cache 15s` segment is computed locally by tail-reading the active transcript JSONL — Anthropic's prompt cache TTL is 5 minutes by default ([Mar 2026 change](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)) or 1 hour with `ENABLE_PROMPT_CACHING_1H`.
+Rate-limit percentages come directly from **Anthropic's official API headers**, surfaced into the JSON payload Claude Code injects on stdin to every `statusLine` command. Context-window usage comes from the same payload. The optional `cache 4m23s` countdown is computed locally by tail-reading the active transcript JSONL — Anthropic's prompt cache TTL is 5 minutes by default ([Mar 2026 change](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)) or 1 hour with `ENABLE_PROMPT_CACHING_1H`.
 
 Requires Claude Code `v2.1.80+`.
 
