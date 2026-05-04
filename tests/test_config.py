@@ -188,3 +188,17 @@ def test_show_cache_age_persists(tmp_path: Path):
     assert cfg_mod.load_config(p).show_cache_age is True
     cfg_mod.set_value("show_cache_age", "false", p)
     assert cfg_mod.load_config(p).show_cache_age is False
+
+
+def test_cache_ttl_seconds_default(tmp_path: Path):
+    cfg = cfg_mod.load_config(tmp_path / "missing.json")
+    assert cfg.cache_ttl_seconds == 300
+
+
+def test_cache_ttl_seconds_persists(tmp_path: Path):
+    """5min default for normal users; 3600 for users on the 1h Anthropic cache."""
+    p = tmp_path / "cfg.json"
+    cfg_mod.set_value("cache_ttl_seconds", "3600", p)
+    assert cfg_mod.load_config(p).cache_ttl_seconds == 3600
+    cfg_mod.set_value("cache_ttl_seconds", "300", p)
+    assert cfg_mod.load_config(p).cache_ttl_seconds == 300

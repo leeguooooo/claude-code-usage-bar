@@ -118,6 +118,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_weekly`, `show_language` | bool | Hide individual segments |
 | `show_cost` | bool, default `false` | Append a `$ X.XX` segment with the current session's cost (from Claude Code's stdin payload). Opt-in because the "session" boundary is what Claude Code reports — not necessarily what you intuitively call one |
 | `show_cache_age` | bool, default `false` | Append a `cache 15s` (green) / `cache COLD` (red) segment showing how long since Claude's last assistant turn. Anthropic's prompt cache TTL is 5 minutes — the segment flips to `COLD` past that. Useful to see at a glance whether your next request will hit the warm cache. **Requires `"refreshInterval": N` in your `~/.claude/settings.json` `statusLine` block** (e.g. `30`) — without it Claude Code only re-renders on activity, so the value freezes. Contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). |
+| `cache_ttl_seconds` | int, default `300` | TTL the `show_cache_age` segment uses to decide warm vs. `COLD`. Defaults to Anthropic's 5-minute prompt cache. Set to `3600` if you've enabled the [1-hour extended cache](https://docs.claude.com/en/docs/build-with-claude/prompt-caching) via `ENABLE_PROMPT_CACHING_1H`. |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
 

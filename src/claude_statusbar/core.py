@@ -5,30 +5,37 @@ Resolves dependency issues, ensuring operation in any environment
 """
 
 import json
-import re
 import sys
-import logging
 import os
-import subprocess
-import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .progress import format_language_body
+# Heavy stdlib imports (logging, subprocess, shutil, re) are deferred to
+# the functions that use them — they collectively cost ~12ms at import time
+# and most are only touched on the slow analysis path (claude-monitor
+# subprocess, error logging) or in occasional model-string cleanup.
 
-# Module-local logger: never call logging.basicConfig() at import-time —
-# that would clobber the root logger config of any program that imports
-# claude_statusbar (cli + lib + tests). Default to ERROR-level + null
-# handler so we stay quiet unless the host explicitly enables our logs.
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
-logger.addHandler(logging.NullHandler())
+# Module-local logger handle. We only build it on first use; the import
+# itself was costing ~2ms even though most renders never log anything.
+_logger = None
+
+def _get_logger():
+    global _logger
+    if _logger is None:
+        import logging
+        _logger = logging.getLogger(__name__)
+        _logger.setLevel(logging.ERROR)
+        _logger.addHandler(logging.NullHandler())
+    return _logger
 
 def try_original_analysis() -> Optional[Dict[str, Any]]:
     """Try to use the installed claude-monitor package"""
+    # Local imports — these are heavy stdlib modules that we only need on
+    # the slow analysis path (most renders hit the cached fast path).
+    import shutil
+    import subprocess
     try:
-        
         # Check if claude-monitor is installed
         claude_monitor_cmd = shutil.which('claude-monitor')
         if not claude_monitor_cmd:
@@ -37,9 +44,9 @@ def try_original_analysis() -> Optional[Dict[str, Any]]:
                 claude_monitor_cmd = shutil.which(cmd)
                 if claude_monitor_cmd:
                     break
-        
+
         if not claude_monitor_cmd:
-            logger.info("claude-monitor not found. Install with: uv tool install claude-monitor")
+            _get_logger().info("claude-monitor not found. Install with: uv tool install claude-monitor")
             return None
         
         # Find the Python interpreter used by claude-monitor
@@ -67,7 +74,7 @@ def try_original_analysis() -> Optional[Dict[str, Any]]:
                 pass
         
         if not claude_python:
-            logger.info("Could not find claude-monitor Python interpreter")
+            _get_logger().info("Could not find claude-monitor Python interpreter")
             return None
         
         # Use subprocess to run analysis with the correct Python
@@ -222,7 +229,7 @@ except Exception as e:
         return None
         
     except Exception as e:
-        logger.error(f"Original analysis failed: {e}")
+        _get_logger().error(f"Original analysis failed: {e}")
         return None
 
 def direct_data_analysis() -> Optional[Dict[str, Any]]:
@@ -432,7 +439,7 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
         }
         
     except Exception as e:
-        logger.error(f"Direct analysis failed: {e}")
+        _get_logger().error(f"Direct analysis failed: {e}")
         return None
 
 def parse_stdin_data() -> Dict[str, Any]:
@@ -640,7 +647,8 @@ def calculate_reset_time(reset_hour: Optional[int] = None) -> str:
         return f"{hours}h {mins:02d}m"
 
     try:
-        
+        import shutil
+        import subprocess
         # Try the same method as try_original_analysis to get session data
         claude_monitor_cmd = shutil.which('claude-monitor')
         if claude_monitor_cmd:
@@ -750,6 +758,38 @@ print("")
 # urlopen+pip work means N concurrent new sessions only fire ONE check
 # (the first one to win the touch race; the rest see a fresh mtime and skip).
 _UPDATE_CHECK_INTERVAL_S = 24 * 3600
+
+
+_ENSURE_STATUSLINE_INTERVAL_S = 24 * 60 * 60  # once per day
+
+
+def _maybe_ensure_statusline():
+    """Throttle settings.json check to once per day.
+
+    `ensure_statusline_configured()` reads + parses settings.json on every
+    render — and importing setup pulls in cache + atomic_write_text. At 1Hz
+    refresh that's pure waste; settings rarely change. Use a timestamp marker
+    like check_for_updates does, so the heavy imports only happen on the
+    daily tick.
+    """
+    try:
+        cache_dir = Path.home() / '.cache' / 'claude-statusbar'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        marker = cache_dir / 'last_statusline_check'
+        if marker.exists():
+            try:
+                if _time_now() - marker.stat().st_mtime < _ENSURE_STATUSLINE_INTERVAL_S:
+                    return
+            except OSError:
+                pass
+        marker.touch()
+    except OSError:
+        pass
+    try:
+        from .setup import ensure_statusline_configured
+        ensure_statusline_configured()
+    except Exception:
+        pass
 
 
 def check_for_updates(session_id: str = ''):
@@ -911,8 +951,12 @@ def _last_assistant_age(transcript_path: str) -> Optional[float]:
     return None
 
 
-def get_cache_age_text() -> str:
-    """Return cache age: 'Xm Ys ago' if <5m, else 'COLD'.
+def get_cache_age_text(ttl_seconds: int = 300) -> str:
+    """Return cache age: 'Xm Ys' if <ttl_seconds, else 'COLD'.
+
+    `ttl_seconds` defaults to Anthropic's 5min prompt cache TTL but is
+    user-configurable via `cs config set cache_ttl_seconds 3600` for users
+    who've enabled the 1-hour cache option.
 
     Returns "" (segment hidden) only when we have no signal at all — no
     last_stdin.json or no transcript_path in it. If the transcript exists but
@@ -920,7 +964,6 @@ def get_cache_age_text() -> str:
     COLD instead of inventing a freshness from the cache file's mtime.
     """
     cache_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
-    CACHE_TTL = 5 * 60
 
     try:
         raw = json.loads(cache_file.read_text(encoding="utf-8"))
@@ -934,7 +977,7 @@ def get_cache_age_text() -> str:
     if age_s is None:
         return "COLD"
 
-    if age_s > CACHE_TTL:
+    if age_s > ttl_seconds:
         return "COLD"
     mins = int(age_s) // 60
     secs = int(age_s) % 60
@@ -950,20 +993,20 @@ def main(json_output: bool = False,
          style_override: Optional[str] = None,
          theme_override: Optional[str] = None):
     """Main function"""
-    from .progress import get_countdown_emoji
-    from .setup import ensure_statusline_configured
     from . import config as _cfg
-    from .styles import render as _render_style
-    from .themes import get_theme
-
-    from .styles import is_known_style as _is_known_style
+    # Heavier imports (.styles + .themes + .progress) happen lazily below
+    # because they only matter once we actually start rendering — many
+    # config-info paths return early.
 
     cfg = _cfg.load_config()
     chosen_style = _cfg.resolve_style(style_override, cfg)
+    from .styles import is_known_style as _is_known_style, render as _render_style
     if not _is_known_style(chosen_style):
         # Unknown style → silently fall back to the safe default rather than
         # explode in the statusLine where the user can't see the error.
         chosen_style = "classic"
+    from .themes import get_theme
+    from .progress import get_countdown_emoji
     chosen_theme = get_theme(_cfg.resolve_theme(theme_override, cfg))
 
     # Auto-compact: if terminal narrower than threshold, force hairline
@@ -976,9 +1019,13 @@ def main(json_output: bool = False,
             pass
 
     stdin_data = parse_stdin_data()
-    lang_body = format_language_body(
-        str(Path.home() / ".claude" / "language-progress.json"),
-    ) if cfg.show_language else ""
+    if cfg.show_language:
+        from .progress import format_language_body
+        lang_body = format_language_body(
+            str(Path.home() / ".claude" / "language-progress.json"),
+        )
+    else:
+        lang_body = ""
 
     # Optional session cost segment.
     cost_text = ""
@@ -988,13 +1035,15 @@ def main(json_output: bool = False,
             cost_text = f"{sc:.2f}"
 
     # Optional cache age segment.
-    cache_age_text = get_cache_age_text() if cfg.show_cache_age else ""
+    cache_age_text = get_cache_age_text(cfg.cache_ttl_seconds) if cfg.show_cache_age else ""
 
     try:
         if not json_output:
             check_for_updates(stdin_data.get('session_id', ''))
-            # Silently restore statusLine config if a Claude Code upgrade wiped it
-            ensure_statusline_configured()
+            # Silently restore statusLine config if a Claude Code upgrade wiped
+            # it. Throttled to once per day — settings.json doesn't change
+            # often, and at 1Hz refresh the read+parse adds up.
+            _maybe_ensure_statusline()
 
         has_official = (stdin_data.get('rate_limit_pct') is not None or
                         stdin_data.get('rate_limit_7d_pct') is not None)
@@ -1060,7 +1109,8 @@ def main(json_output: bool = False,
                     ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
                 if ctx_size > 0:
                     # Strip redundant size suffix like "(1M context)" from display_name
-                    model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
+                    import re as _re
+                    model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
                     model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
                 countdown = get_countdown_emoji(minutes_to_reset)
@@ -1091,7 +1141,8 @@ def main(json_output: bool = False,
                 else:
                     ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
                 if ctx_size > 0:
-                    model = re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
+                    import re as _re
+                    model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
                     model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
                 if json_output:

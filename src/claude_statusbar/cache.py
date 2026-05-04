@@ -6,7 +6,6 @@ serving old data while a background refresh runs.
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import time
@@ -109,6 +108,7 @@ def refresh_cache_background() -> None:
     main process can return immediately with stale data.
     """
     try:
+        import subprocess
         subprocess.Popen(
             [sys.executable, "-m", "claude_statusbar.cache_refresh"],
             stdout=subprocess.DEVNULL,
