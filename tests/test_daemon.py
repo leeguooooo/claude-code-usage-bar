@@ -114,11 +114,37 @@ def test_thin_client_fast_path_prints_rendered(monkeypatch, tmp_path: Path, caps
     }), encoding="utf-8")
     monkeypatch.setattr(render_thin, "_RENDERED", rendered)
     monkeypatch.setattr(render_thin, "_META", meta)
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: None)
 
     rc = render_thin.render()
     out = capsys.readouterr().out
     assert rc == 0
     assert out == "FAKE STATUS LINE\n"
+
+
+def test_thin_client_forwards_stdin_to_cache(monkeypatch, tmp_path: Path, capsys):
+    """Critical Phase B regression: the thin client MUST persist stdin so
+    the daemon sees fresh rate_limits on its next tick. Without this the
+    7d% / 5h% counters freeze the moment fast-mode is enabled."""
+    rendered = tmp_path / "rendered.ansi"
+    meta = tmp_path / "rendered.meta.json"
+    cache = tmp_path / "last_stdin.json"
+    rendered.write_text("X\n", encoding="utf-8")
+    meta.write_text(json.dumps({
+        "generated_at": time.time(),
+        "stale_after_seconds": 5.0,
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_RENDERED", rendered)
+    monkeypatch.setattr(render_thin, "_META", meta)
+    monkeypatch.setattr(render_thin, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(render_thin, "_LAST_STDIN_CACHE", cache)
+
+    fresh_payload = b'{"rate_limits": {"seven_day": {"used_percentage": 79}}}'
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: fresh_payload)
+
+    render_thin.render()
+    assert cache.exists(), "thin client must write stdin to last_stdin.json"
+    assert cache.read_bytes() == fresh_payload
 
 
 def test_thin_client_fallback_when_meta_stale(monkeypatch, tmp_path: Path):
@@ -132,6 +158,7 @@ def test_thin_client_fallback_when_meta_stale(monkeypatch, tmp_path: Path):
     }), encoding="utf-8")
     monkeypatch.setattr(render_thin, "_RENDERED", rendered)
     monkeypatch.setattr(render_thin, "_META", meta)
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: None)
 
     fallback_called = []
     spawn_called = []
@@ -149,12 +176,35 @@ def test_thin_client_fallback_when_meta_stale(monkeypatch, tmp_path: Path):
 def test_thin_client_fallback_when_no_meta(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(render_thin, "_RENDERED", tmp_path / "nope.ansi")
     monkeypatch.setattr(render_thin, "_META", tmp_path / "nope.json")
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: None)
     fallback_called = []
     monkeypatch.setattr(render_thin, "_fallback_inline",
                         lambda: (fallback_called.append(True), 0)[1])
     monkeypatch.setattr(render_thin, "_spawn_daemon_async", lambda: None)
     assert render_thin.render() == 0
     assert fallback_called == [True]
+
+
+def test_thin_client_fallback_replays_stdin_for_core_main(monkeypatch, tmp_path: Path):
+    """When falling back to inline render, the captured stdin bytes must be
+    replayed into sys.stdin so core.main()'s parse_stdin_data() sees them."""
+    monkeypatch.setattr(render_thin, "_RENDERED", tmp_path / "nope.ansi")
+    monkeypatch.setattr(render_thin, "_META", tmp_path / "nope.json")
+    monkeypatch.setattr(render_thin, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(render_thin, "_LAST_STDIN_CACHE", tmp_path / "ls.json")
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: b'{"hello": "world"}')
+    monkeypatch.setattr(render_thin, "_spawn_daemon_async", lambda: None)
+
+    seen = {}
+    def fake_inline():
+        seen["stdin"] = sys.stdin.read()
+        return 0
+    monkeypatch.setattr(render_thin, "_fallback_inline", fake_inline)
+
+    render_thin.render()
+    assert seen["stdin"] == '{"hello": "world"}', (
+        f"fallback path must see replayed stdin; got {seen.get('stdin')!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
