@@ -140,6 +140,17 @@ def run() -> int:
     except Exception as e:
         _line("daemon", _dim(f"check skipped: {e}"))
 
+    # --- launchd / systemd service (Phase C) ---
+    try:
+        from . import service as _svc
+        ok, msg = _svc.status()
+        if ok:
+            _line("service", msg, ok=True)
+        else:
+            _line("service", _dim(msg))
+    except Exception as e:
+        _line("service", _dim(f"check skipped: {e}"))
+
     # --- terminal ---
     try:
         size = os.get_terminal_size()
