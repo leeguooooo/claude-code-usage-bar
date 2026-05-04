@@ -100,26 +100,39 @@ def _consume_stdin() -> bytes | None:
 
 def _extract_session_id(payload: bytes) -> str:
     """Pull session_id out of the JSON payload. Falls back to "default" if
-    the payload is malformed or doesn't include one (e.g. very old Claude
-    Code versions). Cost: one json.loads call (~0.05ms for typical payload)."""
+    the payload is malformed, missing the field, or has a non-string value
+    (e.g. null, 0, or a future Claude Code that nests it differently).
+
+    Explicit type check prevents falsy-but-valid values like the integer 0
+    from collapsing onto the "default" bucket via `or` short-circuit.
+    Cost: one json.loads call (~0.05ms for typical payload).
+    """
     try:
         d = json.loads(payload.decode("utf-8", errors="replace"))
-        sid = d.get("session_id") or "default"
-        return str(sid)
     except (ValueError, json.JSONDecodeError):
         return "default"
+    sid = d.get("session_id") if isinstance(d, dict) else None
+    if not isinstance(sid, str) or not sid.strip():
+        return "default"
+    return sid
 
 
 def _atomic_write_bytes(target: Path, data: bytes) -> None:
     """Sibling tempfile + os.replace. Inlined so the fast path doesn't
-    need to import cache.atomic_write_text."""
+    need to import cache.atomic_write_text.
+
+    No fsync: this writes the stdin snapshot at 1 Hz per window. Crash
+    durability isn't worth the ~5-15ms penalty on slow / network FS —
+    if we lose the snapshot, the very next tick writes a fresh one.
+    The daemon's rendered.ansi write (in cache.atomic_write_text) keeps
+    fsync because that file is consumed by potentially many readers.
+    """
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_suffix(target.suffix + ".thin.tmp")
         with open(tmp, "wb") as f:
             f.write(data)
             f.flush()
-            os.fsync(f.fileno())
         os.replace(tmp, target)
     except OSError:
         pass
