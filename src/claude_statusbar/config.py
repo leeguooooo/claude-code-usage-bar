@@ -30,6 +30,7 @@ class StatusbarConfig:
     show_weekly: bool = True
     show_language: bool = True
     show_cost: bool = False
+    show_cache_age: bool = False
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
 
@@ -57,6 +58,7 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
         show_weekly=_to_bool(raw.get("show_weekly", True)),
         show_language=_to_bool(raw.get("show_language", True)),
         show_cost=_to_bool(raw.get("show_cost", False)),
+        show_cache_age=_to_bool(raw.get("show_cache_age", False)),
         warning_threshold=raw.get("warning_threshold"),
         critical_threshold=raw.get("critical_threshold"),
     )
@@ -70,10 +72,10 @@ def save_config(cfg: StatusbarConfig, path: Path = CONFIG_PATH) -> None:
 
 VALID_KEYS = {
     "style", "theme", "density", "auto_compact_width",
-    "show_weekly", "show_language", "show_cost",
+    "show_weekly", "show_language", "show_cost", "show_cache_age",
     "warning_threshold", "critical_threshold",
 }
-_BOOL_KEYS = {"show_weekly", "show_language", "show_cost"}
+_BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_cache_age"}
 _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}

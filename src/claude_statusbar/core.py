@@ -842,6 +842,46 @@ def format_number(num: float) -> str:
     return f"{num:.0f}"
 
 
+def get_cache_age_text() -> str:
+    """Return cache age: 'Xm Ys ago' if <5m, else 'COLD'."""
+    cache_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
+    CACHE_TTL = 5 * 60  # 300 seconds
+
+    try:
+        raw = json.loads(cache_file.read_text(encoding="utf-8"))
+        tp = raw.get("transcript_path", "")
+        if tp:
+            # Scan transcript rückwärts nach letztem assistant-Entry
+            try:
+                lines = open(tp, encoding="utf-8").readlines()
+                for line in reversed(lines):
+                    entry = json.loads(line.strip())
+                    if entry.get("type") == "assistant":
+                        ts_str = entry.get("timestamp", "")
+                        if ts_str.endswith("Z"):
+                            ts_str = ts_str[:-1] + "+00:00"
+                        last_ts = datetime.fromisoformat(ts_str)
+                        age_s = (datetime.now(timezone.utc) - last_ts).total_seconds()
+                        break
+                else:
+                    # Kein assistant-Entry gefunden, fallback zu mtime
+                    age_s = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
+            except (OSError, json.JSONDecodeError, ValueError):
+                age_s = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
+        else:
+            age_s = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
+    except (OSError, json.JSONDecodeError, ValueError, FileNotFoundError):
+        return ""
+
+    if age_s > CACHE_TTL:
+        return "COLD"
+    mins = int(age_s) // 60
+    secs = int(age_s) % 60
+    if mins > 0:
+        return f"{mins}m{secs:02d}s ago"
+    return f"{secs}s ago"
+
+
 def main(json_output: bool = False,
          reset_hour: Optional[int] = None, use_color: bool = True,
          detail: bool = False,
@@ -885,6 +925,9 @@ def main(json_output: bool = False,
         sc = stdin_data.get("session_cost_usd")
         if isinstance(sc, (int, float)) and sc >= 0:
             cost_text = f"{sc:.2f}"
+
+    # Optional cache age segment.
+    cache_age_text = get_cache_age_text() if cfg.show_cache_age else ""
 
     try:
         if not json_output:
@@ -966,7 +1009,7 @@ def main(json_output: bool = False,
                     msgs_pct=msgs_pct, weekly_pct=weekly_pct,
                     reset_5h=reset_time, reset_7d=reset_time_7d,
                     model=model, lang_body=lang_body, cost_text=cost_text,
-                    bypass=bypass,
+                    bypass=bypass, cache_age_text=cache_age_text,
                     use_color=use_color, theme=chosen_theme,
                     warning_threshold=warning_threshold,
                     critical_threshold=critical_threshold,
@@ -1002,7 +1045,7 @@ def main(json_output: bool = False,
                         msgs_pct=None, weekly_pct=None,
                         reset_5h="--", reset_7d="",
                         model=model, lang_body=lang_body, cost_text=cost_text,
-                        bypass=bypass,
+                        bypass=bypass, cache_age_text=cache_age_text,
                         use_color=use_color, theme=chosen_theme,
                         warning_threshold=warning_threshold,
                         critical_threshold=critical_threshold,
@@ -1032,7 +1075,7 @@ def main(json_output: bool = False,
                 msgs_pct=None, weekly_pct=None,
                 reset_5h=reset_time, reset_7d="",
                 model=display_name, lang_body=lang_body, cost_text=cost_text,
-                bypass=bypass,
+                bypass=bypass, cache_age_text=cache_age_text,
                 use_color=use_color, theme=chosen_theme,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
