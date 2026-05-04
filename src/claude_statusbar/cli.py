@@ -185,7 +185,23 @@ def main():
                 or "NO_COLOR" in os.environ
                 or not sys.stdout.isatty()
             )
-            return run_preview(use_color=not no_color)
+            # Optional --theme NAME / --style NAME filter: render only the
+            # requested combo instead of all 21. Skip the leading "--no-color".
+            theme_filter = None
+            style_filter = None
+            i = 0
+            while i < len(rest):
+                tok = rest[i]
+                if tok == "--theme" and i + 1 < len(rest):
+                    theme_filter = rest[i + 1]; i += 2; continue
+                if tok == "--style" and i + 1 < len(rest):
+                    style_filter = rest[i + 1]; i += 2; continue
+                i += 1
+            return run_preview(
+                use_color=not no_color,
+                theme_filter=theme_filter,
+                style_filter=style_filter,
+            )
         if sub == "doctor":
             from .doctor import run as run_doctor
             return run_doctor()

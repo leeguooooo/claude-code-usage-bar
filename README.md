@@ -274,6 +274,8 @@ cs config reset                 # wipe config back to defaults
 cs styles                       # list available styles
 cs themes                       # list available themes
 cs preview                      # render every style × theme with YOUR real data
+cs preview --theme nord         # filter to one theme
+cs preview --style hairline --theme dracula   # one specific combo
 
 # Daemon mode (v3.2+, opt-in)
 cs --setup --fast               # switch statusLine to `cs render` + start daemon
@@ -395,4 +397,11 @@ MIT
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=leeguooooo/claude-code-usage-bar&type=Date)](https://star-history.com/#leeguooooo/claude-code-usage-bar&Date)
+<a href="https://star-history.com/#leeguooooo/claude-code-usage-bar&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/star-history-dark.svg">
+    <img alt="Star history" src="docs/images/star-history.svg">
+  </picture>
+</a>
+
+<sub>Static snapshot taken at v3.3.x; <a href="https://star-history.com/#leeguooooo/claude-code-usage-bar&Date">click for live chart</a>.</sub>

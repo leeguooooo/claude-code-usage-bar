@@ -997,8 +997,18 @@ def get_cache_age_text(ttl_seconds: int = 300) -> str:
     # Round UP so a render at t=0.4s into a 5min TTL still shows 5m00s,
     # not 4m59s — feels less surprising for the user who just hit enter.
     remaining_int = int(remaining) if remaining == int(remaining) else int(remaining) + 1
+
+    # Adaptive granularity: precision matches urgency.
+    # >= 1h remaining: "Xh"        (1h-cache users; less actionable, less detail)
+    # 5min..1h:        "Xm"        (still plenty of time; minute granularity)
+    # 1..5min:         "XmYYs"     (countdown territory; user might press send soon)
+    # < 1min:          "Ys"        (warning state; styles layer flips to yellow)
+    if remaining_int >= 3600:
+        return f"{remaining_int // 3600}h"
     mins = remaining_int // 60
     secs = remaining_int % 60
+    if mins >= 5:
+        return f"{mins}m"
     if mins > 0:
         return f"{mins}m{secs:02d}s"
     return f"{secs}s"
