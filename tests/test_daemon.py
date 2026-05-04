@@ -261,6 +261,107 @@ def test_extract_session_id_handles_missing_field():
     assert render_thin._extract_session_id(b'{"session_id": "abc-123"}') == "abc-123"
 
 
+def test_extract_session_id_rejects_non_string_types():
+    """S3 from codex review: explicit type check prevents falsy-but-valid
+    integer/null session_ids from collapsing into 'default' silently."""
+    assert render_thin._extract_session_id(b'{"session_id": null}') == "default"
+    assert render_thin._extract_session_id(b'{"session_id": 0}') == "default"
+    assert render_thin._extract_session_id(b'{"session_id": ""}') == "default"
+    assert render_thin._extract_session_id(b'{"session_id": "   "}') == "default"
+    assert render_thin._extract_session_id(b'{"session_id": ["a"]}') == "default"
+
+
+# ---------------------------------------------------------------------------
+# Codex review S4: cross-session content isolation
+# ---------------------------------------------------------------------------
+def test_thin_client_serves_correct_session_when_multiple_exist(
+    monkeypatch, tmp_path: Path, capsys
+):
+    """The most critical property of v3.3.0: when sessions A and B both
+    have fresh rendered.ansi files, calling render() with payload A must
+    return A's content, not B's."""
+    _setup_session_paths(monkeypatch, tmp_path)
+    sid_a, sid_b = "sess-aaa", "sess-bbb"
+    for sid, content in [(sid_a, "AAA STATUS"), (sid_b, "BBB STATUS")]:
+        sdir = tmp_path / "sessions" / sid
+        sdir.mkdir(parents=True)
+        (sdir / "rendered.ansi").write_text(content + "\n", encoding="utf-8")
+        (sdir / "rendered.meta.json").write_text(json.dumps({
+            "generated_at": time.time(),
+            "stale_after_seconds": 5.0,
+        }), encoding="utf-8")
+
+    # Render with session A's payload — must see AAA, not BBB.
+    monkeypatch.setattr(render_thin, "_consume_stdin",
+                        lambda: json.dumps({"session_id": sid_a}).encode())
+    render_thin.render()
+    out_a = capsys.readouterr().out
+    assert out_a == "AAA STATUS\n", f"session A served wrong content: {out_a!r}"
+
+    # Render with session B's payload — must see BBB, not AAA.
+    monkeypatch.setattr(render_thin, "_consume_stdin",
+                        lambda: json.dumps({"session_id": sid_b}).encode())
+    render_thin.render()
+    out_b = capsys.readouterr().out
+    assert out_b == "BBB STATUS\n", f"session B served wrong content: {out_b!r}"
+
+
+# ---------------------------------------------------------------------------
+# Codex review S5: end-to-end "default" bucket fallback
+# ---------------------------------------------------------------------------
+def test_thin_client_routes_missing_session_id_to_default_bucket(
+    monkeypatch, tmp_path: Path, capsys
+):
+    """A payload without session_id must land in sessions/default/. Pre-create
+    fresh content there; render() must serve it."""
+    _setup_session_paths(monkeypatch, tmp_path)
+    default_dir = tmp_path / "sessions" / "default"
+    default_dir.mkdir(parents=True)
+    (default_dir / "rendered.ansi").write_text("DEFAULT BUCKET LINE\n", encoding="utf-8")
+    (default_dir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time(),
+        "stale_after_seconds": 5.0,
+    }), encoding="utf-8")
+
+    # Payload has no session_id → router must use "default".
+    payload = b'{"some_other_field": 1}'
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload)
+    render_thin.render()
+    out = capsys.readouterr().out
+    assert out == "DEFAULT BUCKET LINE\n", out
+
+    # And the stdin must have been persisted into sessions/default/.
+    persisted = (default_dir / "last_stdin.json").read_bytes()
+    assert persisted == payload
+
+
+# ---------------------------------------------------------------------------
+# Codex review N5: contract test — sanitize logic must NOT drift between
+# render_thin and daemon (they're duplicated to keep render_thin import-cheap)
+# ---------------------------------------------------------------------------
+def test_sanitize_session_id_contract_pinned_between_modules(monkeypatch, tmp_path: Path):
+    """If render_thin._sanitize_session_id and daemon.session_dir() ever
+    drift, the thin client writes to one path and the daemon reads from
+    another — silent breakage. Pin the contract."""
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+    cases = [
+        "591dc69b-f2c8-40b0-8b52-c9f09b02e22a",  # real UUID v4
+        "default",
+        "../../etc/passwd",       # traversal attempt
+        "",                       # empty
+        "a" * 200,                # very long
+        "weird@chars!?",          # punctuation
+        "with spaces here",       # spaces
+    ]
+    for sid in cases:
+        thin_safe = render_thin._sanitize_session_id(sid)
+        daemon_dir = _d.session_dir(sid)
+        assert daemon_dir.name == thin_safe, (
+            f"sanitize drift for {sid!r}: thin → {thin_safe!r}, "
+            f"daemon → {daemon_dir.name!r}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # settings.json: cs render must be recognized as ours
 # ---------------------------------------------------------------------------

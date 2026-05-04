@@ -93,13 +93,6 @@ def session_meta_path(session_id: str) -> Path:
     return session_dir(session_id) / "rendered.meta.json"
 
 
-# Legacy: kept for inline-mode compatibility (cs without `render` subcmd
-# still writes here via parse_stdin_data). Not used by the daemon's
-# per-session render loop.
-def rendered_path() -> Path: return _cache_dir() / "rendered.ansi"
-def meta_path() -> Path: return _cache_dir() / "rendered.meta.json"
-
-
 SESSION_GC_AFTER_S = 24 * 60 * 60  # drop session dirs idle > 1 day
 
 
@@ -220,21 +213,55 @@ def _process_is_our_daemon(pid: int) -> bool:
 # ---------------------------------------------------------------------------
 # Render — capture core.main()'s stdout into a string
 # ---------------------------------------------------------------------------
+RENDER_TIMEOUT_S = 12  # cap per-session render so a slow JSONL scan can't
+                       # starve other sessions. Larger than core's internal
+                       # 10s subprocess timeout so the inner cap fires first.
+
+
+class _RenderTimeout(Exception):
+    """Raised by the SIGALRM handler when a single render exceeds RENDER_TIMEOUT_S."""
+
+
+def _alarm_handler(_signum, _frame):
+    raise _RenderTimeout()
+
+
 def _render_payload(payload: str) -> Optional[str]:
     """Run core.main() with the given JSON payload as stdin and capture the
-    rendered ANSI string. Used by the per-session render loop below."""
+    rendered ANSI string. Used by the per-session render loop below.
+
+    Hard timeout: signal.alarm caps each render at RENDER_TIMEOUT_S so one
+    pathological session (e.g. multi-GB JSONL on slow NFS) can't starve the
+    others. Daemon is POSIX-only; on Windows signal.alarm doesn't exist and
+    we silently skip the timeout.
+    """
     buf = io.StringIO()
     saved_stdin = sys.stdin
     sys.stdin = io.StringIO(payload)
+
+    have_alarm = hasattr(signal, "SIGALRM")
+    old_handler = None
+    if have_alarm:
+        old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+        signal.alarm(RENDER_TIMEOUT_S)
+
     try:
         with contextlib.redirect_stdout(buf):
             from .core import main as core_main
             core_main(_suppress_side_effects=True)
+    except _RenderTimeout:
+        _log(f"render timed out after {RENDER_TIMEOUT_S}s")
+        return None
     except Exception as e:
         _log(f"render failed: {e!r}")
         return None
     finally:
+        if have_alarm:
+            signal.alarm(0)
+            if old_handler is not None:
+                signal.signal(signal.SIGALRM, old_handler)
         sys.stdin = saved_stdin
+
     out = buf.getvalue().rstrip("\n")
     return out or None
 
@@ -360,8 +387,11 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
 
     _log(f"daemon started pid={os.getpid()} interval={render_interval}s")
 
-    last_gc = 0.0
     GC_INTERVAL_S = 60 * 30  # garbage-collect stale session dirs every 30 min
+    # Defer first GC by one full interval — without this the first tick of
+    # every fresh daemon would scan the sessions tree, potentially racing
+    # with a Claude Code window that's mid-restart.
+    last_gc = time.time()
     try:
         while _running:
             t0 = time.time()
