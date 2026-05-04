@@ -181,7 +181,8 @@ def test_cache_text_cold_when_no_assistant_yet(tmp_path: Path, monkeypatch):
 
 
 def test_cache_text_warm_countdown_format(tmp_path: Path, monkeypatch):
-    """130s elapsed of a 300s TTL → 170s remaining → "2m50s"."""
+    """130s elapsed of a 300s TTL → 170s remaining → "2m50s" (under 5min
+    granularity uses Xm YYs)."""
     transcript = tmp_path / "t.jsonl"
     ts = datetime.now(timezone.utc) - timedelta(seconds=130)
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
@@ -190,6 +191,30 @@ def test_cache_text_warm_countdown_format(tmp_path: Path, monkeypatch):
     # 300 - 130 = 170s remaining = 2m50s (small jitter possible from test timing)
     assert out.startswith("2m"), f"expected 2m... countdown, got {out!r}"
     assert out.endswith("s")
+
+
+def test_cache_text_adaptive_granularity_minutes(tmp_path: Path, monkeypatch):
+    """5min..1h remaining → coarse minute-only format ("Xm", no seconds)."""
+    transcript = tmp_path / "t.jsonl"
+    # ttl=3600, elapsed=600 → 3000s = 50m remaining (well above the 5min boundary)
+    ts = datetime.now(timezone.utc) - timedelta(seconds=600)
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    out = core.get_cache_age_text(3600)
+    assert out.endswith("m"), f"5min..1h must use 'Xm' format, got {out!r}"
+    assert "s" not in out, f"minute-coarse format must not include seconds, got {out!r}"
+
+
+def test_cache_text_adaptive_granularity_hours(tmp_path: Path, monkeypatch):
+    """>= 1h remaining → just "Xh"."""
+    transcript = tmp_path / "t.jsonl"
+    # ttl=7200 (2h), elapsed=10s → ~7190s remaining = ~119m = 1h
+    ts = datetime.now(timezone.utc) - timedelta(seconds=10)
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    out = core.get_cache_age_text(7200)
+    assert out.endswith("h"), f">=1h remaining must use 'Xh' format, got {out!r}"
+    assert "m" not in out and "s" not in out
 
 
 def test_cache_text_empty_when_cache_missing(tmp_path: Path, monkeypatch):

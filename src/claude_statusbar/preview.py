@@ -84,10 +84,18 @@ def _demo_data() -> dict:
     )
 
 
-def run(use_color: bool = True) -> int:
+def run(use_color: bool = True, theme_filter: Optional[str] = None,
+        style_filter: Optional[str] = None) -> int:
+    """Render style × theme matrix.
+
+    `theme_filter` / `style_filter` (optional) limit output to one row.
+    Useful when the user is comparing a specific combo: `cs preview --theme nord`
+    shows nord across all 3 styles; `cs preview --style hairline --theme dracula`
+    shows just that one combo.
+    """
     real = _real_data()
     data = real or _demo_data()
-    src_label = "用你当前的真实数据" if real else "演示数据（找不到 last_stdin.json）"
+    src_label = "用你当前的真实数据" if real else "演示数据(找不到 last_stdin.json)"
 
     GOLD = "\033[38;2;212;175;55m\033[1m"
     DIM  = "\033[38;2;110;110;115m"
@@ -110,7 +118,22 @@ def run(use_color: bool = True) -> int:
     # 7 rows of identical output is just visual noise.
     THEME_AGNOSTIC = {"classic"}
 
-    for style_name in RENDERERS:
+    style_names = list(RENDERERS)
+    if style_filter:
+        if style_filter not in style_names:
+            print(f"  {DIM}unknown style {style_filter!r}; valid: {', '.join(style_names)}{R}")
+            return 2
+        style_names = [style_filter]
+
+    themes = list(BUILTIN_THEMES)
+    if theme_filter:
+        themes = [t for t in themes if t.name == theme_filter]
+        if not themes:
+            valid = ", ".join(t.name for t in BUILTIN_THEMES)
+            print(f"  {DIM}unknown theme {theme_filter!r}; valid: {valid}{R}")
+            return 2
+
+    for style_name in style_names:
         title = style_titles.get(style_name, style_name)
         print()
         print(f"  {GOLD}{title}{R}")
@@ -130,7 +153,7 @@ def run(use_color: bool = True) -> int:
             )
             print(f"  {DIM}[theme-agnostic]{R} {line}")
             continue
-        for theme in BUILTIN_THEMES:
+        for theme in themes:
             line = render(
                 style_name, theme=theme,
                 msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],

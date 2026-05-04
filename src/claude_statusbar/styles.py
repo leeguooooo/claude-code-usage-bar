@@ -45,13 +45,15 @@ def _cache_severity(theme: Theme, cache_text: str) -> tuple:
     otherwise         → s_ok    (green, comfortable)
 
     The "<1m" detection works because the countdown formatter only emits
-    "Xm YYs" when minutes > 0; sub-minute remainders render as "Ys".
+    sub-minute remainders as bare "Ys" (no 'm', no 'h'). Anything with a
+    minute or hour glyph is in the comfortable zone.
     """
     if cache_text == "COLD":
         return theme.s_hot
-    if "m" not in cache_text:
-        return theme.s_warn
-    return theme.s_ok
+    # Comfortable: contains 'm' (minutes) or 'h' (hours).
+    if "m" in cache_text or "h" in cache_text:
+        return theme.s_ok
+    return theme.s_warn
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +224,13 @@ def render_classic(
         # Three-level severity matching the countdown: COLD red, <1m
         # remaining yellow, otherwise green. Same logic as the capsule /
         # hairline _cache_severity helper, just on RGB ANSI codes.
+        # "h"/"m" presence = comfortable; bare "Ys" = warning.
         if cache_age_text == "COLD":
             col = RED
-        elif "m" not in cache_age_text:
-            col = YELLOW
-        else:
+        elif "m" in cache_age_text or "h" in cache_age_text:
             col = GREEN
+        else:
+            col = YELLOW
         # Reset before our segment so it doesn't inherit the trailing color
         # from format_status_line's last colorized chunk.
         result += f"{RESET} | {colorize(f'cache {cache_age_text}', col, use_color)}"
