@@ -186,8 +186,8 @@ def test_cache_text_warm_minutes_format(tmp_path: Path, monkeypatch):
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
     _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
     out = core.get_cache_age_text()
-    assert out.endswith(" ago")
     assert out.startswith("2m")
+    assert out.endswith("s")
 
 
 def test_cache_text_empty_when_cache_missing(tmp_path: Path, monkeypatch):

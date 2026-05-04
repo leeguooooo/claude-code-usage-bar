@@ -939,8 +939,8 @@ def get_cache_age_text() -> str:
     mins = int(age_s) // 60
     secs = int(age_s) % 60
     if mins > 0:
-        return f"{mins}m{secs:02d}s ago"
-    return f"{secs}s ago"
+        return f"{mins}m{secs:02d}s"
+    return f"{secs}s"
 
 
 def main(json_output: bool = False,

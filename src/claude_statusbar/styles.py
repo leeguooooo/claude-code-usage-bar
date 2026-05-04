@@ -95,8 +95,8 @@ def render_capsule(
 
     if cache_age_text:
         is_cold = cache_age_text == "COLD"
-        bg = theme.s_hot if is_cold else theme.pill_lang
-        parts.append(pill(bg, f"⏱ {cache_age_text}"))
+        bg = theme.s_hot if is_cold else theme.s_ok
+        parts.append(pill(bg, f"cache {cache_age_text}"))
 
     line = spacer.join(parts)
 
@@ -163,8 +163,8 @@ def render_hairline(
         parts.append(f"{MUTE}{lang_body}{RESET}")
 
     if cache_age_text:
-        col = _fg(theme.s_hot) if cache_age_text == "COLD" else MUTE
-        parts.append(f"{col}⏱ {cache_age_text}{RESET}")
+        col = _fg(theme.s_hot) if cache_age_text == "COLD" else _fg(theme.s_ok)
+        parts.append(f"{col}cache {cache_age_text}{RESET}")
 
     if bypass:
         parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
@@ -202,7 +202,11 @@ def render_classic(
         cost_text=cost_text,
     )
     if cache_age_text:
-        result += f" | ⏱ {cache_age_text}"
+        from .progress import GREEN, RED
+        col = RED if cache_age_text == "COLD" else GREEN
+        # Reset before our segment so it doesn't inherit the trailing color
+        # from format_status_line's last colorized chunk.
+        result += f"{RESET} | {colorize(f'cache {cache_age_text}', col, use_color)}"
     return result
 
 
