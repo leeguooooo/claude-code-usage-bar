@@ -143,6 +143,39 @@ def is_alive(pid: int) -> bool:
         return False
 
 
+def _process_is_our_daemon(pid: int) -> bool:
+    """Verify the PID actually belongs to *our* daemon, not a recycled PID.
+
+    Linux: read /proc/<pid>/cmdline directly (cheap, no fork).
+    macOS / fallback: shell out to `ps -o command= -p <pid>` (~10ms — only
+    runs on stop/install paths, never on the per-render hot path).
+
+    Returns False on any error (better to assume not-ours and skip than to
+    accidentally SIGTERM an unrelated user process).
+    """
+    proc_path = f"/proc/{pid}/cmdline"
+    try:
+        with open(proc_path, "rb") as f:
+            cmdline = f.read().decode("utf-8", errors="replace")
+        return "claude_statusbar" in cmdline and "daemon" in cmdline
+    except OSError:
+        pass
+    # Non-Linux fallback.
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["ps", "-o", "command=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+        if out.returncode != 0:
+            return False
+        return "claude_statusbar" in out.stdout and "daemon" in out.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Render — capture core.main()'s stdout into a string
 # ---------------------------------------------------------------------------
@@ -214,6 +247,11 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
     "heavy tick" — every render tick that triggers a refresh hits the
     cache, only the periodic invalidation pays the heavy cost.
     """
+    # Reset module-level shutdown flag so an in-process restart (after a
+    # previous SIGTERM call set _running=False) doesn't exit immediately.
+    global _running
+    _running = True
+
     if not _acquire_pidfile():
         existing = read_pidfile()
         sys.stderr.write(
@@ -255,6 +293,9 @@ def cmd_status() -> int:
         print("daemon: not running (no pidfile)")
         return 1
     alive = is_alive(pid)
+    if alive and not _process_is_our_daemon(pid):
+        print(f"daemon: pid {pid} alive but is not our daemon (PID was reused). Run `cs daemon stop` to clear stale pidfile.")
+        return 1
     print(f"daemon: pid {pid} {'alive' if alive else 'STALE pidfile (process gone)'}")
     if not alive:
         return 1
@@ -284,6 +325,14 @@ def cmd_stop() -> int:
         except OSError:
             pass
         return 0
+    # PID reuse defense: never SIGTERM a process we don't recognize as ours.
+    if not _process_is_our_daemon(pid):
+        print(
+            f"daemon: pid {pid} is alive but is NOT our daemon (PID reused). "
+            f"Refusing to SIGTERM. Manually remove {pid_path()} if you're sure.",
+            file=sys.stderr,
+        )
+        return 1
     try:
         os.kill(pid, signal.SIGTERM)
     except OSError as e:
@@ -302,9 +351,16 @@ def cmd_stop() -> int:
 def cmd_start(detach: bool = True, render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
     """`cs daemon start` — fork a detached daemon, or run inline if --foreground."""
     pid = read_pidfile()
-    if pid is not None and is_alive(pid):
+    if pid is not None and is_alive(pid) and _process_is_our_daemon(pid):
         print(f"daemon: already running (pid {pid})")
         return 0
+    # Stale pidfile (PID reused, or daemon SIGKILL'd without cleanup): drop
+    # it so flock acquisition succeeds for the new daemon.
+    if pid is not None:
+        try:
+            pid_path().unlink()
+        except OSError:
+            pass
     if not detach:
         # Run in current process (used for testing + `--foreground`).
         return run_forever(render_interval=render_interval)
@@ -338,7 +394,7 @@ def spawn_if_dead(render_interval: float = DEFAULT_RENDER_INTERVAL) -> bool:
     False if spawn failed silently.
     """
     pid = read_pidfile()
-    if pid is not None and is_alive(pid):
+    if pid is not None and is_alive(pid) and _process_is_our_daemon(pid):
         return True
     try:
         import subprocess

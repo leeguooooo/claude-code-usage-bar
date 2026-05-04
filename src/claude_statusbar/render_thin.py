@@ -35,13 +35,23 @@ def _read_meta() -> dict | None:
 
 
 def _is_fresh(meta: dict) -> bool:
-    """Daemon's last write must be within stale_after_seconds of now."""
+    """Daemon's last write must be within stale_after_seconds of now.
+
+    Clock skew defense: if `generated_at` is in the future (NTP correction,
+    container time-warp, user setting clock backward), treat the entry as
+    STALE. Otherwise a wall-clock jump backward would freeze stale daemon
+    output for the duration of the skew.
+    """
     try:
         generated_at = float(meta.get("generated_at", 0))
         stale_after = float(meta.get("stale_after_seconds", _STALE_AFTER_DEFAULT))
     except (TypeError, ValueError):
         return False
-    return (time.time() - generated_at) <= stale_after
+    delta = time.time() - generated_at
+    if delta < 0:
+        # Future timestamp — treat as stale, fall back + re-spawn.
+        return False
+    return delta <= stale_after
 
 
 def _spawn_daemon_async() -> None:

@@ -979,6 +979,12 @@ def get_cache_age_text(ttl_seconds: int = 300) -> str:
 
     if age_s > ttl_seconds:
         return "COLD"
+    # Clock-skew clamp: if the transcript timestamp is in the future (NTP
+    # correction or sandbox time-warp), `age_s` goes negative and produces
+    # nonsense like "-1m" / "-30s". Floor to 0 so the segment renders as
+    # "cache 0s" until the wall clock catches up.
+    if age_s < 0:
+        age_s = 0
     mins = int(age_s) // 60
     secs = int(age_s) % 60
     if mins > 0:

@@ -107,25 +107,45 @@ def is_statusline_configured() -> bool:
     return _is_our_statusline(settings.get("statusLine"))
 
 
+def _existing_uses_render(existing) -> bool:
+    """True if the user's current statusLine command is `cs render`-style.
+
+    Used by the daily auto-repair path to preserve the user's choice of fast
+    vs inline mode — without this check we'd silently downgrade a fast-mode
+    user back to bare `cs` because `_statusline_config()` defaults to
+    fast=False.
+    """
+    if not isinstance(existing, dict):
+        return False
+    cmd = existing.get("command")
+    if not isinstance(cmd, str):
+        return False
+    parts = cmd.strip().split()
+    return len(parts) >= 2 and parts[1] == "render"
+
+
 def ensure_statusline_configured(fast: bool = False) -> Tuple[bool, str]:
     """Silently ensure settings.json has *our* statusLine config.
 
     Behavior:
-      - missing       → write our config
+      - missing       → write our config (honors `fast` arg)
       - foreign cmd   → leave alone (don't overwrite another tool's setup)
-      - our cmd, stale path (different `command`) → refresh path
+      - our cmd, stale path → refresh, *preserving* the user's existing
+        fast/inline choice (so the daily auto-repair doesn't downgrade
+        a user who explicitly opted into `cs --setup --fast`).
       - our cmd, current → no-op
 
-    `fast=True` writes the Phase B ``cs render`` command instead of bare
-    ``cs``. Both forms pass _is_our_statusline (basename check).
+    `fast=True` only forces the write to `cs render`. `fast=False` does
+    NOT force a downgrade — it just means "if you have to write fresh,
+    pick the inline form". Existing fast-mode entries are left alone.
 
     Returns (changed, message).
     """
     settings = _read_settings()
     existing = settings.get("statusLine")
-    desired  = _statusline_config(fast=fast)
 
     if existing is None:
+        desired = _statusline_config(fast=fast)
         settings["statusLine"] = desired
         if _write_settings(settings):
             return True, f"Added statusLine config to {SETTINGS_PATH}"
@@ -141,7 +161,11 @@ def ensure_statusline_configured(fast: bool = False) -> Tuple[bool, str]:
             f"manually if you want claude-statusbar."
         )
 
-    # Ours, but possibly outdated path → refresh if it changed.
+    # Ours already. Compute desired command preserving fast mode if the user
+    # currently uses it (so the daily auto-repair never downgrades them).
+    effective_fast = fast or _existing_uses_render(existing)
+    desired = _statusline_config(fast=effective_fast)
+
     if existing.get("command") != desired["command"]:
         settings["statusLine"] = desired
         if _write_settings(settings):

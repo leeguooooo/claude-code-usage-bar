@@ -201,6 +201,17 @@ def test_cache_text_empty_when_no_transcript_path(tmp_path: Path, monkeypatch):
     assert core.get_cache_age_text() == ""
 
 
+def test_cache_text_clamps_future_timestamp(tmp_path: Path, monkeypatch):
+    """Clock-skew defense: a transcript timestamp in the future must NOT
+    produce nonsense output like 'cache -1m' or '-30s'. Floor to 0."""
+    transcript = tmp_path / "t.jsonl"
+    future = datetime.now(timezone.utc) + timedelta(seconds=120)
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": future.isoformat()}])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    out = core.get_cache_age_text()
+    assert out == "0s", f"future timestamp must clamp to '0s', got {out!r}"
+
+
 def test_cache_text_respects_custom_ttl(tmp_path: Path, monkeypatch):
     """Users on the 1h Anthropic cache pass ttl_seconds=3600; entries between
     300s and 3600s should still report warm, not COLD."""

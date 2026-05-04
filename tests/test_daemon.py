@@ -184,3 +184,128 @@ def test_statusline_config_fast_appends_render():
 def test_statusline_config_default_no_render():
     cfg = _statusline_config(fast=False)
     assert not cfg["command"].endswith(" render")
+
+
+# ---------------------------------------------------------------------------
+# Codex review fixes
+# ---------------------------------------------------------------------------
+def test_thin_client_treats_future_timestamp_as_stale():
+    """Clock skew defense: generated_at in the future must NOT be 'fresh'.
+
+    Without this, an NTP backward-correction freezes stale daemon output
+    until wall clock catches up.
+    """
+    future = time.time() + 60.0  # 1 minute in the future
+    assert render_thin._is_fresh(
+        {"generated_at": future, "stale_after_seconds": 5.0}
+    ) is False
+
+
+def test_running_global_is_reset_per_run_forever_call(monkeypatch, tmp_path: Path):
+    """An in-process restart (after a previous SIGTERM cleared _running)
+    must NOT exit immediately on the next run_forever() call.
+
+    We don't actually loop here — we just verify the flag gets reset.
+    """
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(_d, "_render_once", lambda: None)  # nothing to publish
+
+    _d._running = False  # simulate previous shutdown
+    # Patch acquire to fail immediately so run_forever returns without
+    # actually entering the sleep loop. We're only checking the reset.
+    monkeypatch.setattr(_d, "_acquire_pidfile", lambda: False)
+    rc = _d.run_forever(render_interval=0.01)
+    assert rc == 1  # acquire failed
+    assert _d._running is True, (
+        "run_forever() must reset _running=True at entry; otherwise the next "
+        "in-process daemon start exits before doing any work"
+    )
+
+
+def test_existing_uses_render_detects_fast_mode():
+    from claude_statusbar.setup import _existing_uses_render
+    assert _existing_uses_render({"command": "cs render"}) is True
+    assert _existing_uses_render({"command": "/usr/local/bin/cs render"}) is True
+    assert _existing_uses_render({"command": "cs"}) is False
+    assert _existing_uses_render({"command": "/usr/local/bin/cs"}) is False
+    assert _existing_uses_render({}) is False
+    assert _existing_uses_render(None) is False
+
+
+def test_ensure_statusline_preserves_fast_mode(tmp_path: Path, monkeypatch):
+    """MUST-FIX from codex review: the daily auto-repair (default fast=False)
+    must NOT downgrade a user who already opted into `cs render`."""
+    from claude_statusbar import setup as setup_mod
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr(setup_mod, "SETTINGS_PATH", settings)
+    # User already chose fast mode previously.
+    settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "/abs/path/cs render"},
+    }), encoding="utf-8")
+
+    # Daily auto-repair tick — default fast=False.
+    changed, message = setup_mod.ensure_statusline_configured(fast=False)
+
+    # Read what's there now.
+    after = json.loads(settings.read_text(encoding="utf-8"))
+    new_cmd = after["statusLine"]["command"]
+    assert new_cmd.endswith(" render"), (
+        f"daily auto-repair downgraded fast mode! command is now {new_cmd!r}. "
+        f"changed={changed}, message={message!r}"
+    )
+
+
+def test_render_once_captures_stdout(monkeypatch, tmp_path: Path):
+    """Daemon's _render_once must capture core.main()'s stdout into a string.
+
+    If core.main ever stops printing (e.g., switches to logging), the daemon
+    would silently produce empty output. This test pins the contract.
+    """
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+    (tmp_path / "last_stdin.json").write_text("{}", encoding="utf-8")
+
+    captured_kwargs = {}
+
+    def fake_core_main(**kwargs):
+        captured_kwargs.update(kwargs)
+        sys.stdout.write("FAKE RENDERED LINE")
+
+    # Patch the core.main symbol the daemon imports lazily.
+    import claude_statusbar.core as core_mod
+    monkeypatch.setattr(core_mod, "main", fake_core_main)
+
+    out = _d._render_once()
+    assert out == "FAKE RENDERED LINE", f"capture failed; got {out!r}"
+    assert captured_kwargs.get("_suppress_side_effects") is True, (
+        "daemon must call core.main with _suppress_side_effects=True so it "
+        "doesn't fire auto-update / settings-repair 60×/min"
+    )
+
+
+def test_suppress_side_effects_skips_update_check(monkeypatch, tmp_path: Path):
+    """_suppress_side_effects=True must skip both check_for_updates and
+    _maybe_ensure_statusline (the daemon path runs them on its own cadence)."""
+    import claude_statusbar.core as core_mod
+    update_calls = []
+    statusline_calls = []
+    monkeypatch.setattr(core_mod, "check_for_updates",
+                        lambda *a, **kw: update_calls.append(True))
+    monkeypatch.setattr(core_mod, "_maybe_ensure_statusline",
+                        lambda *a, **kw: statusline_calls.append(True))
+
+    # Pipe a minimal stdin payload.
+    monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
+    try:
+        core_mod.main(_suppress_side_effects=True)
+    except Exception:
+        # The render path may fail because we mocked things — that's OK.
+        # We're only checking the side-effect guard here.
+        pass
+    assert update_calls == [], "_suppress_side_effects must skip check_for_updates"
+    assert statusline_calls == [], (
+        "_suppress_side_effects must skip _maybe_ensure_statusline"
+    )
+
+
+# Helper imports for the side-effects test
+import io  # noqa: E402

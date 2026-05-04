@@ -18,17 +18,20 @@ Public API: ``install()``, ``uninstall()``, ``status()``. Each returns
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Tuple
+from xml.sax.saxutils import escape as _xml_escape
 
 from .cache import atomic_write_text
 
 
 LAUNCHD_LABEL = "com.claude-statusbar.daemon"
 SYSTEMD_UNIT = "claude-statusbar-daemon.service"
+_SUBPROCESS_TIMEOUT = 10.0  # launchctl/systemctl should never take longer
 
 
 # ---------------------------------------------------------------------------
@@ -66,20 +69,13 @@ def systemd_unit_path() -> Path:
 # Resolve `cs` binary (mirror setup.py's logic so the unit file is self-contained)
 # ---------------------------------------------------------------------------
 def _resolve_cs() -> str:
-    """Best-effort absolute path to the `cs` binary, for the unit file."""
-    cmd = shutil.which("cs") or shutil.which("cstatus") or shutil.which("claude-statusbar")
-    if cmd and Path(cmd).is_file():
-        return cmd
-    for p in (
-        Path.home() / ".local" / "bin" / "cs",
-        Path.home() / ".local" / "share" / "uv" / "tools" / "claude-statusbar" / "bin" / "cs",
-        Path.home() / ".local" / "pipx" / "venvs" / "claude-statusbar" / "bin" / "cs",
-        Path("/usr/local/bin/cs"),
-        Path("/opt/homebrew/bin/cs"),
-    ):
-        if p.is_file():
-            return str(p)
-    return "cs"
+    """Best-effort absolute path to the `cs` binary, for the unit file.
+
+    Delegates to setup._resolve_cs_command() so the lookup logic doesn't
+    drift between settings.json writers and OS service installers.
+    """
+    from .setup import _resolve_cs_command
+    return _resolve_cs_command()
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +83,14 @@ def _resolve_cs() -> str:
 # ---------------------------------------------------------------------------
 def _build_launchd_plist(cs_path: str) -> str:
     """plist body for launchd. KeepAlive bounces a crashed daemon
-    automatically, RunAtLoad covers cold boots."""
+    automatically, RunAtLoad covers cold boots.
+
+    All path fields are XML-escaped — a $HOME containing `&`, `<`, or `>`
+    (rare but possible) would otherwise produce malformed plist XML that
+    launchctl rejects.
+    """
+    cs_esc = _xml_escape(cs_path)
+    home_esc = _xml_escape(str(Path.home()))
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -96,7 +99,7 @@ def _build_launchd_plist(cs_path: str) -> str:
     <string>{LAUNCHD_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{cs_path}</string>
+        <string>{cs_esc}</string>
         <string>daemon</string>
         <string>_run</string>
     </array>
@@ -107,20 +110,26 @@ def _build_launchd_plist(cs_path: str) -> str:
     <key>ThrottleInterval</key>
     <integer>10</integer>
     <key>StandardOutPath</key>
-    <string>{Path.home()}/.cache/claude-statusbar/daemon.stdout.log</string>
+    <string>{home_esc}/.cache/claude-statusbar/daemon.stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>{Path.home()}/.cache/claude-statusbar/daemon.stderr.log</string>
+    <string>{home_esc}/.cache/claude-statusbar/daemon.stderr.log</string>
 </dict>
 </plist>
 """
 
 
 def _launchctl(*args: str) -> Tuple[int, str, str]:
-    p = subprocess.run(
-        ["launchctl", *args],
-        capture_output=True,
-        text=True,
-    )
+    """Run `launchctl <args>` with a hard timeout — never hang `cs daemon
+    install` if launchd is wedged."""
+    try:
+        p = subprocess.run(
+            ["launchctl", *args],
+            capture_output=True,
+            text=True,
+            timeout=_SUBPROCESS_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, "", f"launchctl {' '.join(args)} timed out after {_SUBPROCESS_TIMEOUT}s"
     return p.returncode, p.stdout, p.stderr
 
 
@@ -184,13 +193,16 @@ def _macos_status() -> Tuple[bool, str]:
 # Linux systemd user unit
 # ---------------------------------------------------------------------------
 def _build_systemd_unit(cs_path: str) -> str:
+    """systemd user unit. ExecStart is shell-quoted so paths with spaces
+    or unit-special characters survive systemd's parser."""
+    cs_quoted = shlex.quote(cs_path)
     return f"""[Unit]
 Description=claude-statusbar render daemon
 After=network.target
 
 [Service]
 Type=simple
-ExecStart={cs_path} daemon _run
+ExecStart={cs_quoted} daemon _run
 Restart=always
 RestartSec=5
 StandardOutput=append:%h/.cache/claude-statusbar/daemon.stdout.log
@@ -202,11 +214,16 @@ WantedBy=default.target
 
 
 def _systemctl_user(*args: str) -> Tuple[int, str, str]:
-    p = subprocess.run(
-        ["systemctl", "--user", *args],
-        capture_output=True,
-        text=True,
-    )
+    """Run `systemctl --user <args>` with a hard timeout."""
+    try:
+        p = subprocess.run(
+            ["systemctl", "--user", *args],
+            capture_output=True,
+            text=True,
+            timeout=_SUBPROCESS_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, "", f"systemctl --user {' '.join(args)} timed out after {_SUBPROCESS_TIMEOUT}s"
     return p.returncode, p.stdout, p.stderr
 
 

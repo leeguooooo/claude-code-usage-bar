@@ -85,11 +85,23 @@ def run() -> int:
         sl = settings.get("statusLine") if isinstance(settings, dict) else None
         if isinstance(sl, dict) and sl.get("command"):
             cmd = sl["command"]
-            from .setup import _is_our_statusline
+            from .setup import _is_our_statusline, _existing_uses_render
             ours = _is_our_statusline(sl)
             _line("statusLine entry",
                   f"{cmd}  {_green('(ours)') if ours else _red('(not ours)')}",
                   ok=ours)
+            # Phase B/C upsell: at refreshInterval=1 the inline command
+            # burns ~4% CPU continuously; fast mode drops it to ~1%.
+            try:
+                ri = sl.get("refreshInterval")
+                if (isinstance(ri, (int, float)) and ri <= 2 and ours
+                        and not _existing_uses_render(sl)):
+                    _line("perf hint",
+                          _dim(f"refreshInterval={ri}s with inline `cs`. "
+                               f"Run `cs --setup --fast` for ~5x lower CPU "
+                               f"(daemon mode). See README → Fast mode."))
+            except (TypeError, ValueError):
+                pass
         else:
             _line("statusLine entry",
                   _red("missing — run: cs --setup"), ok=False)
