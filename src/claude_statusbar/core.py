@@ -842,14 +842,19 @@ def format_number(num: float) -> str:
     return f"{num:.0f}"
 
 
+# Reverse-tail reader tunables. 32KB per seek, capped at 10 chunks (320KB)
+# so a multi-MB transcript with no assistant entries can't blow up render time.
+_CACHE_AGE_CHUNK = 32 * 1024
+_CACHE_AGE_MAX_BYTES = 10 * _CACHE_AGE_CHUNK
+
+
 def _last_assistant_age(transcript_path: str) -> Optional[float]:
     """Find the last assistant entry's age in seconds by tail-reading the JSONL.
 
     Reads the file from the end in 32KB chunks instead of slurping the whole
     transcript — these files can be many MB and the status bar runs on every
-    Claude Code render.
+    Claude Code render. Caps at _CACHE_AGE_MAX_BYTES to bound worst-case I/O.
     """
-    chunk_size = 32 * 1024
     try:
         with open(transcript_path, "rb") as f:
             f.seek(0, 2)
@@ -858,16 +863,19 @@ def _last_assistant_age(transcript_path: str) -> Optional[float]:
                 return None
             buf = b""
             pos = file_size
-            # Walk backwards collecting chunks until we find an assistant entry
-            # or exhaust the file.
-            while pos > 0:
-                read = min(chunk_size, pos)
+            scanned = 0
+            while pos > 0 and scanned < _CACHE_AGE_MAX_BYTES:
+                read = min(_CACHE_AGE_CHUNK, pos)
                 pos -= read
+                scanned += read
                 f.seek(pos)
+                # Prepend the new chunk; reversal order matters — the newer
+                # bytes already in `buf` are at higher offsets than what we
+                # just read.
                 buf = f.read(read) + buf
-                # Split into lines; drop the leading partial line unless we've
-                # already reached the start of the file.
                 lines = buf.split(b"\n")
+                # Unless we've reached the file start, the first line may be
+                # a partial — keep it in buf for the next iteration to stitch.
                 if pos > 0:
                     buf = lines[0]
                     candidates = lines[1:]
@@ -893,6 +901,10 @@ def _last_assistant_age(transcript_path: str) -> Optional[float]:
                         last_ts = datetime.fromisoformat(ts_str)
                     except ValueError:
                         continue
+                    # Treat naive timestamps as UTC (Claude Code convention)
+                    # to avoid TypeError on aware-minus-naive subtraction.
+                    if last_ts.tzinfo is None:
+                        last_ts = last_ts.replace(tzinfo=timezone.utc)
                     return (datetime.now(timezone.utc) - last_ts).total_seconds()
     except OSError:
         return None
@@ -900,24 +912,27 @@ def _last_assistant_age(transcript_path: str) -> Optional[float]:
 
 
 def get_cache_age_text() -> str:
-    """Return cache age: 'Xm Ys ago' if <5m, else 'COLD'."""
-    cache_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
-    CACHE_TTL = 5 * 60  # 300 seconds
+    """Return cache age: 'Xm Ys ago' if <5m, else 'COLD'.
 
-    age_s: Optional[float] = None
+    Returns "" (segment hidden) only when we have no signal at all — no
+    last_stdin.json or no transcript_path in it. If the transcript exists but
+    has no assistant entry yet, the cache is by definition cold, so render
+    COLD instead of inventing a freshness from the cache file's mtime.
+    """
+    cache_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
+    CACHE_TTL = 5 * 60
+
     try:
         raw = json.loads(cache_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, ValueError, FileNotFoundError):
         return ""
 
     tp = raw.get("transcript_path", "")
-    if tp:
-        age_s = _last_assistant_age(tp)
+    if not tp:
+        return ""
+    age_s = _last_assistant_age(tp)
     if age_s is None:
-        try:
-            age_s = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
-        except OSError:
-            return ""
+        return "COLD"
 
     if age_s > CACHE_TTL:
         return "COLD"
