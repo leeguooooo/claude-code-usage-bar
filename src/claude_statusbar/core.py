@@ -952,16 +952,24 @@ def _last_assistant_age(transcript_path: str) -> Optional[float]:
 
 
 def get_cache_age_text(ttl_seconds: int = 300) -> str:
-    """Return cache age: 'Xm Ys' if <ttl_seconds, else 'COLD'.
+    """Return cache state as a COUNTDOWN to expiry.
+
+    Display semantics:
+      - "Xm YYs" / "Ys" — time remaining before Anthropic's prompt cache
+        expires. Decreasing number = increasing urgency, matching the
+        `⏰2h14m` reset countdowns elsewhere on the line.
+      - "COLD"          — cache has expired (or transcript has no
+        assistant entry). Next API call pays full input-token price.
+      - ""              — no signal at all (no last_stdin.json or
+        no transcript_path); segment hidden.
 
     `ttl_seconds` defaults to Anthropic's 5min prompt cache TTL but is
     user-configurable via `cs config set cache_ttl_seconds 3600` for users
-    who've enabled the 1-hour cache option.
+    who've enabled the 1-hour extended cache (ENABLE_PROMPT_CACHING_1H).
 
-    Returns "" (segment hidden) only when we have no signal at all — no
-    last_stdin.json or no transcript_path in it. If the transcript exists but
-    has no assistant entry yet, the cache is by definition cold, so render
-    COLD instead of inventing a freshness from the cache file's mtime.
+    Why countdown not elapsed: the widget exists to answer "should I send
+    my next prompt before the cache dies?". A countdown answers directly;
+    elapsed forces the user to mentally subtract.
     """
     cache_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
 
@@ -977,16 +985,20 @@ def get_cache_age_text(ttl_seconds: int = 300) -> str:
     if age_s is None:
         return "COLD"
 
-    if age_s > ttl_seconds:
-        return "COLD"
-    # Clock-skew clamp: if the transcript timestamp is in the future (NTP
-    # correction or sandbox time-warp), `age_s` goes negative and produces
-    # nonsense like "-1m" / "-30s". Floor to 0 so the segment renders as
-    # "cache 0s" until the wall clock catches up.
+    # Clock-skew clamp: future transcript timestamp (NTP correction or
+    # sandbox time-warp) → treat as just-now (full TTL remaining).
     if age_s < 0:
         age_s = 0
-    mins = int(age_s) // 60
-    secs = int(age_s) % 60
+
+    remaining = ttl_seconds - age_s
+    if remaining <= 0:
+        return "COLD"
+
+    # Round UP so a render at t=0.4s into a 5min TTL still shows 5m00s,
+    # not 4m59s — feels less surprising for the user who just hit enter.
+    remaining_int = int(remaining) if remaining == int(remaining) else int(remaining) + 1
+    mins = remaining_int // 60
+    secs = remaining_int % 60
     if mins > 0:
         return f"{mins}m{secs:02d}s"
     return f"{secs}s"

@@ -180,13 +180,15 @@ def test_cache_text_cold_when_no_assistant_yet(tmp_path: Path, monkeypatch):
     assert core.get_cache_age_text() == "COLD"
 
 
-def test_cache_text_warm_minutes_format(tmp_path: Path, monkeypatch):
+def test_cache_text_warm_countdown_format(tmp_path: Path, monkeypatch):
+    """130s elapsed of a 300s TTL → 170s remaining → "2m50s"."""
     transcript = tmp_path / "t.jsonl"
     ts = datetime.now(timezone.utc) - timedelta(seconds=130)
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
     _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
     out = core.get_cache_age_text()
-    assert out.startswith("2m")
+    # 300 - 130 = 170s remaining = 2m50s (small jitter possible from test timing)
+    assert out.startswith("2m"), f"expected 2m... countdown, got {out!r}"
     assert out.endswith("s")
 
 
@@ -203,24 +205,43 @@ def test_cache_text_empty_when_no_transcript_path(tmp_path: Path, monkeypatch):
 
 def test_cache_text_clamps_future_timestamp(tmp_path: Path, monkeypatch):
     """Clock-skew defense: a transcript timestamp in the future must NOT
-    produce nonsense output like 'cache -1m' or '-30s'. Floor to 0."""
+    overflow remaining (would show 7m+ for a 5m TTL). Treat as just-now,
+    so countdown shows the full TTL."""
     transcript = tmp_path / "t.jsonl"
     future = datetime.now(timezone.utc) + timedelta(seconds=120)
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": future.isoformat()}])
     _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
     out = core.get_cache_age_text()
-    assert out == "0s", f"future timestamp must clamp to '0s', got {out!r}"
+    # Future timestamp clamped to 0 elapsed → 5m TTL fully remaining.
+    assert out.startswith("5m"), f"expected 5m... full countdown, got {out!r}"
 
 
 def test_cache_text_respects_custom_ttl(tmp_path: Path, monkeypatch):
-    """Users on the 1h Anthropic cache pass ttl_seconds=3600; entries between
-    300s and 3600s should still report warm, not COLD."""
+    """Users on the 1h Anthropic cache pass ttl_seconds=3600; entries 600s
+    in should report 50min remaining, not COLD."""
     transcript = tmp_path / "t.jsonl"
     ts = datetime.now(timezone.utc) - timedelta(seconds=600)  # 10 min old
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
     _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
-    # Default 300s TTL → COLD
+    # Default 300s TTL → 600s elapsed → already expired → COLD
     assert core.get_cache_age_text(300) == "COLD"
-    # 1h TTL → still warm, formatted as 10m
+    # 1h TTL → 600s elapsed → 3000s remaining → 50m
     out = core.get_cache_age_text(3600)
-    assert out.startswith("10m"), f"expected 10m..., got {out!r}"
+    assert out.startswith("50m") or out.startswith("49m"), \
+        f"expected ~50m countdown, got {out!r}"
+
+
+def test_cache_text_emits_sub_minute_for_warning_state(tmp_path: Path, monkeypatch):
+    """The styles layer keys yellow vs green off whether 'm' is in the text:
+    sub-minute remaining must NOT include an 'm' so it triggers warning color."""
+    transcript = tmp_path / "t.jsonl"
+    # 280s elapsed of 300s TTL → 20s remaining
+    ts = datetime.now(timezone.utc) - timedelta(seconds=280)
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    out = core.get_cache_age_text()
+    assert out.endswith("s")
+    assert "m" not in out, (
+        f"sub-minute remaining must omit 'm' so styles layer can detect "
+        f"warning state via the missing-m check; got {out!r}"
+    )
