@@ -60,17 +60,32 @@ def _resolve_cs_command() -> str:
     return "cs"
 
 
-def _statusline_config(fast: bool = False) -> dict:
+# Default refresh interval. 1 second so the cache-age countdown actually
+# ticks visibly out of the box. At inline cost (~30ms/render) that's ~3%
+# CPU; users who care about that overhead should pair with `--fast`
+# (daemon mode brings it under 1%).
+DEFAULT_REFRESH_INTERVAL = 1
+
+
+def _statusline_config(fast: bool = False, refresh_interval: int = DEFAULT_REFRESH_INTERVAL) -> dict:
     """Build the statusLine entry we want to write.
 
     `fast=True` emits ``cs render`` (Phase B daemon thin client). The bare
     ``cs`` form keeps the legacy inline path so existing users aren't
     affected by this change.
+
+    `refresh_interval` is written into settings.json so the cache-age
+    countdown actually animates. Without it, Claude Code only re-renders
+    on activity (turn complete, tool use), and time-based segments freeze.
     """
     cmd = _resolve_cs_command()
     if fast:
         cmd = f"{cmd} render"
-    return {"type": "command", "command": cmd}
+    return {
+        "type": "command",
+        "command": cmd,
+        "refreshInterval": refresh_interval,
+    }
 
 
 def _is_our_statusline(entry: object) -> bool:
@@ -161,12 +176,20 @@ def ensure_statusline_configured(fast: bool = False) -> Tuple[bool, str]:
             f"manually if you want claude-statusbar."
         )
 
-    # Ours already. Compute desired command preserving fast mode if the user
-    # currently uses it (so the daily auto-repair never downgrades them).
+    # Ours already. Compute desired command preserving (a) fast mode if the
+    # user currently uses it (so the daily auto-repair never downgrades them)
+    # and (b) any explicit refreshInterval the user already set, so we don't
+    # silently bump someone's 60s cadence to our 1s default.
     effective_fast = fast or _existing_uses_render(existing)
-    desired = _statusline_config(fast=effective_fast)
+    existing_refresh = existing.get("refreshInterval")
+    if isinstance(existing_refresh, (int, float)) and existing_refresh > 0:
+        effective_refresh = int(existing_refresh)
+    else:
+        effective_refresh = DEFAULT_REFRESH_INTERVAL
+    desired = _statusline_config(fast=effective_fast, refresh_interval=effective_refresh)
 
-    if existing.get("command") != desired["command"]:
+    if (existing.get("command") != desired["command"]
+            or existing.get("refreshInterval") != desired["refreshInterval"]):
         settings["statusLine"] = desired
         if _write_settings(settings):
             return True, (

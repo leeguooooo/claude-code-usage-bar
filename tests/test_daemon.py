@@ -236,6 +236,54 @@ def test_statusline_config_default_no_render():
     assert not cfg["command"].endswith(" render")
 
 
+def test_statusline_config_includes_default_refresh_interval():
+    """v3.2.3+: default config writes refreshInterval=1 so the cache-age
+    countdown actually animates out of the box."""
+    from claude_statusbar.setup import DEFAULT_REFRESH_INTERVAL
+    cfg = _statusline_config()
+    assert cfg["refreshInterval"] == DEFAULT_REFRESH_INTERVAL == 1
+
+
+def test_statusline_config_honors_explicit_refresh_interval():
+    cfg = _statusline_config(refresh_interval=30)
+    assert cfg["refreshInterval"] == 30
+
+
+def test_ensure_statusline_preserves_explicit_refresh_interval(tmp_path: Path, monkeypatch):
+    """If the user manually set refreshInterval=60, the daily auto-repair
+    must NOT silently bump it to our 1s default."""
+    from claude_statusbar import setup as setup_mod
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr(setup_mod, "SETTINGS_PATH", settings)
+    settings.write_text(json.dumps({
+        "statusLine": {
+            "type": "command",
+            "command": "/abs/path/cs",
+            "refreshInterval": 60,
+        },
+    }), encoding="utf-8")
+
+    setup_mod.ensure_statusline_configured(fast=False)
+
+    after = json.loads(settings.read_text(encoding="utf-8"))
+    assert after["statusLine"]["refreshInterval"] == 60, (
+        f"daily auto-repair must preserve explicit refreshInterval; got "
+        f"{after['statusLine'].get('refreshInterval')!r}"
+    )
+
+
+def test_ensure_statusline_writes_default_refresh_interval_for_new_install(tmp_path: Path, monkeypatch):
+    """Fresh install (no settings.json yet): default refreshInterval=1."""
+    from claude_statusbar import setup as setup_mod
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr(setup_mod, "SETTINGS_PATH", settings)
+
+    setup_mod.ensure_statusline_configured(fast=False)
+
+    after = json.loads(settings.read_text(encoding="utf-8"))
+    assert after["statusLine"]["refreshInterval"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Codex review fixes
 # ---------------------------------------------------------------------------
