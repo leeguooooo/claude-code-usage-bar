@@ -104,7 +104,8 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "auto_compact_width": 100,
   "show_weekly": true,
   "show_language": true,
-  "show_cost": false
+  "show_cost": false,
+  "show_cache_age": false
 }
 ```
 
@@ -116,6 +117,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `auto_compact_width` | integer (e.g. `100`) | Force `hairline` when terminal narrower than this. `0` = disabled |
 | `show_weekly`, `show_language` | bool | Hide individual segments |
 | `show_cost` | bool, default `false` | Append a `$ X.XX` segment with the current session's cost (from Claude Code's stdin payload). Opt-in because the "session" boundary is what Claude Code reports — not necessarily what you intuitively call one |
+| `show_cache_age` | bool, default `false` | Append a `cache 15s` (green) / `cache COLD` (red) segment showing how long since Claude's last assistant turn. Anthropic's prompt cache TTL is 5 minutes — the segment flips to `COLD` past that. Useful to see at a glance whether your next request will hit the warm cache. **Requires `"refreshInterval": N` in your `~/.claude/settings.json` `statusLine` block** (e.g. `30`) — without it Claude Code only re-renders on activity, so the value freezes. Contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
 
