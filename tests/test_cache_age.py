@@ -4,8 +4,6 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
-
 from claude_statusbar import core
 
 
@@ -13,33 +11,18 @@ def _write_jsonl(path: Path, entries):
     path.write_text("\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
 
 
-def _stub_cache(monkeypatch, tmp_path: Path, transcript_path: str):
-    cache = tmp_path / "last_stdin.json"
-    cache.write_text(json.dumps({"transcript_path": transcript_path}), encoding="utf-8")
-
-    class _FakeHome:
-        def __truediv__(self, _other):
-            class _Joiner:
-                def __init__(self, base):
-                    self._p = base
-
-                def __truediv__(self, more):
-                    self._p = self._p / more
-                    return self
-
-                def read_text(self, **kw):
-                    return self._p.read_text(**kw)
-
-                def stat(self):
-                    return self._p.stat()
-
-            return _Joiner(tmp_path)
-
-    monkeypatch.setattr(core.Path, "home", classmethod(lambda cls: _FakeHome()))
-    return cache
+def _install_fake_cache(monkeypatch, tmp_path: Path, payload: dict):
+    """Point Path.home() at tmp_path so get_cache_age_text() reads our cache."""
+    cache_dir = tmp_path / ".cache" / "claude-statusbar"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "last_stdin.json").write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(core.Path, "home", classmethod(lambda cls: tmp_path))
 
 
-def test_last_assistant_age_finds_most_recent(tmp_path: Path):
+# ---------------------------------------------------------------------------
+# _last_assistant_age
+# ---------------------------------------------------------------------------
+def test_finds_most_recent_assistant(tmp_path: Path):
     transcript = tmp_path / "t.jsonl"
     now = datetime.now(timezone.utc)
     _write_jsonl(transcript, [
@@ -53,26 +36,33 @@ def test_last_assistant_age_finds_most_recent(tmp_path: Path):
     assert 25 <= age <= 60
 
 
-def test_last_assistant_age_returns_none_when_no_assistant(tmp_path: Path):
+def test_returns_none_when_no_assistant(tmp_path: Path):
     transcript = tmp_path / "t.jsonl"
-    now = datetime.now(timezone.utc)
-    _write_jsonl(transcript, [
-        {"type": "user", "timestamp": now.isoformat()},
-    ])
+    _write_jsonl(transcript, [{"type": "user", "timestamp": datetime.now(timezone.utc).isoformat()}])
     assert core._last_assistant_age(str(transcript)) is None
 
 
-def test_last_assistant_age_handles_z_suffix(tmp_path: Path):
+def test_handles_z_suffix_timestamp(tmp_path: Path):
     transcript = tmp_path / "t.jsonl"
-    now = datetime.now(timezone.utc)
-    ts = (now - timedelta(seconds=10)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    ts = (datetime.now(timezone.utc) - timedelta(seconds=10)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts}])
     age = core._last_assistant_age(str(transcript))
     assert age is not None
     assert 0 <= age <= 30
 
 
-def test_last_assistant_age_skips_malformed_lines(tmp_path: Path):
+def test_handles_naive_timestamp_without_crashing(tmp_path: Path):
+    """A naive ISO timestamp (no Z, no offset) used to crash with TypeError
+    on aware-minus-naive subtraction. We treat it as UTC."""
+    transcript = tmp_path / "t.jsonl"
+    ts = (datetime.now(timezone.utc) - timedelta(seconds=10)).strftime("%Y-%m-%dT%H:%M:%S.000")
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts}])
+    age = core._last_assistant_age(str(transcript))
+    assert age is not None
+    assert 0 <= age <= 30
+
+
+def test_skips_malformed_lines(tmp_path: Path):
     transcript = tmp_path / "t.jsonl"
     now = datetime.now(timezone.utc)
     transcript.write_text(
@@ -87,59 +77,125 @@ def test_last_assistant_age_skips_malformed_lines(tmp_path: Path):
     assert 0 <= age <= 30
 
 
-def test_last_assistant_age_works_across_chunk_boundary(tmp_path: Path, monkeypatch):
-    """The reverse-tail reader splits the file into chunks; assistant entries
-    should still be findable when split across two reads."""
-    monkeypatch.setattr(core, "_last_assistant_age", core._last_assistant_age)
+def test_empty_file_returns_none(tmp_path: Path):
+    transcript = tmp_path / "empty.jsonl"
+    transcript.write_bytes(b"")
+    assert core._last_assistant_age(str(transcript)) is None
+
+
+def test_missing_file_returns_none(tmp_path: Path):
+    assert core._last_assistant_age(str(tmp_path / "nope.jsonl")) is None
+
+
+def test_no_trailing_newline(tmp_path: Path):
     transcript = tmp_path / "t.jsonl"
-    now = datetime.now(timezone.utc)
-    # Pad with bulky user entries so the assistant entry is past the first
-    # 32KB chunk boundary (counting from the end).
-    padding = [
-        {"type": "user", "text": "x" * 2000, "timestamp": now.isoformat()}
-        for _ in range(40)
-    ]
-    entries = [
-        {"type": "assistant", "timestamp": (now - timedelta(seconds=15)).isoformat()},
-    ] + padding
-    _write_jsonl(transcript, entries)
+    ts = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+    transcript.write_text(json.dumps({"type": "assistant", "timestamp": ts}), encoding="utf-8")
+    age = core._last_assistant_age(str(transcript))
+    assert age is not None
+    assert 0 <= age <= 30
+
+
+def test_trailing_blank_lines_are_skipped(tmp_path: Path):
+    transcript = tmp_path / "t.jsonl"
+    ts = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+    transcript.write_text(
+        json.dumps({"type": "assistant", "timestamp": ts}) + "\n\n\n\n",
+        encoding="utf-8",
+    )
+    age = core._last_assistant_age(str(transcript))
+    assert age is not None
+    assert 0 <= age <= 30
+
+
+def test_assistant_line_straddles_chunk_boundary(tmp_path: Path):
+    """Place the assistant JSON line so that bytes around `file_size - 32KB`
+    fall in the middle of it. The first reverse-read chunk gets only the
+    line's tail; the second chunk must stitch it back together."""
+    transcript = tmp_path / "t.jsonl"
+    ts = (datetime.now(timezone.utc) - timedelta(seconds=20)).isoformat()
+    assistant_line = json.dumps({"type": "assistant", "timestamp": ts}) + "\n"
+
+    # Pad before so the assistant line crosses the (file_size - 32KB) boundary.
+    # boundary = file_size - chunk = prefix_len + line_len + suffix_len - chunk
+    # For boundary to fall *inside* [line_start, line_end] we need
+    #   suffix_len in (chunk - line_len, chunk).
+    # Choose suffix_len = chunk - line_len // 2 so the boundary lands mid-line.
+    chunk = core._CACHE_AGE_CHUNK
+    prefix = b"x" * 99 + b"\n"  # short noise prefix, will fail JSON parse
+    line_bytes = assistant_line.encode()
+    suffix_len = chunk - len(line_bytes) // 2
+    suffix = (b"x" * 199 + b"\n") * (suffix_len // 200) + b"x" * (suffix_len % 200)
+    transcript.write_bytes(prefix + line_bytes + suffix)
+
+    file_size = transcript.stat().st_size
+    boundary = file_size - chunk
+    line_start = len(prefix)
+    line_end = line_start + len(assistant_line)
+    # Sanity: assistant line truly straddles the chunk boundary.
+    assert line_start < boundary < line_end, (
+        f"test setup wrong: line=[{line_start},{line_end}) boundary={boundary}"
+    )
+
     age = core._last_assistant_age(str(transcript))
     assert age is not None
     assert 0 <= age <= 60
 
 
-def test_last_assistant_age_returns_none_on_missing_file(tmp_path: Path):
-    assert core._last_assistant_age(str(tmp_path / "nope.jsonl")) is None
+def test_byte_cap_stops_before_reading_entire_huge_file(tmp_path: Path):
+    """Place the only assistant entry at byte 0, then pad with > _MAX_BYTES of
+    junk. The reverse-tail reader must give up at the cap rather than scanning
+    the whole file on every render."""
+    transcript = tmp_path / "huge.jsonl"
+    ts = datetime.now(timezone.utc).isoformat()
+    head = json.dumps({"type": "assistant", "timestamp": ts}) + "\n"
+    # Pad past the cap so the assistant entry is unreachable within the budget.
+    pad_size = core._CACHE_AGE_MAX_BYTES + 50 * 1024
+    pad = (b"x" * 200 + b"\n") * (pad_size // 201 + 1)
+    transcript.write_bytes(head.encode() + pad)
+    assert transcript.stat().st_size > core._CACHE_AGE_MAX_BYTES
+
+    assert core._last_assistant_age(str(transcript)) is None
 
 
-def test_get_cache_age_text_cold(tmp_path: Path, monkeypatch):
+# ---------------------------------------------------------------------------
+# get_cache_age_text
+# ---------------------------------------------------------------------------
+def test_cache_text_cold_when_assistant_is_old(tmp_path: Path, monkeypatch):
     transcript = tmp_path / "t.jsonl"
     old = datetime.now(timezone.utc) - timedelta(seconds=400)
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": old.isoformat()}])
-    monkeypatch.setattr(core.Path, "home", classmethod(lambda cls: tmp_path.parent))
-    cache_dir = tmp_path.parent / ".cache" / "claude-statusbar"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / "last_stdin.json").write_text(
-        json.dumps({"transcript_path": str(transcript)}), encoding="utf-8"
-    )
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
     assert core.get_cache_age_text() == "COLD"
 
 
-def test_get_cache_age_text_warm_minutes(tmp_path: Path, monkeypatch):
+def test_cache_text_cold_when_no_assistant_yet(tmp_path: Path, monkeypatch):
+    """Used to fall back to last_stdin.json mtime and report '0s ago' for a
+    fresh cache, even though semantically the prompt cache is cold."""
+    transcript = tmp_path / "t.jsonl"
+    _write_jsonl(transcript, [
+        {"type": "user", "timestamp": datetime.now(timezone.utc).isoformat()},
+    ])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    assert core.get_cache_age_text() == "COLD"
+
+
+def test_cache_text_warm_minutes_format(tmp_path: Path, monkeypatch):
     transcript = tmp_path / "t.jsonl"
     ts = datetime.now(timezone.utc) - timedelta(seconds=130)
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
-    monkeypatch.setattr(core.Path, "home", classmethod(lambda cls: tmp_path.parent))
-    cache_dir = tmp_path.parent / ".cache" / "claude-statusbar"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / "last_stdin.json").write_text(
-        json.dumps({"transcript_path": str(transcript)}), encoding="utf-8"
-    )
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
     out = core.get_cache_age_text()
     assert out.endswith(" ago")
     assert out.startswith("2m")
 
 
-def test_get_cache_age_text_returns_empty_when_no_cache(tmp_path: Path, monkeypatch):
+def test_cache_text_empty_when_cache_missing(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(core.Path, "home", classmethod(lambda cls: tmp_path))
+    assert core.get_cache_age_text() == ""
+
+
+def test_cache_text_empty_when_no_transcript_path(tmp_path: Path, monkeypatch):
+    """No transcript_path field → no signal at all; segment hidden."""
+    _install_fake_cache(monkeypatch, tmp_path, {"some_other_field": "x"})
     assert core.get_cache_age_text() == ""
