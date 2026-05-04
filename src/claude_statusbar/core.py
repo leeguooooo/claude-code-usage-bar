@@ -842,36 +842,82 @@ def format_number(num: float) -> str:
     return f"{num:.0f}"
 
 
+def _last_assistant_age(transcript_path: str) -> Optional[float]:
+    """Find the last assistant entry's age in seconds by tail-reading the JSONL.
+
+    Reads the file from the end in 32KB chunks instead of slurping the whole
+    transcript — these files can be many MB and the status bar runs on every
+    Claude Code render.
+    """
+    chunk_size = 32 * 1024
+    try:
+        with open(transcript_path, "rb") as f:
+            f.seek(0, 2)
+            file_size = f.tell()
+            if file_size == 0:
+                return None
+            buf = b""
+            pos = file_size
+            # Walk backwards collecting chunks until we find an assistant entry
+            # or exhaust the file.
+            while pos > 0:
+                read = min(chunk_size, pos)
+                pos -= read
+                f.seek(pos)
+                buf = f.read(read) + buf
+                # Split into lines; drop the leading partial line unless we've
+                # already reached the start of the file.
+                lines = buf.split(b"\n")
+                if pos > 0:
+                    buf = lines[0]
+                    candidates = lines[1:]
+                else:
+                    buf = b""
+                    candidates = lines
+                for raw in reversed(candidates):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        entry = json.loads(raw)
+                    except (ValueError, json.JSONDecodeError):
+                        continue
+                    if entry.get("type") != "assistant":
+                        continue
+                    ts_str = entry.get("timestamp", "")
+                    if not ts_str:
+                        continue
+                    if ts_str.endswith("Z"):
+                        ts_str = ts_str[:-1] + "+00:00"
+                    try:
+                        last_ts = datetime.fromisoformat(ts_str)
+                    except ValueError:
+                        continue
+                    return (datetime.now(timezone.utc) - last_ts).total_seconds()
+    except OSError:
+        return None
+    return None
+
+
 def get_cache_age_text() -> str:
     """Return cache age: 'Xm Ys ago' if <5m, else 'COLD'."""
     cache_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
     CACHE_TTL = 5 * 60  # 300 seconds
 
+    age_s: Optional[float] = None
     try:
         raw = json.loads(cache_file.read_text(encoding="utf-8"))
-        tp = raw.get("transcript_path", "")
-        if tp:
-            # Scan transcript rückwärts nach letztem assistant-Entry
-            try:
-                lines = open(tp, encoding="utf-8").readlines()
-                for line in reversed(lines):
-                    entry = json.loads(line.strip())
-                    if entry.get("type") == "assistant":
-                        ts_str = entry.get("timestamp", "")
-                        if ts_str.endswith("Z"):
-                            ts_str = ts_str[:-1] + "+00:00"
-                        last_ts = datetime.fromisoformat(ts_str)
-                        age_s = (datetime.now(timezone.utc) - last_ts).total_seconds()
-                        break
-                else:
-                    # Kein assistant-Entry gefunden, fallback zu mtime
-                    age_s = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
-            except (OSError, json.JSONDecodeError, ValueError):
-                age_s = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
-        else:
-            age_s = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
     except (OSError, json.JSONDecodeError, ValueError, FileNotFoundError):
         return ""
+
+    tp = raw.get("transcript_path", "")
+    if tp:
+        age_s = _last_assistant_age(tp)
+    if age_s is None:
+        try:
+            age_s = datetime.now(timezone.utc).timestamp() - cache_file.stat().st_mtime
+        except OSError:
+            return ""
 
     if age_s > CACHE_TTL:
         return "COLD"

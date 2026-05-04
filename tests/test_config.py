@@ -175,3 +175,16 @@ def test_show_cost_persists(tmp_path: Path):
     assert cfg_mod.load_config(p).show_cost is True
     cfg_mod.set_value("show_cost", "false", p)
     assert cfg_mod.load_config(p).show_cost is False
+
+
+def test_show_cache_age_default_false(tmp_path: Path):
+    cfg = cfg_mod.load_config(tmp_path / "missing.json")
+    assert cfg.show_cache_age is False
+
+
+def test_show_cache_age_persists(tmp_path: Path):
+    p = tmp_path / "cfg.json"
+    cfg_mod.set_value("show_cache_age", "true", p)
+    assert cfg_mod.load_config(p).show_cache_age is True
+    cfg_mod.set_value("show_cache_age", "false", p)
+    assert cfg_mod.load_config(p).show_cache_age is False
