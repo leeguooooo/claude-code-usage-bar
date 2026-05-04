@@ -1,29 +1,100 @@
 # Claude Status Bar
 
-Lightweight Claude Code status bar monitor for the built-in `statusLine` hook.
+[![PyPI](https://img.shields.io/pypi/v/claude-statusbar.svg)](https://pypi.org/project/claude-statusbar/)
+[![Python](https://img.shields.io/pypi/pyversions/claude-statusbar.svg)](https://pypi.org/project/claude-statusbar/)
+[![Downloads](https://static.pepy.tech/badge/claude-statusbar/month)](https://pepy.tech/project/claude-statusbar)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/leeguooooo/claude-code-usage-bar?style=social)](https://github.com/leeguooooo/claude-code-usage-bar/stargazers)
 
-It shows your current Claude.ai rate-limit usage, reset timers, and context window usage in a compact single-line format.
+Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage, reset timers, current model, context window, prompt-cache freshness, and (optionally) session cost — in a single compact line driven by Claude Code's `statusLine` hook.
+
+```
+5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 0s
+```
+
+3 styles × 7 themes, configurable in one command. Auto-updates from PyPI. New in **v3.2**: a daemon mode that drops 1 Hz refresh CPU from ~6% to ~2% — same status line, ~5× cheaper.
+
+## Contents
+- [What's new in v3.2](#whats-new-in-v32)
+- [What it shows](#what-it-shows)
+- [Install](#install)
+- [Styles & themes](#styles--themes)
+- [Configuration](#configuration-file)
+- [Fast mode (daemon)](#fast-mode--for-refreshinterval-1)
+- [Slash commands](#slash-commands-inside-claude-code)
+- [`cs doctor` — self-diagnostic](#cs-doctor--self-diagnostic)
+- [Usage cheatsheet](#usage)
+- [Environment variables](#environment-variables)
+- [Troubleshooting](#troubleshooting)
+- [Upgrading](#upgrading)
+- [Integrations](#integrations)
+- [Contributing](#contributing)
+- [Acknowledgments](#acknowledgments)
+
+## What's new in v3.2
+
+- **Daemon fast-mode** — `cs --setup --fast` swaps the statusLine command to `cs render` backed by a long-lived `cs daemon`. At `refreshInterval: 1` this cuts continuous CPU from ~6% to ~2%, render wall-clock from ~60ms to ~5ms. Crash-safe (auto-falls-back to inline render if the daemon dies; lazy-respawns).
+- **OS-managed daemon** — `cs daemon install` installs a launchd agent (macOS) or systemd user unit (Linux) so the daemon auto-starts on login and is restarted on crash by the OS.
+- **`cache 15s` segment** — opt-in via `cs config set show_cache_age true`. Shows time since Claude's last assistant turn, flips to `cache COLD` past Anthropic's 5-minute prompt-cache TTL. Configurable TTL via `cs config set cache_ttl_seconds 3600` for users on the 1-hour extended cache.
+- **`cs doctor` 1Hz hint** — detects `refreshInterval ≤ 2s` with the inline command and recommends `cs --setup --fast`.
+- **Import-shaving on the inline path** — even users who don't opt into daemon mode get ~30% faster renders.
+
+Existing users: nothing changes by default. Daemon mode is opt-in.
 
 ## What it shows
 
 ```
-5h[███38%░░░░]⏰2h14m | 7d[███87%███░]⏰3d05h | Opus 4.6(90.0k/1.0M)
+5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 0s | $ 1.42
 ```
 
 | Segment | Meaning |
 |---------|---------|
-| `5h[███38%░░░░]` | 5-hour rate-limit usage |
-| `⏰2h14m` | Time until the 5-hour window resets |
-| `7d[███87%███░]` | 7-day rate-limit usage |
-| `⏰3d05h` | Time until the 7-day window resets |
-| `Opus 4.6(90.0k/1.0M)` | Model name plus current context usage |
+| `5h[27%]` | 5-hour rate-limit usage (rolling window from Anthropic API headers) |
+| `⏰1h28m` | Time until the 5-hour window resets |
+| `7d[79%]` | 7-day rate-limit usage |
+| `⏰11h28m` | Time until the 7-day window resets |
+| `Opus 4.7(350.0k/1.0M)` | Model name + current context window usage |
+| `cache 0s` / `cache COLD` | Prompt-cache age — green warm, red cold (opt-in: `cs config set show_cache_age true`) |
+| `$ 1.42` | Session cost so far in USD (opt-in: `cs config set show_cost true`) |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
-Colors default to green / yellow / red at `30%` and `70%`, and can be customized.
+Colors default to green / yellow / red at `30%` and `70%` — both thresholds configurable.
 
-## Styles & themes (v2.7+)
+## Install
 
-The default style (`classic`) stays the same forever. Two new styles, plus a palette of seven themes, are opt-in.
+### One-line install (recommended)
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
+```
+
+Installs the package, configures Claude Code's `statusLine`, sets up shell aliases. Restart Claude Code to see the bar.
+
+### Package managers
+
+```bash
+pip install claude-statusbar     # pip
+uv tool install claude-statusbar # uv
+pipx install claude-statusbar    # pipx
+```
+
+Then add to `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "cs",
+    "refreshInterval": 30
+  }
+}
+```
+
+`refreshInterval` is in seconds. Set it to `1` if you enable [`show_cache_age`](#configuration-file) and want the cache timer to tick visibly — and pair that with [fast mode](#fast-mode--for-refreshinterval-1).
+
+## Styles & themes
+
+The default style (`classic`) stays the same forever. Two alternative styles, plus a palette of seven themes, are opt-in.
 
 ```bash
 cs --style capsule  --theme graphite   # try once
@@ -124,7 +195,7 @@ Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs
 
 Override per-invocation via `--style` / `--theme` flags or `CLAUDE_STATUSBAR_STYLE` / `CLAUDE_STATUSBAR_THEME` env vars.
 
-### Fast mode — for `refreshInterval: 1`
+## Fast mode — for `refreshInterval: 1`
 
 If you've set `"refreshInterval": 1` in `settings.json` (so the cache-age widget ticks every second), the default `cs` command runs ~45ms per render = ~4% CPU continuously. Fast mode brings that down to ~3-5ms per render = under 1% CPU by keeping a long-lived `cs daemon` that pre-renders into `~/.cache/claude-statusbar/rendered.ansi`. The statusLine command becomes `cs render` — a thin reader that just `cat`s the file.
 
@@ -139,7 +210,7 @@ Crash safety: if the daemon dies or freezes, `cs render` notices `rendered.meta.
 
 To revert: `cs --setup` (no `--fast`) restores the bare-`cs` legacy command.
 
-#### Optional: auto-start on login (launchd / systemd)
+### Optional: auto-start on login (launchd / systemd)
 
 Lazy-spawn (above) covers most cases — the daemon comes up on first `cs render`. If you want stronger guarantees (auto-start at login, OS restarts the daemon on crash, survives reboots without `cs render` needing to fire first):
 
@@ -152,7 +223,7 @@ cs daemon uninstall      # remove the LaunchAgent / systemd unit
 
 On macOS, the LaunchAgent has `KeepAlive=true` and `ThrottleInterval=10` — kill the daemon and launchd respawns it within 10 seconds. On Linux, the systemd user unit uses `Restart=always` (you may need `loginctl enable-linger $USER` for the daemon to survive logout).
 
-### `cs doctor` — self-diagnostic
+## `cs doctor` — self-diagnostic
 
 If the status bar isn't behaving the way you expect, run:
 
@@ -172,7 +243,7 @@ It prints (with red ✗ for anything off):
 
 Paste the output verbatim in any bug report — it's almost always enough to diagnose remotely.
 
-### Install as a Claude Code plugin
+## Install as a Claude Code plugin
 
 The repo ships a `.claude-plugin/plugin.json`, distributed via the **leeguooooo/plugins** marketplace. Inside Claude Code:
 
@@ -183,57 +254,45 @@ The repo ships a `.claude-plugin/plugin.json`, distributed via the **leeguooooo/
 
 You still need the `cs` CLI (`pip install claude-statusbar` or `uv tool install claude-statusbar`) — the plugin only carries the slash commands; the heavy lifting is the Python package.
 
-## Install
-
-### One-line install (recommended)
-
-```bash
-curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
-```
-
-This installs the package, configures Claude Code statusLine, and sets up aliases. Restart Claude Code to see it.
-
-### Package managers
-
-```bash
-pip install claude-statusbar     # pip
-uv tool install claude-statusbar # uv
-pipx install claude-statusbar    # pipx
-```
-
-Then add to `~/.claude/settings.json`:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "cs"
-  }
-}
-```
-
 ## Usage
 
 ```bash
-cs                            # show status bar (shortest alias)
-cs --style capsule            # render with capsule style for one run
-cs --theme twilight           # override theme
-cs config show                # show persistent config
-cs config set style hairline  # save style to ~/.claude/claude-statusbar.json
-cs config set theme linen     # save theme
-cs config set show_cost true  # show this session's $ cost on the bar
-cs config reset               # wipe config back to defaults
-cs styles                     # list available styles
-cs themes                     # list available themes
-cs preview                    # render every style × theme using your real data
-cs doctor                     # self-diagnostic — paste this in any bug report
-cs --json-output              # machine-readable JSON
-cs --no-color                 # disable ANSI colors
+cs                              # render the status line (default command)
+cs --style capsule              # render with a one-off style
+cs --theme twilight             # render with a one-off theme
+
+# Configuration
+cs config show                  # show all persistent config
+cs config set style hairline    # persist style → ~/.claude/claude-statusbar.json
+cs config set theme linen       # persist theme
+cs config set show_cost true    # session $ cost segment
+cs config set show_cache_age true   # prompt-cache age segment (needs refreshInterval)
+cs config set cache_ttl_seconds 3600  # for users on Anthropic's 1h cache
+cs config reset                 # wipe config back to defaults
+
+# Discovery
+cs styles                       # list available styles
+cs themes                       # list available themes
+cs preview                      # render every style × theme with YOUR real data
+
+# Daemon mode (v3.2+, opt-in)
+cs --setup --fast               # switch statusLine to `cs render` + start daemon
+cs daemon start                 # start daemon (manual)
+cs daemon stop                  # stop daemon
+cs daemon status                # pid + rendered.ansi freshness
+cs daemon install               # install LaunchAgent (macOS) / systemd unit (Linux)
+cs daemon uninstall             # remove the OS-level service
+cs daemon service               # report whether the OS service is registered
+
+# Diagnostics + flags
+cs doctor                       # self-diagnostic — paste output in bug reports
+cs --json-output                # machine-readable JSON
+cs --no-color                   # disable ANSI colors
 cs --warning-threshold 40 --critical-threshold 85
-cs --no-auto-update           # disable auto-update checks
+cs --no-auto-update             # skip the per-day PyPI version check
 ```
 
-`--plan` still exists for older scripts, but it is deprecated and no longer changes the status line output.
+`--plan` still exists for older scripts, but is deprecated and no longer changes the rendered output.
 
 ### Environment variables
 
@@ -258,18 +317,36 @@ cs --json-output
 
 ## Data source
 
-Rate-limit data comes directly from **Anthropic's official API headers** exposed to Claude Code status-line commands through stdin.
-
-Context-window usage comes from the same stdin payload that Claude Code sends to custom `statusLine` commands.
+Rate-limit percentages come directly from **Anthropic's official API headers**, surfaced into the JSON payload Claude Code injects on stdin to every `statusLine` command. Context-window usage comes from the same payload. The optional `cache 15s` segment is computed locally by tail-reading the active transcript JSONL — Anthropic's prompt cache TTL is 5 minutes by default ([Mar 2026 change](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)) or 1 hour with `ENABLE_PROMPT_CACHING_1H`.
 
 Requires Claude Code `v2.1.80+`.
 
+## Troubleshooting
+
+**Status line doesn't appear after install** — Restart Claude Code (settings.json is read at session start). If still missing, run `cs doctor` and check the `statusLine entry` row.
+
+**`cs doctor` says "missing"** — A Claude Code upgrade can wipe `statusLine` from `~/.claude/settings.json`. Run `cs --setup` (or `cs --setup --fast` if you want daemon mode) to restore it. The package also self-heals once per day automatically.
+
+**Numbers stuck / not updating** — Two possibilities:
+1. `refreshInterval` not set — Claude Code only re-renders on activity. Add `"refreshInterval": 30` (or `1` for live cache-age).
+2. Daemon mode running stale data — `cs daemon stop && cs daemon start`. Or just `cs doctor` and check `daemon` row freshness.
+
+**Cache-age segment shows `cache 0s` and never moves** — `refreshInterval` is unset; Claude Code only re-invokes the statusLine on each user/assistant turn. Set `"refreshInterval": 1` in settings.json. For 1Hz refresh you'll also want `cs --setup --fast` so the per-second invocation stays cheap.
+
+**`cs --setup --fast` then daemon shows wrong rate-limits** — Fixed in v3.2.1. Upgrade with `pip install -U claude-statusbar`.
+
+**Auto-update is annoying / blocked** — `export CLAUDE_STATUSBAR_NO_UPDATE=1` in your shell rc.
+
+For anything else: open a [GitHub issue](https://github.com/leeguooooo/claude-code-usage-bar/issues) with the output of `cs doctor` attached — it captures version, paths, settings.json state, daemon state, and recent cache freshness in one paste.
+
 ## Upgrading
 
-Auto-updates once per day. To upgrade manually:
+Auto-updates once per day from PyPI. To upgrade manually:
 
 ```bash
-pip install --upgrade claude-statusbar
+pip install -U claude-statusbar
+# or
+uv tool upgrade claude-statusbar
 ```
 
 To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
@@ -281,11 +358,34 @@ To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
 Install the [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach) Claude Code plugin to get IELTS band progress tracking. After setup, the status bar automatically shows your current writing level and trend:
 
 ```
-... | Opus 4.6(90k/1M) | 📚 EN:6.0↑ JA:5.0→
+... | Opus 4.7(350k/1M) | 📚 EN:6.0↑ JA:5.0→
 ```
 
 - `↑` improved from last session · `↓` dropped · `→` no change
 - No configuration needed — the segment appears automatically when `~/.claude/language-progress.json` exists.
+
+## Contributing
+
+PRs welcome. Quick guide:
+
+```bash
+git clone https://github.com/leeguooooo/claude-code-usage-bar
+cd claude-code-usage-bar
+pip install -e .                    # editable install
+pytest                              # 240+ tests, all should pass
+PYTHONPATH=src python3 -m pytest -q tests/test_import_perf.py  # perf regression guards
+```
+
+A few conventions to know:
+- Render path is hot — every module loaded at import time multiplies its cost by `60×/min` at `refreshInterval: 1`. `tests/test_import_perf.py` pins this; if your change adds a heavy stdlib import on the path, the test fails.
+- Atomic file writes use the helper in `cache.py` (`atomic_write_text`) — never `path.write_text(...)` for state files.
+- The daemon path (`daemon.py` + `render_thin.py`) is opt-in. The legacy inline path (`core.py:main()`) must stay working without the daemon.
+- New config keys: bump `config.StatusbarConfig`, `VALID_KEYS`, the `_*_KEYS` sets, and document in this README.
+
+## Acknowledgments
+
+- [@marcwimmer](https://github.com/marcwimmer) — original `show_cache_age` widget ([#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9))
+- [claude-monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) — token-usage analysis library used as the optional fast-path data source
 
 ---
 
