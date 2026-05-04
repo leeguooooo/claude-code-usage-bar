@@ -72,3 +72,63 @@ def test_preview_includes_cache_and_cost_segments_in_output():
     rc, out = _run(style_filter="capsule", theme_filter="graphite")
     assert "cache " in out, "preview must render cache segment"
     assert "$" in out, "preview must render cost segment"
+
+
+# ---------------------------------------------------------------------------
+# Codex-flagged: argv parsing must accept both `--theme nord` and `--theme=nord`
+# ---------------------------------------------------------------------------
+def _run_cli(argv_tail):
+    """Drive cs preview through cli.main() to exercise the actual argv parser
+    (rather than calling preview.run() directly, which bypasses the parser)."""
+    import io
+    import sys as _sys
+    from claude_statusbar import cli
+    saved_argv = _sys.argv
+    _sys.argv = ["cs"] + argv_tail
+    buf = io.StringIO()
+    err = io.StringIO()
+    saved_out, saved_err = _sys.stdout, _sys.stderr
+    _sys.stdout = buf
+    _sys.stderr = err
+    try:
+        rc = cli.main()
+    finally:
+        _sys.argv = saved_argv
+        _sys.stdout = saved_out
+        _sys.stderr = saved_err
+    return rc, buf.getvalue(), err.getvalue()
+
+
+def test_preview_accepts_theme_equals_form():
+    """`cs preview --theme=nord` must filter same as `--theme nord`. The
+    equals form is a standard shell idiom; silent fall-through to all-21
+    rows surprises users."""
+    rc, out, _ = _run_cli(["preview", "--no-color", "--theme=nord"])
+    assert rc == 0
+    # Other themes must NOT appear as left-bracket labels.
+    for absent in ("twilight", "linen", "dracula", "sakura", "mono"):
+        assert f"[{absent}" not in out, f"--theme= filter leaked {absent!r}"
+    assert "[nord" in out
+
+
+def test_preview_accepts_style_equals_form():
+    rc, out, _ = _run_cli(["preview", "--no-color", "--style=hairline"])
+    assert rc == 0
+    assert "HAIRLINE" in out
+    assert "CLASSIC" not in out and "CAPSULE" not in out
+
+
+def test_preview_rejects_flag_without_value():
+    """`cs preview --theme` (no value) must error out, not silently render
+    all themes — that pattern would surprise the user."""
+    rc, out, err = _run_cli(["preview", "--no-color", "--theme"])
+    assert rc == 2
+    assert "requires a value" in err
+
+
+def test_preview_rejects_flag_followed_by_another_flag():
+    """`cs preview --theme --no-color` must NOT treat '--no-color' as the theme
+    name. Take it as 'missing value' and error out."""
+    rc, out, err = _run_cli(["preview", "--theme", "--no-color"])
+    assert rc == 2
+    assert "requires a value" in err

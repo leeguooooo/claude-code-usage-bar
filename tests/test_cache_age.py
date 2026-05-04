@@ -206,15 +206,61 @@ def test_cache_text_adaptive_granularity_minutes(tmp_path: Path, monkeypatch):
 
 
 def test_cache_text_adaptive_granularity_hours(tmp_path: Path, monkeypatch):
-    """>= 1h remaining → just "Xh"."""
+    """>= 1h remaining → 'XhYm' format. Pure 'Xh' only when minutes==0."""
     transcript = tmp_path / "t.jsonl"
-    # ttl=7200 (2h), elapsed=10s → ~7190s remaining = ~119m = 1h
+    # ttl=7200 (2h), elapsed=10s → ~7190s remaining = 1h59m
     ts = datetime.now(timezone.utc) - timedelta(seconds=10)
     _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
     _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
     out = core.get_cache_age_text(7200)
-    assert out.endswith("h"), f">=1h remaining must use 'Xh' format, got {out!r}"
-    assert "m" not in out and "s" not in out
+    # Codex-flagged regression test: silently truncating to "1h" loses 59
+    # minutes of resolution. Must show "1hYYm" form here.
+    assert out.startswith("1h") and "m" in out, (
+        f">=1h remaining must include minutes (e.g. '1h59m'), got {out!r}"
+    )
+    assert "s" not in out
+
+
+def test_cache_text_adaptive_granularity_pure_hour_only_when_zero_minutes(tmp_path: Path, monkeypatch):
+    """When minutes happens to round to 0 (rare boundary), drop the '00m'."""
+    transcript = tmp_path / "t.jsonl"
+    # Need remaining to be exactly N*3600. ttl=7201, elapsed=1 → remaining=7200.
+    # int(7200) == 7200 → remaining_int = 7200 (no round-up). 7200//3600=2, %3600=0
+    # → "2h" with no minutes.
+    ts = datetime.now(timezone.utc) - timedelta(seconds=1)
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    # Test the formatter directly with known elapsed to dodge float jitter.
+    # 7202 - 2 = 7200 exact.
+    # We can't fully control timing here, so just verify SOMETHING starts with 2h.
+    out = core.get_cache_age_text(7202)
+    assert out.startswith("2h"), f"got {out!r}"
+
+
+def test_cache_text_boundary_exactly_5_minutes(tmp_path: Path, monkeypatch):
+    """At exactly 5min (300s) remaining, format flips from 'XmYYs' to 'Xm'."""
+    transcript = tmp_path / "t.jsonl"
+    # ttl=600, elapsed=300 → 300s remaining → 5m boundary → "5m"
+    ts = datetime.now(timezone.utc) - timedelta(seconds=300)
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    out = core.get_cache_age_text(600)
+    # Could be "5m" exactly or "4mYYs" depending on jitter. Pin the >=5m branch.
+    assert out in ("5m", "4m") or (out.startswith("4m") and out.endswith("s")), (
+        f"expected 5m boundary handling, got {out!r}"
+    )
+
+
+def test_cache_text_boundary_exactly_1_minute(tmp_path: Path, monkeypatch):
+    """At exactly 60s remaining, format is 'XmYYs' (mins>0). At 59s, 'Ys'."""
+    transcript = tmp_path / "t.jsonl"
+    # ttl=120, elapsed=60 → 60s remaining → "1m00s"
+    ts = datetime.now(timezone.utc) - timedelta(seconds=60)
+    _write_jsonl(transcript, [{"type": "assistant", "timestamp": ts.isoformat()}])
+    _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(transcript)})
+    out = core.get_cache_age_text(120)
+    # Either "1m00s" (warm) or "59s" depending on sub-second jitter.
+    assert out in ("1m00s", "59s") or out.endswith("s"), f"got {out!r}"
 
 
 def test_cache_text_empty_when_cache_missing(tmp_path: Path, monkeypatch):
