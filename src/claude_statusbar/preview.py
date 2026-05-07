@@ -114,9 +114,10 @@ def run(use_color: bool = True, theme_filter: Optional[str] = None,
         "capsule":  "02 · CAPSULE（胶囊）",
         "hairline": "03 · HAIRLINE（极简线条）",
     }
-    # Classic predates the theme system and ignores Theme entirely, so showing
-    # 7 rows of identical output is just visual noise.
-    THEME_AGNOSTIC = {"classic"}
+    # All three styles are theme-aware now (per-segment color management).
+    # Keeping THEME_AGNOSTIC as an empty set so the per-theme loop picks up
+    # every style; future theme-agnostic styles can be added here.
+    THEME_AGNOSTIC: set[str] = set()
 
     style_names = list(RENDERERS)
     if style_filter:

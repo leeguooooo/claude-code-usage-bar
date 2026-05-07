@@ -132,3 +132,23 @@ def test_preview_rejects_flag_followed_by_another_flag():
     rc, out, err = _run_cli(["preview", "--theme", "--no-color"])
     assert rc == 2
     assert "requires a value" in err
+
+
+def test_preview_classic_varies_by_theme(capsys, monkeypatch):
+    """After per-segment color management lands, classic must respect
+    the active theme — different themes produce different ANSI."""
+    from claude_statusbar import preview as preview_mod
+
+    # Force demo data so the test doesn't depend on a live cache file.
+    monkeypatch.setattr(preview_mod, "_real_data", lambda: None)
+
+    preview_mod.run(use_color=True, theme_filter="graphite", style_filter="classic")
+    out_g = capsys.readouterr().out
+
+    preview_mod.run(use_color=True, theme_filter="linen", style_filter="classic")
+    out_l = capsys.readouterr().out
+
+    # Both renders produce non-empty output containing the model.
+    assert "Opus" in out_g and "Opus" in out_l
+    # The two themes must produce different ANSI (the regression).
+    assert out_g != out_l
