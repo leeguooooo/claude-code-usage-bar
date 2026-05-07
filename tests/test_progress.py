@@ -34,31 +34,35 @@ from claude_statusbar.progress import (
     color_for_percent,
     colorize,
     normalize_thresholds,
-    GREEN,
-    YELLOW,
-    RED,
+    _fg,
     RESET,
 )
+from claude_statusbar.themes import get_theme
+
+_TH = get_theme("graphite")
+GREEN_FG = _fg(_TH.s_ok)
+YELLOW_FG = _fg(_TH.s_warn)
+RED_FG = _fg(_TH.s_hot)
 
 def test_color_safe():
-    assert color_for_percent(20) == GREEN
+    assert color_for_percent(20, theme=_TH) == GREEN_FG
 
 def test_color_warning():
-    assert color_for_percent(50) == YELLOW
+    assert color_for_percent(50, theme=_TH) == YELLOW_FG
 
 def test_color_critical():
-    assert color_for_percent(80) == RED
+    assert color_for_percent(80, theme=_TH) == RED_FG
 
 def test_color_boundary_30():
-    assert color_for_percent(30) == YELLOW
+    assert color_for_percent(30, theme=_TH) == YELLOW_FG
 
 def test_color_boundary_70():
-    assert color_for_percent(70) == RED
+    assert color_for_percent(70, theme=_TH) == RED_FG
 
 def test_color_custom_thresholds():
-    assert color_for_percent(39, warning_threshold=40, critical_threshold=80) == GREEN
-    assert color_for_percent(40, warning_threshold=40, critical_threshold=80) == YELLOW
-    assert color_for_percent(80, warning_threshold=40, critical_threshold=80) == RED
+    assert color_for_percent(39, theme=_TH, warning_threshold=40, critical_threshold=80) == GREEN_FG
+    assert color_for_percent(40, theme=_TH, warning_threshold=40, critical_threshold=80) == YELLOW_FG
+    assert color_for_percent(80, theme=_TH, warning_threshold=40, critical_threshold=80) == RED_FG
 
 def test_normalize_thresholds_rejects_invalid_ranges():
     try:
@@ -69,11 +73,11 @@ def test_normalize_thresholds_rejects_invalid_ranges():
         raise AssertionError("Expected invalid thresholds to raise ValueError")
 
 def test_colorize():
-    result = colorize("hello", RED)
-    assert result == f"{RED}hello{RESET}"
+    result = colorize("hello", RED_FG)
+    assert result == f"{RED_FG}hello{RESET}"
 
 def test_colorize_no_color():
-    result = colorize("hello", RED, use_color=False)
+    result = colorize("hello", RED_FG, use_color=False)
     assert result == "hello"
 
 from claude_statusbar.progress import format_status_line

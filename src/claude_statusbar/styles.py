@@ -202,38 +202,38 @@ def render_classic(
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     countdown_emoji: str = "",
+    ctx_pct: Optional[float] = None,
     **_ignored,
 ) -> str:
-    from .progress import format_status_line, GREEN, colorize
-    # Classic re-builds the styled language segment from raw body (mirrors
-    # the legacy format_language_segment output: `📚 EN:6.0↑`).
-    lang_text = colorize(f"📚 {lang_body}", GREEN, use_color) if lang_body else ""
+    from .progress import format_status_line, _fg, colorize, RESET
+    theme = theme or get_theme("graphite")
+    lang_text = (
+        colorize(f"📚 {lang_body}", _fg(theme.s_ok), use_color)
+        if lang_body else ""
+    )
     result = format_status_line(
         msgs_pct=msgs_pct, tkns_pct=None,
         reset_time=reset_5h, model=model,
         weekly_pct=weekly_pct, reset_time_7d=reset_7d or "",
+        ctx_pct=ctx_pct,
         bypass=bypass, use_color=use_color,
         countdown_emoji=countdown_emoji,
         warning_threshold=warning_threshold,
         critical_threshold=critical_threshold,
         lang_text=lang_text,
         cost_text=cost_text,
+        theme=theme,
     )
     if cache_age_text:
-        from .progress import GREEN, YELLOW, RED
-        # Three-level severity matching the countdown: COLD red, <1m
-        # remaining yellow, otherwise green. Same logic as the capsule /
-        # hairline _cache_severity helper, just on RGB ANSI codes.
-        # "h"/"m" presence = comfortable; bare "Ys" = warning.
+        # Three-level severity: COLD red, <1m yellow, otherwise green.
         if cache_age_text == "COLD":
-            col = RED
+            col = _fg(theme.s_hot)
         elif "m" in cache_age_text or "h" in cache_age_text:
-            col = GREEN
+            col = _fg(theme.s_ok)
         else:
-            col = YELLOW
-        # Reset before our segment so it doesn't inherit the trailing color
-        # from format_status_line's last colorized chunk.
-        result += f"{RESET} | {colorize(f'cache {cache_age_text}', col, use_color)}"
+            col = _fg(theme.s_warn)
+        mute = _fg(theme.mute)
+        result += f"{RESET}{colorize(' | ', mute, use_color)}{colorize(f'cache {cache_age_text}', col, use_color)}"
     return result
 
 
