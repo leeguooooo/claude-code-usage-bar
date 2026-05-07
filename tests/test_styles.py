@@ -140,3 +140,13 @@ def test_cost_text_position_after_model_in_classic():
     cost_pos  = out.index("0.42")
     lang_pos  = out.index("📚")
     assert model_pos < cost_pos < lang_pos
+
+
+def test_every_theme_has_pill_cost():
+    """pill_cost is mandatory and distinct from pill_lang for every theme."""
+    for t in BUILTIN_THEMES:
+        assert hasattr(t, "pill_cost"), f"{t.name} missing pill_cost"
+        assert isinstance(t.pill_cost, tuple) and len(t.pill_cost) == 3, \
+            f"{t.name}.pill_cost must be an RGB 3-tuple"
+        assert t.pill_cost != t.pill_lang, \
+            f"{t.name}.pill_cost must differ from pill_lang (collision is the bug)"

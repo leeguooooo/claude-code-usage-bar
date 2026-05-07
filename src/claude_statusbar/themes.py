@@ -31,6 +31,7 @@ class Theme:
     pill_7d: RGB
     pill_model: RGB
     pill_lang: RGB
+    pill_cost: RGB   # cost pill bg — separate from pill_lang to avoid collision
     pill_ink: RGB    # text color used on pill backgrounds
 
 
@@ -41,7 +42,7 @@ BUILTIN_THEMES = [
         ink=(218, 221, 225), mute=(120, 125, 132), edge=(75, 80, 88),
         s_ok=(120, 200, 192), s_warn=(232, 178, 96), s_hot=(232, 116, 116),
         pill_5h=(38, 70, 83), pill_7d=(42, 56, 79),
-        pill_model=(60, 47, 65), pill_lang=(52, 65, 47),
+        pill_model=(60, 47, 65), pill_lang=(52, 65, 47), pill_cost=(48, 56, 50),
         pill_ink=(238, 235, 224),
     ),
     Theme(
@@ -50,7 +51,7 @@ BUILTIN_THEMES = [
         ink=(232, 225, 240), mute=(140, 130, 160), edge=(85, 75, 105),
         s_ok=(160, 210, 180), s_warn=(232, 160, 90), s_hot=(228, 100, 140),
         pill_5h=(58, 52, 90), pill_7d=(72, 46, 82),
-        pill_model=(86, 52, 72), pill_lang=(50, 72, 90),
+        pill_model=(86, 52, 72), pill_lang=(50, 72, 90), pill_cost=(52, 68, 80),
         pill_ink=(245, 238, 250),
     ),
     Theme(
@@ -59,7 +60,7 @@ BUILTIN_THEMES = [
         ink=(60, 55, 50), mute=(130, 120, 110), edge=(190, 180, 165),
         s_ok=(80, 140, 120), s_warn=(190, 130, 60), s_hot=(190, 80, 80),
         pill_5h=(214, 200, 178), pill_7d=(222, 210, 196),
-        pill_model=(208, 196, 200), pill_lang=(202, 210, 194),
+        pill_model=(208, 196, 200), pill_lang=(202, 210, 194), pill_cost=(198, 200, 192),
         pill_ink=(45, 40, 38),
     ),
     Theme(
@@ -68,7 +69,7 @@ BUILTIN_THEMES = [
         ink=(216, 222, 233), mute=(129, 161, 193), edge=(76, 86, 106),
         s_ok=(163, 190, 140), s_warn=(235, 203, 139), s_hot=(191, 97, 106),
         pill_5h=(46, 52, 64), pill_7d=(59, 66, 82),
-        pill_model=(67, 76, 94), pill_lang=(46, 52, 64),
+        pill_model=(67, 76, 94), pill_lang=(46, 52, 64), pill_cost=(52, 58, 64),
         pill_ink=(229, 233, 240),
     ),
     Theme(
@@ -77,7 +78,7 @@ BUILTIN_THEMES = [
         ink=(248, 248, 242), mute=(98, 114, 164), edge=(68, 71, 90),
         s_ok=(80, 250, 123), s_warn=(241, 250, 140), s_hot=(255, 85, 85),
         pill_5h=(40, 42, 54), pill_7d=(68, 71, 90),
-        pill_model=(80, 50, 100), pill_lang=(50, 80, 60),
+        pill_model=(80, 50, 100), pill_lang=(50, 80, 60), pill_cost=(52, 70, 62),
         pill_ink=(248, 248, 242),
     ),
     Theme(
@@ -86,7 +87,7 @@ BUILTIN_THEMES = [
         ink=(75, 50, 60), mute=(160, 110, 130), edge=(220, 180, 195),
         s_ok=(120, 170, 130), s_warn=(220, 150, 90), s_hot=(210, 90, 110),
         pill_5h=(245, 215, 220), pill_7d=(238, 200, 215),
-        pill_model=(225, 210, 230), pill_lang=(220, 230, 215),
+        pill_model=(225, 210, 230), pill_lang=(220, 230, 215), pill_cost=(218, 222, 212),
         pill_ink=(75, 50, 60),
     ),
     Theme(
@@ -95,7 +96,7 @@ BUILTIN_THEMES = [
         ink=(228, 228, 228), mute=(140, 140, 140), edge=(70, 70, 70),
         s_ok=(180, 180, 180), s_warn=(220, 220, 220), s_hot=(250, 250, 250),
         pill_5h=(45, 45, 45), pill_7d=(60, 60, 60),
-        pill_model=(75, 75, 75), pill_lang=(50, 50, 50),
+        pill_model=(75, 75, 75), pill_lang=(50, 50, 50), pill_cost=(60, 60, 60),
         pill_ink=(235, 235, 235),
     ),
 ]
