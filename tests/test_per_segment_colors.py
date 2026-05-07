@@ -147,3 +147,53 @@ def test_paren_muting_targets_the_last_bracket_not_the_first():
     # the whole line should be muted (the trailing context bracket).
     assert f"{s_ok}Opus(beta) 4.7" in line, "version paren must stay severity-colored"
     assert line.count(f"{mute}(") == 1, "exactly one '(' should carry mute"
+
+
+# ---------------------------------------------------------------------------
+# Capsule style tests
+# ---------------------------------------------------------------------------
+
+from claude_statusbar.styles import render_capsule
+
+
+def test_capsule_model_pill_has_severity_dot_when_ctx_critical():
+    out = render_capsule(
+        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
+        model="Opus 4.7(900k/1M)", ctx_pct=85,
+        use_color=True, theme=GRAPHITE,
+    )
+    s_hot = _ansi_for(GRAPHITE.s_hot)
+    # Severity dot is `●` colored s_hot, present inside the model pill area.
+    assert "●" in out
+    assert s_hot in out
+
+
+def test_capsule_model_pill_no_dot_when_ctx_none():
+    out = render_capsule(
+        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
+        model="Opus 4.7", ctx_pct=None,
+        use_color=True, theme=GRAPHITE,
+    )
+    # Without context info, no severity dot inside the model pill.
+    # 5h/7d still have their own dots, so we look for absence in the
+    # plain-text sequence between "Opus" and the next ╱ separator.
+    plain = re.sub(r"\033\[[0-9;]*m", "", out)
+    model_idx = plain.find("Opus")
+    # Walk forward from model_idx to the next ╱ separator
+    next_sep = plain.find("╱", model_idx) if "╱" in plain[model_idx:] else len(plain)
+    model_segment = plain[model_idx:next_sep]
+    assert "●" not in model_segment
+
+
+def test_capsule_cost_pill_uses_pill_cost_not_pill_lang():
+    """The cost pill must use theme.pill_cost, not theme.pill_lang."""
+    out = render_capsule(
+        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
+        model="Opus 4.7", ctx_pct=None, cost_text="3.14",
+        use_color=True, theme=GRAPHITE,
+    )
+    pill_cost_bg = f"\033[48;2;{GRAPHITE.pill_cost[0]};{GRAPHITE.pill_cost[1]};{GRAPHITE.pill_cost[2]}m"
+    pill_lang_bg = f"\033[48;2;{GRAPHITE.pill_lang[0]};{GRAPHITE.pill_lang[1]};{GRAPHITE.pill_lang[2]}m"
+    assert pill_cost_bg in out
+    # When there's no lang_body, pill_lang must NOT appear at all
+    assert pill_lang_bg not in out

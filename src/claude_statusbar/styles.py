@@ -66,6 +66,7 @@ def render_capsule(
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
     show_weekly: bool = True,
+    ctx_pct: Optional[float] = None,
     **_ignored,
 ) -> str:
     theme = theme or get_theme("graphite")
@@ -104,10 +105,11 @@ def render_capsule(
         )
         parts.append(pill(theme.pill_7d, week_body))
 
-    parts.append(pill(theme.pill_model, f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}"))
+    model_body = f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}{sev_dot(ctx_pct)}{INK}{_bg(theme.pill_model)}"
+    parts.append(pill(theme.pill_model, model_body))
 
     if cost_text:
-        parts.append(pill(theme.pill_lang, f"$ {cost_text}"))
+        parts.append(pill(theme.pill_cost, f"$ {cost_text}"))
 
     if lang_body:
         parts.append(pill(theme.pill_lang, f"📚 {lang_body}"))
