@@ -138,6 +138,7 @@ def render_hairline(
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
     show_weekly: bool = True,
+    ctx_pct: Optional[float] = None,
     **_ignored,
 ) -> str:
     theme = theme or get_theme("graphite")
@@ -174,7 +175,13 @@ def render_hairline(
             f"{MUTE}› 7d{RESET} {mini3(weekly_pct)} {INK}{pct_text(weekly_pct)}{RESET} "
             f"{MUTE}↺ {reset_7d or '--'}{RESET}"
         )
-    parts.append(f"{MUTE}›{RESET} {INK}{model}{RESET}")
+    # Model line — colored by ctx_pct severity, neutral ink when absent
+    if ctx_pct is None:
+        model_color = INK
+    else:
+        col = _severity_color(theme, ctx_pct, warning_threshold, critical_threshold)
+        model_color = _fg(col)
+    parts.append(f"{MUTE}›{RESET} {model_color}{model}{RESET}")
 
     if cost_text:
         parts.append(f"{MUTE}$ {INK}{cost_text}{RESET}")

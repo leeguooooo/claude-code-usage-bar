@@ -197,3 +197,37 @@ def test_capsule_cost_pill_uses_pill_cost_not_pill_lang():
     assert pill_cost_bg in out
     # When there's no lang_body, pill_lang must NOT appear at all
     assert pill_lang_bg not in out
+
+
+# ---------------------------------------------------------------------------
+# Hairline style tests
+# ---------------------------------------------------------------------------
+
+from claude_statusbar.styles import render_hairline
+
+
+def test_hairline_model_uses_ctx_severity_when_critical():
+    out = render_hairline(
+        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
+        model="Opus 4.7", ctx_pct=85,
+        use_color=True, theme=GRAPHITE,
+    )
+    s_hot = _ansi_for(GRAPHITE.s_hot)
+    # Find the chunk containing "Opus" — it must be wrapped in s_hot
+    plain = re.sub(r"\033\[[0-9;]*m", "", out)
+    assert "Opus" in plain
+    # The colored model text must use s_hot
+    assert f"{s_hot}Opus" in out or s_hot in out.split("Opus")[0][-30:]
+
+
+def test_hairline_model_uses_ink_when_no_ctx():
+    out = render_hairline(
+        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
+        model="Opus 4.7", ctx_pct=None,
+        use_color=True, theme=GRAPHITE,
+    )
+    ink = _ansi_for(GRAPHITE.ink)
+    # Model text uses neutral theme.ink
+    assert ink in out
+    # No severity ANSI bleeds into the model area
+    assert _ansi_for(GRAPHITE.s_hot) not in out.split("Opus")[0][-30:]
