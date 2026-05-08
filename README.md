@@ -12,7 +12,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s
 ```
 
-![claude-statusbar in action](docs/images/classic-graphite.svg)
+![claude-statusbar in action](docs/images/hero.svg)
 
 3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. Just run `pip install claude-statusbar && cs --setup` and restart Claude Code.
 
@@ -33,6 +33,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 - [Integrations](#integrations)
 - [Contributing](#contributing)
 - [Acknowledgments](#acknowledgments)
+- [Contributors](#contributors)
 
 ## Latest release
 
@@ -416,6 +417,14 @@ Render path is hot (60×/min at `refreshInterval: 1`) — `tests/test_import_per
 
 - [@marcwimmer](https://github.com/marcwimmer) — original `show_cache_age` widget ([#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9))
 - [claude-monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) — token-usage analysis library used as the optional fast-path data source
+
+## Contributors
+
+<a href="https://github.com/leeguooooo/claude-code-usage-bar/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=leeguooooo/claude-code-usage-bar" alt="Contributors" />
+</a>
+
+Made with [contrib.rocks](https://contrib.rocks).
 
 ---
 

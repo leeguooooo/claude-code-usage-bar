@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="62" viewBox="0 0 720 62" font-family="monospace" font-size="14">
+  <title>claude-statusbar live demo</title>
+  <rect x="0" y="0" width="720" height="62" fill="rgb(28,30,36)" rx="6"/>
+
+  <g opacity="1">
+    <animate attributeName="opacity" values="1;1;0;0;0;1" keyTimes="0;.30;.34;.64;.68;1" dur="6s" repeatCount="indefinite"/>
+    <text x="12" y="38" fill="rgb(220,220,220)" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">5h[████░░░░░░]⏰1h28m</text>
+    <text x="180" y="38" fill="rgb(220,220,220)" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> | </text>
+    <text x="205.2" y="38" fill="rgb(230,190,90)" textLength="176.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">7d[███████░░░]⏰11h28m</text>
+    <text x="381.6" y="38" fill="rgb(220,220,220)" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> | </text>
+    <text x="406.8" y="38" fill="rgb(220,220,220)" textLength="302.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Opus 4.7(350.0k/1.0M) | cache  4m23s</text>
+  </g>
+
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.30;.34;.64;.68;1" dur="6s" repeatCount="indefinite"/>
+    <text x="12" y="38" fill="rgb(230,190,90)" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">5h[██████░░░░]⏰1h12m</text>
+    <text x="180" y="38" fill="rgb(220,220,220)" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> | </text>
+    <text x="205.2" y="38" fill="rgb(230,190,90)" textLength="176.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">7d[███████░░░]⏰11h18m</text>
+    <text x="381.6" y="38" fill="rgb(220,220,220)" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> | </text>
+    <text x="406.8" y="38" fill="rgb(220,220,220)" textLength="302.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Opus 4.7(350.0k/1.0M) | cache  3m11s</text>
+  </g>
+
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;0;0;0;1;1" keyTimes="0;.30;.34;.64;.68;1" dur="6s" repeatCount="indefinite"/>
+    <text x="12" y="38" fill="rgb(232,80,80)" textLength="168" lengthAdjust="spacingAndGlyphs" xml:space="preserve">5h[███████░░░]⏰0h54m</text>
+    <text x="180" y="38" fill="rgb(220,220,220)" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> | </text>
+    <text x="205.2" y="38" fill="rgb(230,190,90)" textLength="176.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">7d[███████░░░]⏰11h08m</text>
+    <text x="381.6" y="38" fill="rgb(220,220,220)" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> | </text>
+    <text x="406.8" y="38" fill="rgb(220,220,220)" textLength="302.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Opus 4.7(350.0k/1.0M) | cache  1m44s</text>
+  </g>
+</svg>

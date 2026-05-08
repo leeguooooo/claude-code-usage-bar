@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# uv lockfile — we publish sdist/wheel to PyPI, no lockfile needed
+uv.lock
+
 # Python cache/bytecode
 __pycache__/
 *.py[cod]
