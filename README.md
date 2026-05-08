@@ -12,9 +12,10 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s
 ```
 
-3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. New in **v3.2**: a daemon mode that drops 1 Hz refresh CPU from ~6% to ~2% — same status line, ~5× cheaper.
+3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. New in **v3.4**: per-segment color management — each metric (5h / 7d / context / cache) colors itself by its own severity, classic style finally respects themes, and two community-favorite palettes ship in the box.
 
 ## Contents
+- [What's new in v3.4](#whats-new-in-v34)
 - [What's new in v3.2](#whats-new-in-v32)
 - [What it shows](#what-it-shows)
 - [Install](#install)
@@ -30,6 +31,17 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 - [Integrations](#integrations)
 - [Contributing](#contributing)
 - [Acknowledgments](#acknowledgments)
+
+## What's new in v3.4
+
+- **Per-segment color management** — before, when 7d hit warning the *entire* line tinted yellow (5h label, separators, model, all sharing a single `overall_color = max(severity)`). Now each numeric segment colors itself by its own pct: 5h sees only `msgs_pct`, 7d sees only `weekly_pct`, the model+context block sees `ctx_used_pct`, cache keeps its own string-age severity. No color leaks across segments.
+- **Classic style now respects themes** — `progress.py` previously used raw 8-color ANSI (`\033[32/33/31m`) regardless of theme. Switching theme had zero effect on classic. Now classic pulls from `theme.s_ok / s_warn / s_hot`, so all 9 themes finally apply to it.
+- **Hierarchy via mute** — `[ ]` brackets, `(used/size)` parens, and the ` | ` separator move to `theme.mute` so the bright severity colors only paint actual data. Numbers and time stay the visual focus.
+- **Two new themes** — `catppuccin-mocha` (community-favorite pastel, easy on long viewing) and `tokyo-night` (deeper neon-blue mood with restrained accents). Both honor the per-segment severity contract.
+- **`theme.pill_cost` field** — capsule's `$` cost pill stops sharing `pill_lang` with the language pill (a longstanding color collision). New mandatory field on every theme; existing fields unchanged.
+- **`ctx_pct` plumbed through** — `core.py` now computes a nullable `Optional[float]` from `context_window_size > 0` (not falsy `raw_pct == 0`, which would conflate genuine 0% with "no context info"). All three styles consume it; capsule gains a model-pill severity dot, hairline colors the model text.
+
+Visual identity unchanged: battery bar with overlaid percentage, `[ ]` brackets, `🕐` / `⏰` clock emojis, and ` | ` separators all kept. This is a palette + scoping refinement, not a redesign. 293 tests pass.
 
 ## What's new in v3.2
 
