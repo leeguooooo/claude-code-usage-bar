@@ -12,7 +12,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s
 ```
 
-3 styles × 7 themes, configurable in one command. Auto-updates from PyPI. New in **v3.2**: a daemon mode that drops 1 Hz refresh CPU from ~6% to ~2% — same status line, ~5× cheaper.
+3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. New in **v3.2**: a daemon mode that drops 1 Hz refresh CPU from ~6% to ~2% — same status line, ~5× cheaper.
 
 ## Contents
 - [What's new in v3.2](#whats-new-in-v32)
@@ -147,8 +147,10 @@ cs preview                             # render every style × theme together
 | `dracula`  | Dracula palette — high-contrast purple/black |
 | `sakura`   | Pink/cream — soft, light backgrounds |
 | `mono`     | Pure grayscale — no chromatic distraction |
+| `catppuccin-mocha` | Catppuccin Mocha — community-favorite pastel, easy on long viewing |
+| `tokyo-night` | Tokyo Night — deeper neon-blue mood with restrained accents |
 
-Style and theme are independent: any of the **3 styles × 7 themes = 21 combinations**.
+Style and theme are independent: any of the **3 styles × 9 themes = 27 combinations**.
 
 ### Slash commands inside Claude Code
 
@@ -159,7 +161,7 @@ After running `cs --setup` (or `cs install-commands`), the following slash comma
 | `/statusbar`               | Show current config + lists styles/themes |
 | `/statusbar-preview`       | Render every style × theme combination using your real data |
 | `/statusbar-style <name>`  | Switch style (`classic` / `capsule` / `hairline`) |
-| `/statusbar-theme <name>`  | Switch theme (`graphite` / `twilight` / `linen` / `nord` / `dracula` / `sakura` / `mono`) |
+| `/statusbar-theme <name>`  | Switch theme (`graphite` / `twilight` / `linen` / `nord` / `dracula` / `sakura` / `mono` / `catppuccin-mocha` / `tokyo-night`) |
 | `/statusbar-doctor`        | Self-diagnostic — paste output in bug reports |
 | `/statusbar-reset`         | Wipe config back to defaults |
 
