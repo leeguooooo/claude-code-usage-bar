@@ -13,7 +13,7 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 >
 > `pip install claude-statusbar && cs --setup`
 >
-> [attach: docs/images/hero.svg or recorded GIF]
+> [attach: `docs/images/hero.gif`]
 
 **Tweet 2**
 > Why a statusLine instead of a TUI dashboard?
@@ -47,7 +47,7 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 >
 > `pip install claude-statusbar && cs --setup`
 >
-> [附 hero.svg]
+> [附 `docs/images/hero.gif`]
 
 **2**
 > 为什么不做 TUI dashboard？
@@ -79,7 +79,7 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 >
 > `5h[████░░░░░░]⏰1h28m | 7d[███████░░░]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s`
 >
-> [hero asset]
+> [attach: `docs/images/hero.gif`]
 >
 > **What it shows**
 > - 5h and 7d rate-limit usage with reset countdowns (from Anthropic's API headers)
@@ -202,27 +202,25 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 
 ---
 
-## 7. Recording a real GIF (replaces hero.svg if you want)
+## 7. Re-recording the hero GIF
 
-The current hero is an animated SVG. For Twitter / Reddit / PH, a real terminal-recorded GIF travels better. Recommended pipeline on macOS:
+The hero GIF lives at `docs/images/hero.gif` (already committed; ~200 KB, 23 s, 1100×320). It's driven by `scripts/hero.tape` (vhs script) and rebuilt with one command:
 
 ```
-brew install asciinema agg
-asciinema rec --idle-time-limit 1 hero.cast
-# do a 20-30s session: cs preview, theme switch, normal Claude Code usage
-agg --font-size 16 --theme monokai hero.cast hero.gif
+brew install vhs ffmpeg     # one-time
+bash scripts/build-hero-gif.sh
 ```
 
-Aim for **<8 MB** so Twitter inlines it instead of attaching as a file. 30 fps is overkill — 15 fps is fine for terminal output and halves the size.
+The script runs `vhs` against the tape, then trims ~3.5 s of vhs-0.11 setup leakage and re-quantizes the palette. Override the demo content by editing `scripts/hero.tape` (typing speed, theme cycle, sleep beats).
 
-Drop it into `docs/images/hero.gif`. Don't replace `hero.svg` in the README — the SVG renders inline on GitHub mobile and is 3 KB. The GIF is for off-platform sharing only.
+The README continues to use `docs/images/hero.svg` (3 KB animated SVG) for inline GitHub rendering. The `.gif` is for off-platform sharing where SVG won't render (X / Reddit / PH / blog crossposts).
 
 ---
 
 ## Checklist
 
-- [x] Update GitHub repo description + topics (done in this commit)
-- [ ] Record `docs/images/hero.gif` (asciinema + agg, see §7)
+- [x] Update GitHub repo description + topics
+- [x] Record `docs/images/hero.gif` (driven by `scripts/hero.tape`; rebuild via `bash scripts/build-hero-gif.sh`)
 - [ ] Post X thread (English first, Chinese version 24h later)
 - [ ] Submit Show HN (Tuesday 9 AM PT is the empirically best window)
 - [ ] Post r/ClaudeAI
