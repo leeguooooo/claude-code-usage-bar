@@ -12,11 +12,12 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s
 ```
 
-3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. New in **v3.4**: per-segment color management — each metric (5h / 7d / context / cache) colors itself by its own severity, classic style finally respects themes, and two community-favorite palettes ship in the box.
+![claude-statusbar in action](docs/images/classic-graphite.svg)
+
+3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. Just run `pip install claude-statusbar && cs --setup` and restart Claude Code.
 
 ## Contents
-- [What's new in v3.4](#whats-new-in-v34)
-- [What's new in v3.2](#whats-new-in-v32)
+- [Latest release](#latest-release)
 - [What it shows](#what-it-shows)
 - [Install](#install)
 - [Styles & themes](#styles--themes)
@@ -28,32 +29,22 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 - [Environment variables](#environment-variables)
 - [Troubleshooting](#troubleshooting)
 - [Upgrading](#upgrading)
+- [Comparison with alternatives](#comparison-with-alternatives)
 - [Integrations](#integrations)
 - [Contributing](#contributing)
 - [Acknowledgments](#acknowledgments)
 
-## What's new in v3.4
+## Latest release
 
-- **Per-segment color management** — before, when 7d hit warning the *entire* line tinted yellow (5h label, separators, model, all sharing a single `overall_color = max(severity)`). Now each numeric segment colors itself by its own pct: 5h sees only `msgs_pct`, 7d sees only `weekly_pct`, the model+context block sees `ctx_used_pct`, cache keeps its own string-age severity. No color leaks across segments.
-- **Classic style now respects themes** — `progress.py` previously used raw 8-color ANSI (`\033[32/33/31m`) regardless of theme. Switching theme had zero effect on classic. Now classic pulls from `theme.s_ok / s_warn / s_hot`, so all 9 themes finally apply to it.
-- **Hierarchy via mute** — `[ ]` brackets, `(used/size)` parens, and the ` | ` separator move to `theme.mute` so the bright severity colors only paint actual data. Numbers and time stay the visual focus.
-- **Two new themes** — `catppuccin-mocha` (community-favorite pastel, easy on long viewing) and `tokyo-night` (deeper neon-blue mood with restrained accents). Both honor the per-segment severity contract.
-- **Per-severity color overrides** (v3.4.1) — `cs config set color_ok "#4ec85b"` (and `color_warn` / `color_hot`) layers your own RGB on top of any theme without touching the theme's other fields. Empty string clears the override; supports `#rgb`, `#rrggbb`, with or without the leading `#`. Useful when you like a theme's overall feel but want a sharper "calm" green or a softer warning color.
-- **Consolidated `claude-statusbar` skill** (v3.5.0) — one Claude Code skill that handles all `cs` operations conversationally. Say "switch theme to nord" / "余量颜色改成 #4ec85b" / "diagnose why my bar isn't showing" and it routes to the right `cs` command. Auto-installed alongside slash commands by `cs --setup`; opt-in standalone install via `cs install-skill`. Old slash commands (`/statusbar`, `/statusbar-theme`, etc.) still work.
-- **`theme.pill_cost` field** — capsule's `$` cost pill stops sharing `pill_lang` with the language pill (a longstanding color collision). New mandatory field on every theme; existing fields unchanged.
-- **`ctx_pct` plumbed through** — `core.py` now computes a nullable `Optional[float]` from `context_window_size > 0` (not falsy `raw_pct == 0`, which would conflate genuine 0% with "no context info"). All three styles consume it; capsule gains a model-pill severity dot, hairline colors the model text.
+**v3.5.1** (2026-05-08) — `npx skills add` install path, `show_cache_age` on by default.
 
-Visual identity unchanged: battery bar with overlaid percentage, `[ ]` brackets, `🕐` / `⏰` clock emojis, and ` | ` separators all kept. This is a palette + scoping refinement, not a redesign. 293 tests pass.
+**v3.5.0** — consolidated `claude-statusbar` skill: say *"switch theme to nord"* / *"余量颜色改成 #4ec85b"* and Claude Code routes it to the right `cs` command.
 
-## What's new in v3.2
+**v3.4** — per-segment color management (each metric colors itself by its own severity), classic style finally respects themes, two new themes (`catppuccin-mocha`, `tokyo-night`), per-severity color overrides via `cs config set color_ok|warn|hot`.
 
-- **Daemon fast-mode** — `cs --setup --fast` swaps the statusLine command to `cs render` backed by a long-lived `cs daemon`. At `refreshInterval: 1` this cuts continuous CPU from ~6% to ~2%, render wall-clock from ~60ms to ~5ms. Crash-safe (auto-falls-back to inline render if the daemon dies; lazy-respawns).
-- **OS-managed daemon** — `cs daemon install` installs a launchd agent (macOS) or systemd user unit (Linux) so the daemon auto-starts on login and is restarted on crash by the OS.
-- **`cache 4m23s` countdown** — enabled by default. Counts down to Anthropic's prompt-cache expiry (default 5min TTL); flips through green → yellow (<1min) → red `cache COLD`. Configurable TTL via `cs config set cache_ttl_seconds 3600` for users on the 1-hour extended cache. **For Pro/Max subscribers**, cache hits consume ~10× less of your 5h / 7d rate-limit quota — letting it go COLD costs you ~10× more quota on the next prompt. The widget tells you whether to send now or wrap up first.
-- **`cs doctor` 1Hz hint** — detects `refreshInterval ≤ 2s` with the inline command and recommends `cs --setup --fast`.
-- **Import-shaving on the inline path** — even users who don't opt into daemon mode get ~30% faster renders.
+**v3.2** — daemon fast-mode for ~5× lower CPU at `refreshInterval=1`.
 
-Daemon mode remains opt-in.
+Full release notes in [CHANGELOG.md](CHANGELOG.md).
 
 ## What it shows
 
@@ -381,6 +372,18 @@ uv tool upgrade claude-statusbar
 
 To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
 
+## Comparison with alternatives
+
+There are a few good Claude Code usage monitors. They solve overlapping but distinct problems — pick the one that matches *where* you want the information.
+
+| Tool | Lives in | Optimized for |
+|---|---|---|
+| **claude-statusbar (`cs`)** | Claude Code's `statusLine` (one line at the bottom) | Glanceable while you work; zero context-switching |
+| [ccusage](https://github.com/ryoppippi/ccusage) | Standalone TUI in a separate terminal window | Long-form usage analytics, cost breakdowns over weeks |
+| [Claude Code Usage Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) | Standalone TUI with predictive burn-rate | Real-time burn-rate forecast for paid plans |
+
+`cs` is intentionally one line of color and one decision per second. If you want a dashboard with charts, daily/weekly aggregates, and burn-rate prediction, run a TUI in a side pane. The two coexist nicely.
+
 ## Integrations
 
 ### prompt-language-coach
@@ -396,21 +399,18 @@ Install the [prompt-language-coach](https://github.com/leeguooooo/prompt-languag
 
 ## Contributing
 
-PRs welcome. Quick guide:
+PRs welcome. The full contributor guide — local setup, test commands, architecture map, coding conventions, release flow — lives in [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: see [SECURITY.md](SECURITY.md).
+
+Quick start:
 
 ```bash
 git clone https://github.com/leeguooooo/claude-code-usage-bar
 cd claude-code-usage-bar
-pip install -e .                    # editable install
-pytest                              # 240+ tests, all should pass
-PYTHONPATH=src python3 -m pytest -q tests/test_import_perf.py  # perf regression guards
+uv sync
+PYTHONPATH=src uv run pytest tests/   # 320+ tests, ~1.5s
 ```
 
-A few conventions to know:
-- Render path is hot — every module loaded at import time multiplies its cost by `60×/min` at `refreshInterval: 1`. `tests/test_import_perf.py` pins this; if your change adds a heavy stdlib import on the path, the test fails.
-- Atomic file writes use the helper in `cache.py` (`atomic_write_text`) — never `path.write_text(...)` for state files.
-- The daemon path (`daemon.py` + `render_thin.py`) is opt-in. The legacy inline path (`core.py:main()`) must stay working without the daemon.
-- New config keys: bump `config.StatusbarConfig`, `VALID_KEYS`, the `_*_KEYS` sets, and document in this README.
+Render path is hot (60×/min at `refreshInterval: 1`) — `tests/test_import_perf.py` pins which modules can't be imported on the fast path. Read CONTRIBUTING.md before adding dependencies.
 
 ## Acknowledgments
 
