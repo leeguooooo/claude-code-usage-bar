@@ -167,7 +167,7 @@ def main():
         return render()
 
     # Subcommands hijack argv before argparse so they coexist with flags.
-    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands", "doctor", "daemon"):
+    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands", "install-skill", "doctor", "daemon"):
         sub = sys.argv[1]
         rest = sys.argv[2:]
         if sub == "daemon":
@@ -230,7 +230,7 @@ def main():
             from .doctor import run as run_doctor
             return run_doctor()
         if sub == "install-commands":
-            from .setup import install_commands, COMMANDS_DIR
+            from .setup import install_commands, install_skills, COMMANDS_DIR, SKILLS_DIR
             force = "--force" in rest
             n, skipped = install_commands(force=force)
             print(f"Installed {n} slash command(s) to {COMMANDS_DIR}")
@@ -239,7 +239,26 @@ def main():
                 for s in skipped:
                     print(f"  {s}")
                 print("Use `cs install-commands --force` to overwrite.")
-            print("Try /statusbar in Claude Code.")
+            s_n, s_skipped = install_skills(force=force)
+            if s_n:
+                print(f"Installed {s_n} skill(s) to {SKILLS_DIR}")
+            if s_skipped:
+                print("Skill skipped:")
+                for s in s_skipped:
+                    print(f"  {s}")
+            print("Try /statusbar in Claude Code, or just say `switch theme to nord`.")
+            return 0
+        if sub == "install-skill":
+            from .setup import install_skills, SKILLS_DIR
+            force = "--force" in rest
+            n, skipped = install_skills(force=force)
+            print(f"Installed {n} skill(s) to {SKILLS_DIR}")
+            if skipped:
+                print("Skipped:")
+                for s in skipped:
+                    print(f"  {s}")
+                print("Use `cs install-skill --force` to overwrite.")
+            print("Try saying `switch theme to nord` in Claude Code.")
             return 0
 
     parser = argparse.ArgumentParser(

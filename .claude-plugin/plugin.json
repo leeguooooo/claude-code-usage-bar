@@ -1,7 +1,7 @@
 {
   "name": "claude-statusbar",
   "description": "Lightweight Claude Code status-line monitor with switchable styles, themes, and slash commands. v3.4 adds per-segment color management (each metric colors itself by its own severity), classic theme adoption, two new themes (catppuccin-mocha, tokyo-night), and per-severity color overrides via `cs config set color_ok|warn|hot`. v3.2 daemon fast-mode (`cs --setup --fast`) still ships for ~5× lower CPU at refreshInterval=1. Requires the `cs` CLI from PyPI (`pip install claude-statusbar` or `uv tool install claude-statusbar`).",
-  "version": "3.4.1",
+  "version": "3.5.0",
   "author": {
     "name": "leeguooooo",
     "email": "leeguooooo@gmail.com"

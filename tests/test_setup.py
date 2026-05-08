@@ -18,8 +18,10 @@ def isolated(monkeypatch, tmp_path: Path):
     """Redirect setup module's paths into tmp_path."""
     settings = tmp_path / ".claude" / "settings.json"
     commands = tmp_path / ".claude" / "commands"
+    skills = tmp_path / ".claude" / "skills"
     monkeypatch.setattr(setup_mod, "SETTINGS_PATH", settings)
     monkeypatch.setattr(setup_mod, "COMMANDS_DIR", commands)
+    monkeypatch.setattr(setup_mod, "SKILLS_DIR", skills)
     return tmp_path, settings, commands
 
 
@@ -174,6 +176,47 @@ def test_install_commands_force_overwrites_user_edits(isolated):
     edited.write_text("# Locally customized\n", encoding="utf-8")
 
     n, skipped = setup_mod.install_commands(force=True)
+    assert skipped == []
+    assert "Locally customized" not in edited.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# install_skills
+# ---------------------------------------------------------------------------
+def test_install_skills_creates_dir_and_copies(isolated, tmp_path):
+    n, skipped = setup_mod.install_skills()
+    assert n >= 1
+    assert skipped == []
+    skills_dir = setup_mod.SKILLS_DIR
+    assert skills_dir.is_dir()
+    skill_md = skills_dir / "claude-statusbar" / "SKILL.md"
+    assert skill_md.is_file(), f"expected SKILL.md at {skill_md}"
+    body = skill_md.read_text(encoding="utf-8")
+    assert "name: claude-statusbar" in body
+    assert "cs config set theme" in body  # smoke-check decision-tree content
+
+
+def test_install_skills_idempotent_when_unchanged(isolated):
+    setup_mod.install_skills()
+    n2, skipped2 = setup_mod.install_skills()
+    assert n2 >= 1
+    assert skipped2 == []
+
+
+def test_install_skills_skips_modified_user_files(isolated):
+    setup_mod.install_skills()
+    edited = setup_mod.SKILLS_DIR / "claude-statusbar" / "SKILL.md"
+    edited.write_text("# Locally customized skill\n", encoding="utf-8")
+    n, skipped = setup_mod.install_skills()
+    assert any("SKILL.md" in s for s in skipped), f"expected skip, got: {skipped}"
+    assert edited.read_text(encoding="utf-8") == "# Locally customized skill\n"
+
+
+def test_install_skills_force_overwrites_user_edits(isolated):
+    setup_mod.install_skills()
+    edited = setup_mod.SKILLS_DIR / "claude-statusbar" / "SKILL.md"
+    edited.write_text("# Locally customized skill\n", encoding="utf-8")
+    n, skipped = setup_mod.install_skills(force=True)
     assert skipped == []
     assert "Locally customized" not in edited.read_text(encoding="utf-8")
 

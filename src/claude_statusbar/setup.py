@@ -21,6 +21,7 @@ from .cache import atomic_write_text
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 COMMANDS_DIR  = Path.home() / ".claude" / "commands"
+SKILLS_DIR    = Path.home() / ".claude" / "skills"
 
 # CLI binary names we ship — `cs` is shortest and the documented one.
 OUR_COMMAND_NAMES = ("cs", "cstatus", "claude-statusbar")
@@ -207,6 +208,12 @@ def _packaged_commands_dir() -> Path:
     return here.parent / "commands"
 
 
+def _packaged_skills_dir() -> Path:
+    """Return the directory bundled with the package that holds skill files."""
+    here = Path(__file__).resolve()
+    return here.parent / "skills"
+
+
 def install_commands(force: bool = False) -> Tuple[int, list[str]]:
     """Copy bundled slash commands into ~/.claude/commands/.
 
@@ -223,6 +230,46 @@ def install_commands(force: bool = False) -> Tuple[int, list[str]]:
     for src in sorted(src_dir.glob("*.md")):
         name = src.name
         dst = COMMANDS_DIR / name
+        if dst.exists() and not force:
+            try:
+                if dst.read_text(encoding="utf-8") == src.read_text(encoding="utf-8"):
+                    installed += 1
+                    continue
+            except OSError:
+                pass
+            skipped.append(str(dst))
+            continue
+        try:
+            shutil.copy2(src, dst)
+            installed += 1
+        except OSError as e:
+            skipped.append(f"{dst}: {e}")
+    return installed, skipped
+
+
+def install_skills(force: bool = False) -> Tuple[int, list[str]]:
+    """Copy bundled skills into ~/.claude/skills/<skill-name>/SKILL.md.
+
+    Each skill lives in its own directory (per Claude Code skill convention).
+    Returns (count_installed, list_of_skipped_paths).
+    """
+    src_dir = _packaged_skills_dir()
+    if not src_dir.is_dir():
+        return 0, []
+
+    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    installed = 0
+    skipped: list[str] = []
+
+    for skill_dir in sorted(src_dir.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        src = skill_dir / "SKILL.md"
+        if not src.is_file():
+            continue
+        dst_dir = SKILLS_DIR / skill_dir.name
+        dst = dst_dir / "SKILL.md"
+        dst_dir.mkdir(parents=True, exist_ok=True)
         if dst.exists() and not force:
             try:
                 if dst.read_text(encoding="utf-8") == src.read_text(encoding="utf-8"):
@@ -272,6 +319,17 @@ def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = Fals
                 for s in skipped:
                     print(f"    {s}")
             print("  Try /statusbar in Claude Code.")
+
+        # Install the consolidated skill alongside the slash commands.
+        s_n, s_skipped = install_skills()
+        if verbose:
+            if s_n:
+                print(f"✓ Installed {s_n} skill(s) to {SKILLS_DIR}")
+            if s_skipped:
+                cmds_ok = False
+                print(f"  Skill skipped (use --force to overwrite):")
+                for s in s_skipped:
+                    print(f"    {s}")
 
     if fast:
         # Spin up the daemon now so the next status-line tick benefits.
