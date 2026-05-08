@@ -31,7 +31,7 @@ class StatusbarConfig:
     show_weekly: bool = True
     show_language: bool = True
     show_cost: bool = False
-    show_cache_age: bool = False
+    show_cache_age: bool = True
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
@@ -67,7 +67,7 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
         show_weekly=_to_bool(raw.get("show_weekly", True)),
         show_language=_to_bool(raw.get("show_language", True)),
         show_cost=_to_bool(raw.get("show_cost", False)),
-        show_cache_age=_to_bool(raw.get("show_cache_age", False)),
+        show_cache_age=_to_bool(raw.get("show_cache_age", True)),
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", DEFAULT_CACHE_TTL_SECONDS) or DEFAULT_CACHE_TTL_SECONDS),
         warning_threshold=raw.get("warning_threshold"),
         critical_threshold=raw.get("critical_threshold"),
