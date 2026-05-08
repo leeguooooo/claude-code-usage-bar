@@ -35,6 +35,13 @@ class StatusbarConfig:
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
+    # Per-severity color overrides — hex like "#4ec85b". None means "use the
+    # active theme's value". Layer on top of the resolved Theme, never mutate
+    # the theme itself. Set via `cs config set color_ok "#4ec85b"`; clear by
+    # setting to empty string.
+    color_ok: Optional[str] = None
+    color_warn: Optional[str] = None
+    color_hot: Optional[str] = None
 
 
 def _to_bool(v):
@@ -64,6 +71,9 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", DEFAULT_CACHE_TTL_SECONDS) or DEFAULT_CACHE_TTL_SECONDS),
         warning_threshold=raw.get("warning_threshold"),
         critical_threshold=raw.get("critical_threshold"),
+        color_ok=raw.get("color_ok") or None,
+        color_warn=raw.get("color_warn") or None,
+        color_hot=raw.get("color_hot") or None,
     )
 
 
@@ -78,10 +88,12 @@ VALID_KEYS = {
     "show_weekly", "show_language", "show_cost", "show_cache_age",
     "cache_ttl_seconds",
     "warning_threshold", "critical_threshold",
+    "color_ok", "color_warn", "color_hot",
 }
 _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_cache_age"}
 _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds"}
+_COLOR_KEYS = {"color_ok", "color_warn", "color_hot"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}
 
 
@@ -115,6 +127,16 @@ def set_value(key: str, value: str, path: Path = CONFIG_PATH) -> StatusbarConfig
                 f"together."
             ) from e
         setattr(cfg, key, new_val)
+        save_config(cfg, path)
+        return cfg
+    if key in _COLOR_KEYS:
+        # Empty string clears the override (falls back to theme default).
+        if value == "":
+            setattr(cfg, key, None)
+        else:
+            from .themes import parse_hex_color
+            r, g, b = parse_hex_color(value)
+            setattr(cfg, key, f"#{r:02x}{g:02x}{b:02x}")
         save_config(cfg, path)
         return cfg
     if key in _INT_KEYS:

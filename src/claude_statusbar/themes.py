@@ -5,8 +5,9 @@ styles.py. Any Style can render with any Theme; new themes are added by
 appending to BUILTIN_THEMES.
 """
 
+import dataclasses
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 
 RGB = Tuple[int, int, int]
 
@@ -143,3 +144,45 @@ def get_theme(name: str) -> Theme:
 
 def list_themes() -> list[Theme]:
     return list(BUILTIN_THEMES)
+
+
+def parse_hex_color(s: str) -> RGB:
+    """Parse '#rrggbb', '#rgb', or bare 'rrggbb'/'rgb' into an RGB tuple.
+
+    Strict — anything else raises ValueError so the config CLI surfaces a
+    clear error instead of silently shipping a broken color.
+    """
+    s = s.strip().lstrip("#")
+    if len(s) == 3:
+        s = "".join(c * 2 for c in s)
+    if len(s) != 6:
+        raise ValueError(f"color must be hex like '#4ec85b', got {s!r}")
+    try:
+        return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+    except ValueError as e:
+        raise ValueError(f"invalid hex digits in color: {s!r}") from e
+
+
+def apply_color_overrides(
+    theme: Theme,
+    *,
+    ok: Optional[RGB] = None,
+    warn: Optional[RGB] = None,
+    hot: Optional[RGB] = None,
+) -> Theme:
+    """Return a Theme with severity colors overridden where provided.
+
+    Pure function — never mutates the input theme. Only `s_ok / s_warn /
+    s_hot` are overridable; ink/mute/edge/pill_* stay as the base theme
+    designed them. Pass `None` for any color to leave it untouched.
+    """
+    overrides: dict = {}
+    if ok is not None:
+        overrides["s_ok"] = ok
+    if warn is not None:
+        overrides["s_warn"] = warn
+    if hot is not None:
+        overrides["s_hot"] = hot
+    if not overrides:
+        return theme
+    return dataclasses.replace(theme, **overrides)

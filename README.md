@@ -38,6 +38,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 - **Classic style now respects themes** — `progress.py` previously used raw 8-color ANSI (`\033[32/33/31m`) regardless of theme. Switching theme had zero effect on classic. Now classic pulls from `theme.s_ok / s_warn / s_hot`, so all 9 themes finally apply to it.
 - **Hierarchy via mute** — `[ ]` brackets, `(used/size)` parens, and the ` | ` separator move to `theme.mute` so the bright severity colors only paint actual data. Numbers and time stay the visual focus.
 - **Two new themes** — `catppuccin-mocha` (community-favorite pastel, easy on long viewing) and `tokyo-night` (deeper neon-blue mood with restrained accents). Both honor the per-segment severity contract.
+- **Per-severity color overrides** (v3.4.1) — `cs config set color_ok "#4ec85b"` (and `color_warn` / `color_hot`) layers your own RGB on top of any theme without touching the theme's other fields. Empty string clears the override; supports `#rgb`, `#rrggbb`, with or without the leading `#`. Useful when you like a theme's overall feel but want a sharper "calm" green or a softer warning color.
 - **`theme.pill_cost` field** — capsule's `$` cost pill stops sharing `pill_lang` with the language pill (a longstanding color collision). New mandatory field on every theme; existing fields unchanged.
 - **`ctx_pct` plumbed through** — `core.py` now computes a nullable `Optional[float]` from `context_window_size > 0` (not falsy `raw_pct == 0`, which would conflate genuine 0% with "no context info"). All three styles consume it; capsule gains a model-pill severity dot, hairline colors the model text.
 
@@ -126,7 +127,7 @@ cs preview                             # render every style × theme together
 | `capsule`  | Each metric is a colored pill — type badge (`◷ 5H` / `☷ 7D` / `◆` / `📚`) on the left, value, severity dot on the right. Subway-signage feel. |
 | `hairline` | One-character mini-bar (`▁▃▆█`) per metric, dashed `┊` separators, tight typography. Maximally calm. |
 
-**Capsule** — `graphite` · `twilight` · `nord` · `dracula` · `sakura` · `linen` · `mono`
+**Capsule** — `graphite` · `twilight` · `nord` · `dracula` · `sakura` · `linen` · `mono` · `catppuccin-mocha` · `tokyo-night`
 
 ![capsule + graphite](docs/images/capsule-graphite.svg)
 ![capsule + twilight](docs/images/capsule-twilight.svg)
@@ -197,7 +198,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | Key | Values | What it does |
 |-----|--------|--------------|
 | `style` | `classic` / `capsule` / `hairline` | Layout |
-| `theme` | `graphite` / `twilight` / `linen` / `nord` / `dracula` / `sakura` / `mono` | Colors |
+| `theme` | `graphite` / `twilight` / `linen` / `nord` / `dracula` / `sakura` / `mono` / `catppuccin-mocha` / `tokyo-night` | Colors |
 | `density` | `compact` / `regular` / `cozy` | Padding around segments (capsule + hairline only) |
 | `auto_compact_width` | integer (e.g. `100`) | Force `hairline` when terminal narrower than this. `0` = disabled |
 | `show_weekly`, `show_language` | bool | Hide individual segments |

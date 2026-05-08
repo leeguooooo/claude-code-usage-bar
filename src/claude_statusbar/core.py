@@ -1048,9 +1048,18 @@ def main(json_output: bool = False,
         # Unknown style → silently fall back to the safe default rather than
         # explode in the statusLine where the user can't see the error.
         chosen_style = "classic"
-    from .themes import get_theme
+    from .themes import get_theme, apply_color_overrides, parse_hex_color
     from .progress import get_countdown_emoji
     chosen_theme = get_theme(_cfg.resolve_theme(theme_override, cfg))
+    # Layer per-severity color overrides on top of the theme. cfg fields are
+    # already canonical "#rrggbb" strings (validated at set_value time), so
+    # parse_hex_color never raises here. None fields stay as the theme default.
+    chosen_theme = apply_color_overrides(
+        chosen_theme,
+        ok=parse_hex_color(cfg.color_ok) if cfg.color_ok else None,
+        warn=parse_hex_color(cfg.color_warn) if cfg.color_warn else None,
+        hot=parse_hex_color(cfg.color_hot) if cfg.color_hot else None,
+    )
 
     # Auto-compact: if terminal narrower than threshold, force hairline
     if cfg.auto_compact_width > 0 and chosen_style != "hairline":

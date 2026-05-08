@@ -32,6 +32,9 @@ def _run_config_subcommand(rest):
         print(f"cache_ttl_seconds  = {cfg.cache_ttl_seconds}")
         print(f"warning_threshold  = {cfg.warning_threshold}")
         print(f"critical_threshold = {cfg.critical_threshold}")
+        print(f"color_ok           = {cfg.color_ok or '(theme default)'}")
+        print(f"color_warn         = {cfg.color_warn or '(theme default)'}")
+        print(f"color_hot          = {cfg.color_hot or '(theme default)'}")
         print(f"\nfile: {cfg_mod.CONFIG_PATH}")
         return 0
 
