@@ -302,10 +302,14 @@ Integration:
     parser.add_argument(
         "--fast",
         action="store_true",
+        help=argparse.SUPPRESS,  # daemon mode is the default since 3.6.0
+    )
+    parser.add_argument(
+        "--inline",
+        action="store_true",
         help=(
-            "When used with --setup, install the Phase B daemon mode: "
-            "statusLine command becomes `cs render` (3-5ms) backed by a "
-            "long-lived daemon. Use this when refreshInterval is 1 second."
+            "When used with --setup, opt out of daemon mode and use the "
+            "legacy inline path (no background daemon). Higher per-tick CPU."
         ),
     )
     parser.add_argument(
@@ -422,7 +426,10 @@ Integration:
 
     if args.setup:
         from .setup import run_setup
-        return run_setup(verbose=True, fast=args.fast)
+        # Daemon (fast) mode is the default since 3.6.0; --inline opts out.
+        # Keep the legacy --fast flag accepted (no-op) so existing scripts work.
+        fast = not args.inline
+        return run_setup(verbose=True, fast=fast)
 
     if args.install_deps:
         print("Installing claude-monitor for full functionality...")

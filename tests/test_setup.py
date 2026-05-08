@@ -54,7 +54,11 @@ def test_creates_statusline_when_missing(isolated):
     assert "Added" in msg
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert data["statusLine"]["type"] == "command"
-    assert Path(data["statusLine"]["command"]).name in setup_mod.OUR_COMMAND_NAMES
+    # Since 3.6.0 a fresh install defaults to daemon mode (`<cs> render`),
+    # so the command is split into the binary path + " render".
+    cmd_path = data["statusLine"]["command"].split()[0]
+    assert Path(cmd_path).name in setup_mod.OUR_COMMAND_NAMES
+    assert data["statusLine"]["command"].endswith(" render")
 
 
 def test_idempotent_when_already_configured(isolated):

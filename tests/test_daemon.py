@@ -486,7 +486,7 @@ def test_existing_uses_render_detects_fast_mode():
 
 
 def test_ensure_statusline_preserves_fast_mode(tmp_path: Path, monkeypatch):
-    """MUST-FIX from codex review: the daily auto-repair (default fast=False)
+    """MUST-FIX from codex review: the daily auto-repair (fast=None default)
     must NOT downgrade a user who already opted into `cs render`."""
     from claude_statusbar import setup as setup_mod
     settings = tmp_path / "settings.json"
@@ -496,8 +496,8 @@ def test_ensure_statusline_preserves_fast_mode(tmp_path: Path, monkeypatch):
         "statusLine": {"type": "command", "command": "/abs/path/cs render"},
     }), encoding="utf-8")
 
-    # Daily auto-repair tick — default fast=False.
-    changed, message = setup_mod.ensure_statusline_configured(fast=False)
+    # Daily auto-repair tick — fast=None (preserve), the new default in 3.6.0.
+    changed, message = setup_mod.ensure_statusline_configured()
 
     # Read what's there now.
     after = json.loads(settings.read_text(encoding="utf-8"))
@@ -505,6 +505,25 @@ def test_ensure_statusline_preserves_fast_mode(tmp_path: Path, monkeypatch):
     assert new_cmd.endswith(" render"), (
         f"daily auto-repair downgraded fast mode! command is now {new_cmd!r}. "
         f"changed={changed}, message={message!r}"
+    )
+
+
+def test_ensure_statusline_inline_explicit_downgrades(tmp_path: Path, monkeypatch):
+    """fast=False is now an EXPLICIT user request to switch to inline mode,
+    not a preserve-existing signal. Verify it actually downgrades."""
+    from claude_statusbar import setup as setup_mod
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr(setup_mod, "SETTINGS_PATH", settings)
+    settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "/abs/path/cs render"},
+    }), encoding="utf-8")
+
+    changed, _ = setup_mod.ensure_statusline_configured(fast=False)
+
+    after = json.loads(settings.read_text(encoding="utf-8"))
+    assert changed is True
+    assert not after["statusLine"]["command"].endswith(" render"), (
+        "explicit fast=False (cs --setup --inline) should downgrade to inline"
     )
 
 

@@ -9,6 +9,41 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.6.0 — 2026-05-08
+
+### Changed
+- **`cs --setup` defaults to daemon (fast) mode.** Previously you had to remember
+  `--fast` to get the long-lived daemon + `cs render` thin client; the bare
+  `cs --setup` wrote inline mode at refreshInterval=1, which costs ~3% CPU
+  continuously. Daemon mode keeps it under 1% with smoother per-second ticks.
+  Existing users running `cs --setup` after upgrading will be auto-bumped from
+  inline to daemon. To opt out, run `cs --setup --inline`. The legacy `--fast`
+  flag still works (no-op now). Daily auto-repair (background) preserves the
+  user's existing fast/inline choice — it doesn't reach into your settings to
+  change policy on you.
+
+### Fixed
+- **`cs --setup --inline` now actually downgrades.** In 3.5.x, passing `fast=False`
+  to `ensure_statusline_configured` quietly preserved an existing fast-mode
+  config (the OR-with-existing logic was meant for the auto-repair path but
+  blocked explicit user requests). The function is now tri-state:
+  `fast=None` preserves existing (auto-repair); `fast=True/False` is an
+  explicit user request and is respected.
+- **Python 3.9 compatibility.** `updater.py` and `cli.py` used PEP-604 union
+  syntax (`X | None`) at runtime, which 3.9 doesn't support. Added
+  `from __future__ import annotations` so all annotations are lazy strings.
+  CI on 3.9 was failing in 3.5.x — verified now passing on 3.9–3.12.
+
+### Added
+- GitHub Actions CI: pytest matrix on Python 3.9–3.12, ruff lint job,
+  cancel-in-progress concurrency, `contents: read` permissions only.
+- `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).
+- Animated hero GIF at `docs/images/hero.gif` (driven by `scripts/hero.tape`,
+  rebuilt via `bash scripts/build-hero-gif.sh`).
+- Issue & PR templates under `.github/`.
+
+---
+
 ## v3.5.1 — 2026-05-08
 
 ### Changed

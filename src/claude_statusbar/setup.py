@@ -15,7 +15,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 from .cache import atomic_write_text
 
@@ -140,20 +140,24 @@ def _existing_uses_render(existing) -> bool:
     return len(parts) >= 2 and parts[1] == "render"
 
 
-def ensure_statusline_configured(fast: bool = False) -> Tuple[bool, str]:
+def ensure_statusline_configured(fast: Optional[bool] = None) -> Tuple[bool, str]:
     """Silently ensure settings.json has *our* statusLine config.
 
-    Behavior:
-      - missing       → write our config (honors `fast` arg)
-      - foreign cmd   → leave alone (don't overwrite another tool's setup)
-      - our cmd, stale path → refresh, *preserving* the user's existing
-        fast/inline choice (so the daily auto-repair doesn't downgrade
-        a user who explicitly opted into `cs --setup --fast`).
-      - our cmd, current → no-op
+    `fast` is tri-state:
+      - ``None``  (default): preserve the user's existing fast/inline choice;
+        for fresh writes (no statusLine yet), use daemon mode (the 3.6.0
+        default). This is what the daily auto-repair path passes — it
+        should never make a policy decision on the user's behalf.
+      - ``True``: force daemon mode (``cs render``). Used when the user runs
+        ``cs --setup`` (3.6.0 default) or the explicit ``cs --setup --fast``.
+      - ``False``: force inline mode. Used when the user runs
+        ``cs --setup --inline`` to opt out.
 
-    `fast=True` only forces the write to `cs render`. `fast=False` does
-    NOT force a downgrade — it just means "if you have to write fresh,
-    pick the inline form". Existing fast-mode entries are left alone.
+    Behavior:
+      - missing       → write our config (fast=True if None, else honors arg)
+      - foreign cmd   → leave alone (don't overwrite another tool's setup)
+      - our cmd       → refresh path; ``fast=None`` preserves existing,
+                        ``fast=True/False`` forces the write.
 
     Returns (changed, message).
     """
@@ -161,7 +165,9 @@ def ensure_statusline_configured(fast: bool = False) -> Tuple[bool, str]:
     existing = settings.get("statusLine")
 
     if existing is None:
-        desired = _statusline_config(fast=fast)
+        # Fresh install: default to fast/daemon since 3.6.0.
+        write_fast = True if fast is None else fast
+        desired = _statusline_config(fast=write_fast)
         settings["statusLine"] = desired
         if _write_settings(settings):
             return True, f"Added statusLine config to {SETTINGS_PATH}"
@@ -177,11 +183,13 @@ def ensure_statusline_configured(fast: bool = False) -> Tuple[bool, str]:
             f"manually if you want claude-statusbar."
         )
 
-    # Ours already. Compute desired command preserving (a) fast mode if the
-    # user currently uses it (so the daily auto-repair never downgrades them)
-    # and (b) any explicit refreshInterval the user already set, so we don't
-    # silently bump someone's 60s cadence to our 1s default.
-    effective_fast = fast or _existing_uses_render(existing)
+    # Ours already. Determine effective_fast:
+    # - fast=None  → preserve user's existing choice
+    # - fast=bool  → respect it as an explicit user request
+    if fast is None:
+        effective_fast = _existing_uses_render(existing)
+    else:
+        effective_fast = fast
     existing_refresh = existing.get("refreshInterval")
     if isinstance(existing_refresh, (int, float)) and existing_refresh > 0:
         effective_refresh = int(existing_refresh)
@@ -287,12 +295,14 @@ def install_skills(force: bool = False) -> Tuple[int, list[str]]:
     return installed, skipped
 
 
-def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = False) -> int:
+def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = True) -> int:
     """Interactive setup: configure the statusLine and install slash commands.
 
-    `fast=True` opts into Phase B daemon mode (statusLine command becomes
-    ``cs render``). Also kicks off ``cs daemon start`` so the user sees
-    the speedup immediately.
+    `fast=True` (default since 3.6.0) installs Phase B daemon mode: statusLine
+    command becomes ``cs render``, backed by a long-lived daemon. Each tick is
+    ~3-5ms vs ~30ms inline, which keeps continuous CPU under 1% at
+    refreshInterval=1 (vs ~3% in inline mode). Pass ``fast=False`` to opt back
+    into the legacy inline path.
 
     Returns exit code (0 success, 1 partial failure, 2 unrecoverable).
     """

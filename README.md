@@ -37,13 +37,15 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 
 ## Latest release
 
-**v3.5.1** (2026-05-08) — `npx skills add` install path, `show_cache_age` on by default.
+**v3.6.0** (2026-05-08) — **`cs --setup` now defaults to daemon (fast) mode**: under 1% CPU continuously instead of ~3% inline. Pass `--inline` to opt back. Also: py3.9 compat fixes, GitHub Actions CI, animated hero GIF.
+
+**v3.5.1** — `npx skills add` install path, `show_cache_age` on by default.
 
 **v3.5.0** — consolidated `claude-statusbar` skill: say *"switch theme to nord"* / *"余量颜色改成 #4ec85b"* and Claude Code routes it to the right `cs` command.
 
 **v3.4** — per-segment color management (each metric colors itself by its own severity), classic style finally respects themes, two new themes (`catppuccin-mocha`, `tokyo-night`), per-severity color overrides via `cs config set color_ok|warn|hot`.
 
-**v3.2** — daemon fast-mode for ~5× lower CPU at `refreshInterval=1`.
+**v3.2** — daemon fast-mode (now the default in v3.6.0) for ~5× lower CPU at `refreshInterval=1`.
 
 Full release notes in [CHANGELOG.md](CHANGELOG.md).
 
@@ -90,13 +92,13 @@ Then add to `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "cs",
+    "command": "cs render",
     "refreshInterval": 1
   }
 }
 ```
 
-`cs --setup` writes `refreshInterval: 1` by default so the cache-age countdown ticks visibly. At 1Hz, the inline `cs` command runs ~30ms per render (~3% CPU continuously); if that's a concern, run `cs --setup --fast` instead — daemon mode brings it under 1%. To go quieter, set `refreshInterval` to a higher value (`30`, `60`) — `cs --setup` will preserve any explicit value you've already chosen.
+`cs --setup` (since v3.6.0) writes `cs render` + `refreshInterval: 1` by default — daemon mode, under 1% CPU continuously, smooth per-second ticks for the cache-age countdown. The daemon is auto-started by `cs --setup` and lazy-respawns on `cs render` if it ever dies, so you never see a frozen bar. To opt out and use the legacy inline path, run `cs --setup --inline` (writes plain `cs`, ~3% CPU at 1Hz). To go quieter regardless of mode, set `refreshInterval` to a higher value (`30`, `60`) — `cs --setup` preserves any explicit value you've already chosen.
 
 ### Skill-only install (already have `cs`)
 
@@ -215,20 +217,19 @@ Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs
 
 Override per-invocation via `--style` / `--theme` flags or `CLAUDE_STATUSBAR_STYLE` / `CLAUDE_STATUSBAR_THEME` env vars.
 
-## Fast mode — for `refreshInterval: 1`
+## Fast mode (daemon) — default since v3.6.0
 
-If you've set `"refreshInterval": 1` in `settings.json` (so the cache-age widget ticks every second), the default `cs` command runs ~45ms per render = ~4% CPU continuously. Fast mode brings that down to ~3-5ms per render = under 1% CPU by keeping a long-lived `cs daemon` that pre-renders into `~/.cache/claude-statusbar/rendered.ansi`. The statusLine command becomes `cs render` — a thin reader that just `cat`s the file.
+`cs --setup` writes `cs render` + `refreshInterval: 1` by default. A long-lived `cs daemon` pre-renders into `~/.cache/claude-statusbar/rendered.ansi`; the statusLine command (`cs render`) is a thin reader that just `cat`s the file. Each tick is ~3-5ms, so total CPU stays under 1% continuously. The legacy inline path (~30ms/tick, ~3% CPU at 1Hz) is still available via `cs --setup --inline`.
 
 ```bash
-cs --setup --fast        # writes settings.json + spins up the daemon
-cs daemon status         # check it's alive
+cs --setup               # default: daemon mode, auto-starts the daemon
+cs --setup --inline      # opt out, use legacy inline path
+cs daemon status         # check the daemon is alive
 cs daemon stop           # stop the daemon (statusLine falls back to inline)
 cs daemon start          # start it again
 ```
 
 Crash safety: if the daemon dies or freezes, `cs render` notices `rendered.meta.json` is older than 5s and falls back to inline render — and lazily re-spawns the daemon in the background. You never see a frozen status line.
-
-To revert: `cs --setup` (no `--fast`) restores the bare-`cs` legacy command.
 
 ### Optional: auto-start on login (launchd / systemd)
 
@@ -297,8 +298,9 @@ cs preview                      # render every style × theme with YOUR real dat
 cs preview --theme nord         # filter to one theme
 cs preview --style hairline --theme dracula   # one specific combo
 
-# Daemon mode (v3.2+, opt-in)
-cs --setup --fast               # switch statusLine to `cs render` + start daemon
+# Daemon mode (default since v3.6.0; v3.2 introduced it as opt-in)
+cs --setup                      # default: writes `cs render` + starts daemon
+cs --setup --inline             # opt out, use legacy inline path
 cs daemon start                 # start daemon (manual)
 cs daemon stop                  # stop daemon
 cs daemon status                # pid + rendered.ansi freshness
