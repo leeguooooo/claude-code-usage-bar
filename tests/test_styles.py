@@ -27,9 +27,12 @@ def test_three_builtin_styles():
     assert set(list_styles()) == {"classic", "capsule", "hairline"}
 
 
-def test_seven_builtin_themes():
+def test_builtin_themes():
     names = {t.name for t in list_themes()}
-    assert names == {"graphite", "twilight", "linen", "nord", "dracula", "sakura", "mono"}
+    assert names == {
+        "graphite", "twilight", "linen", "nord", "dracula", "sakura", "mono",
+        "catppuccin-mocha", "tokyo-night",
+    }
 
 
 _ANSI_RE = __import__("re").compile(r"\033\[[0-9;]*m")

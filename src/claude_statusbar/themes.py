@@ -99,6 +99,38 @@ BUILTIN_THEMES = [
         pill_model=(75, 75, 75), pill_lang=(50, 50, 50), pill_cost=(60, 60, 60),
         pill_ink=(235, 235, 235),
     ),
+    Theme(
+        name="catppuccin-mocha",
+        description="Catppuccin Mocha — 柔和 pastel，长时间阅读不疲劳",
+        ink=(205, 214, 244),       # Text
+        mute=(127, 132, 156),      # Overlay1
+        edge=(69, 71, 90),         # Surface1
+        s_ok=(166, 227, 161),      # Green — 清晰柔和的绿
+        s_warn=(250, 179, 135),    # Peach — 暖橙黄，比 Yellow 更明确"警告"
+        s_hot=(243, 139, 168),     # Red — 玫瑰红，不刺眼
+        pill_5h=(49, 50, 68),      # Surface0 偏冷
+        pill_7d=(57, 50, 80),      # Surface0 + Mauve
+        pill_model=(73, 49, 70),   # Surface0 + Pink
+        pill_lang=(58, 70, 60),    # Surface0 + Green
+        pill_cost=(70, 58, 48),    # Surface0 + Peach
+        pill_ink=(205, 214, 244),  # Text
+    ),
+    Theme(
+        name="tokyo-night",
+        description="Tokyo Night — 深邃霓虹蓝调，对比鲜明却不喧闹",
+        ink=(192, 202, 245),       # fg
+        mute=(86, 95, 137),        # comment
+        edge=(65, 72, 104),        # bg_dark
+        s_ok=(158, 206, 106),      # green
+        s_warn=(224, 175, 104),    # yellow
+        s_hot=(247, 118, 142),     # red
+        pill_5h=(48, 50, 80),
+        pill_7d=(56, 44, 72),
+        pill_model=(72, 56, 88),
+        pill_lang=(46, 60, 50),
+        pill_cost=(58, 50, 44),
+        pill_ink=(192, 202, 245),
+    ),
 ]
 
 _BY_NAME = {t.name: t for t in BUILTIN_THEMES}
