@@ -5,6 +5,7 @@ Heavy imports (.core, .styles, .themes) are deferred into the branches
 that actually need them, so `cs config show` and the other lightweight
 subcommands don't pay the ~13ms render-path import tax.
 """
+from __future__ import annotations
 
 import sys
 import os
