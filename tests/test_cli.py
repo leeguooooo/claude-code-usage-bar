@@ -148,3 +148,26 @@ def test_config_reset_unknown_action_returns_2(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "unknown config action" in err
     assert "reset" in err  # the help line should mention it now
+
+
+def test_project_flag_requires_setup(monkeypatch, capsys):
+    """`cs --project foo` without `--setup` would silently render the bar
+    and ignore the flag — argparse must reject it instead."""
+    import pytest
+    monkeypatch.setattr(sys, "argv", ["cs", "--project", "/tmp/somewhere"])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "--project" in err and "--setup" in err
+
+
+def test_bare_project_flag_requires_setup(monkeypatch, capsys):
+    """Bare `cs --project` (nargs='?' const='.') must also be rejected."""
+    import pytest
+    monkeypatch.setattr(sys, "argv", ["cs", "--project"])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "--project" in err and "--setup" in err

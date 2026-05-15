@@ -243,3 +243,118 @@ def test_run_setup_partial_failure_returns_one(isolated, monkeypatch, capsys):
     }) + "\n", encoding="utf-8")
     rc = setup_mod.run_setup(verbose=False)
     assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# ensure_project_statusline_configured
+# ---------------------------------------------------------------------------
+def test_project_setup_creates_fresh_settings(tmp_path: Path):
+    ok, msg = setup_mod.ensure_project_statusline_configured(tmp_path)
+    assert ok is True
+    assert "Wrote project statusLine" in msg
+    data = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert data["statusLine"]["type"] == "command"
+    cmd_path = data["statusLine"]["command"].split()[0]
+    assert Path(cmd_path).name in setup_mod.OUR_COMMAND_NAMES
+
+
+def test_project_setup_preserves_existing_keys(tmp_path: Path):
+    """Other settings (hooks, permissions, etc.) in the project file must
+    survive — we only own statusLine."""
+    proj_settings = tmp_path / ".claude" / "settings.json"
+    proj_settings.parent.mkdir(parents=True)
+    proj_settings.write_text(json.dumps({
+        "hooks": {"PostToolUse": [{"matcher": "Edit"}]},
+        "permissions": {"deny": ["Bash(rm:*)"]},
+    }) + "\n", encoding="utf-8")
+
+    ok, _ = setup_mod.ensure_project_statusline_configured(tmp_path)
+    assert ok is True
+    data = json.loads(proj_settings.read_text(encoding="utf-8"))
+    assert data["hooks"] == {"PostToolUse": [{"matcher": "Edit"}]}
+    assert data["permissions"] == {"deny": ["Bash(rm:*)"]}
+    assert "statusLine" in data
+
+
+def test_project_setup_idempotent(tmp_path: Path):
+    setup_mod.ensure_project_statusline_configured(tmp_path)
+    ok, msg = setup_mod.ensure_project_statusline_configured(tmp_path)
+    assert ok is False
+    assert "already configured" in msg
+
+
+def test_project_setup_refuses_to_trample_foreign_statusline(tmp_path: Path):
+    proj_settings = tmp_path / ".claude" / "settings.json"
+    proj_settings.parent.mkdir(parents=True)
+    proj_settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "starship-prompt"}
+    }) + "\n", encoding="utf-8")
+
+    ok, msg = setup_mod.ensure_project_statusline_configured(tmp_path)
+    assert ok is False
+    assert "starship-prompt" in msg
+    # File must be untouched.
+    data = json.loads(proj_settings.read_text(encoding="utf-8"))
+    assert data["statusLine"]["command"] == "starship-prompt"
+
+
+def test_project_setup_missing_directory(tmp_path: Path):
+    nope = tmp_path / "does-not-exist"
+    ok, msg = setup_mod.ensure_project_statusline_configured(nope)
+    assert ok is False
+    assert "not found" in msg
+
+
+def test_project_setup_inline_mode_omits_render_arg(tmp_path: Path):
+    """`--inline` (fast=False) must NOT write `cs render` — that would force
+    the daemon path on a user who explicitly opted out."""
+    ok, _ = setup_mod.ensure_project_statusline_configured(tmp_path, fast=False)
+    assert ok is True
+    data = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    parts = data["statusLine"]["command"].split()
+    assert len(parts) == 1, f"inline mode should be bare binary, got {parts!r}"
+
+
+def test_project_setup_refuses_unreadable_existing_file(tmp_path: Path):
+    """If the existing settings.json can't be read (e.g. permission denied),
+    we must NOT silently overwrite it — otherwise a misconfigured project
+    loses its settings."""
+    import os
+
+    proj_settings = tmp_path / ".claude" / "settings.json"
+    proj_settings.parent.mkdir(parents=True)
+    proj_settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "cs"}
+    }) + "\n", encoding="utf-8")
+    original = proj_settings.read_bytes()
+    proj_settings.chmod(0o000)
+    try:
+        ok, msg = setup_mod.ensure_project_statusline_configured(tmp_path)
+    finally:
+        proj_settings.chmod(0o644)
+
+    assert ok is False
+    assert "Could not read" in msg
+    # Critically: file must be byte-for-byte unchanged.
+    assert proj_settings.read_bytes() == original
+
+
+def test_project_setup_dot_claude_is_a_file(tmp_path: Path):
+    """`.claude` existing as a regular file (not a directory) must produce
+    a clean error message instead of an uncaught NotADirectoryError."""
+    (tmp_path / ".claude").write_text("not a directory", encoding="utf-8")
+    ok, msg = setup_mod.ensure_project_statusline_configured(tmp_path)
+    assert ok is False
+    assert "Could not create" in msg
+
+
+def test_project_setup_corrupt_existing_json_is_overwritten(tmp_path: Path):
+    """Defensive: if the existing settings.json is malformed, we treat it as
+    empty and write our statusLine on top (versus crashing or refusing)."""
+    proj_settings = tmp_path / ".claude" / "settings.json"
+    proj_settings.parent.mkdir(parents=True)
+    proj_settings.write_text("{ broken json", encoding="utf-8")
+    ok, _ = setup_mod.ensure_project_statusline_configured(tmp_path)
+    assert ok is True
+    data = json.loads(proj_settings.read_text(encoding="utf-8"))
+    assert "statusLine" in data

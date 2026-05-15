@@ -141,6 +141,10 @@ def _setup_session_paths(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(render_thin, "_CACHE_DIR", tmp_path)
     monkeypatch.setattr(render_thin, "_SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr(render_thin, "_LEGACY_STDIN_CACHE", tmp_path / "last_stdin.json")
+    # Point the displacement check at a non-existent file by default so the
+    # warning suffix tests stay isolated from the developer's real
+    # ~/.claude/settings.json (which may itself be displaced).
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", tmp_path / "no-such-settings.json")
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +171,107 @@ def test_thin_client_fast_path_prints_rendered(monkeypatch, tmp_path: Path, caps
     out = capsys.readouterr().out
     assert rc == 0
     assert out == "FAKE STATUS LINE\n"
+
+
+def test_thin_client_appends_displacement_warning(monkeypatch, tmp_path: Path, capsys):
+    """When ~/.claude/settings.json statusLine points at someone else's
+    binary, cs render must append a one-line warning so the user notices
+    their global bar got hijacked (e.g. by open-island). This only fires
+    in projects where cs is still wired up via a project-level override —
+    in those projects the bar still renders, and the suffix is the only
+    feedback channel we have."""
+    _setup_session_paths(monkeypatch, tmp_path)
+    sid = "displaced-sid"
+    sdir = tmp_path / "sessions" / sid
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("FAKE BAR\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time(),
+        "stale_after_seconds": 5.0,
+    }), encoding="utf-8")
+
+    foreign_settings = tmp_path / "foreign-settings.json"
+    foreign_settings.write_text(json.dumps({
+        "statusLine": {
+            "type": "command",
+            "command": "/Users/leo/.open-island/bin/open-island-statusline",
+        }
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", foreign_settings)
+
+    payload = json.dumps({"session_id": sid}).encode()
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload)
+
+    rc = render_thin.render()
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "FAKE BAR" in out
+    assert "open-island-statusline" in out
+    assert "cs --setup" in out
+    # Suffix must land on the same line as the bar — exactly one newline.
+    assert out.count("\n") == 1
+
+
+def test_thin_client_no_warning_when_ours(monkeypatch, tmp_path: Path, capsys):
+    _setup_session_paths(monkeypatch, tmp_path)
+    sid = "happy-sid"
+    sdir = tmp_path / "sessions" / sid
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("FAKE BAR\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time(),
+        "stale_after_seconds": 5.0,
+    }), encoding="utf-8")
+    own = tmp_path / "own-settings.json"
+    own.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "/usr/local/bin/cs render"}
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", own)
+
+    payload = json.dumps({"session_id": sid}).encode()
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload)
+    render_thin.render()
+    out = capsys.readouterr().out
+    assert out == "FAKE BAR\n"
+
+
+def test_thin_client_no_warning_when_settings_missing(monkeypatch, tmp_path: Path, capsys):
+    _setup_session_paths(monkeypatch, tmp_path)
+    sid = "missing-sid"
+    sdir = tmp_path / "sessions" / sid
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("FAKE BAR\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time(),
+        "stale_after_seconds": 5.0,
+    }), encoding="utf-8")
+    # _USER_SETTINGS already monkey-patched to a non-existent path in setup.
+    payload = json.dumps({"session_id": sid}).encode()
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload)
+    render_thin.render()
+    out = capsys.readouterr().out
+    assert out == "FAKE BAR\n"
+
+
+def test_thin_client_no_warning_when_settings_corrupt(monkeypatch, tmp_path: Path, capsys):
+    """A malformed settings.json must not crash the render path."""
+    _setup_session_paths(monkeypatch, tmp_path)
+    sid = "corrupt-sid"
+    sdir = tmp_path / "sessions" / sid
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("FAKE BAR\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time(),
+        "stale_after_seconds": 5.0,
+    }), encoding="utf-8")
+    bad = tmp_path / "bad.json"
+    bad.write_text("{ not json", encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", bad)
+    payload = json.dumps({"session_id": sid}).encode()
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: payload)
+    render_thin.render()
+    out = capsys.readouterr().out
+    assert out == "FAKE BAR\n"
 
 
 def test_thin_client_forwards_stdin_to_per_session_cache(monkeypatch, tmp_path: Path):
@@ -233,6 +338,48 @@ def test_thin_client_fallback_when_no_meta(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(render_thin, "_spawn_daemon_async", lambda: None)
     assert render_thin.render() == 0
     assert fallback_called == [True]
+
+
+def test_fallback_inline_appends_displacement_warning(monkeypatch, tmp_path: Path, capsys):
+    """The inline fallback path (daemon dead / no fresh meta) must also
+    surface the displacement warning. We stub core.main to print a known
+    string, then assert the suffix is spliced in."""
+    foreign = tmp_path / "foreign.json"
+    foreign.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "other-tool-bin"}
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", foreign)
+
+    def fake_core_main():
+        sys.stdout.write("FAKE INLINE BAR\n")
+
+    import claude_statusbar.core as _core
+    monkeypatch.setattr(_core, "main", fake_core_main)
+
+    render_thin._fallback_inline()
+    out = capsys.readouterr().out
+    assert "FAKE INLINE BAR" in out
+    assert "other-tool-bin" in out
+    assert "cs --setup" in out
+    assert out.count("\n") == 1
+
+
+def test_fallback_inline_passthrough_when_not_displaced(monkeypatch, tmp_path: Path, capsys):
+    own = tmp_path / "own.json"
+    own.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "cs render"}
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", own)
+
+    def fake_core_main():
+        sys.stdout.write("FAKE INLINE BAR\n")
+
+    import claude_statusbar.core as _core
+    monkeypatch.setattr(_core, "main", fake_core_main)
+
+    render_thin._fallback_inline()
+    out = capsys.readouterr().out
+    assert out == "FAKE INLINE BAR\n"
 
 
 def test_thin_client_fallback_replays_stdin_for_core_main(monkeypatch, tmp_path: Path):

@@ -210,6 +210,83 @@ def ensure_statusline_configured(fast: Optional[bool] = None) -> Tuple[bool, str
     return False, "statusLine already configured"
 
 
+def project_settings_path(project_dir: Path) -> Path:
+    """Where Claude Code looks for a project-level statusLine override."""
+    return project_dir / ".claude" / "settings.json"
+
+
+def ensure_project_statusline_configured(
+    project_dir: Path,
+    fast: bool = True,
+    refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
+) -> Tuple[bool, str]:
+    """Write a project-level .claude/settings.json so that this project's
+    statusLine survives even when another tool reclaims the user-level
+    ~/.claude/settings.json slot.
+
+    Behavior:
+      - project_dir missing → error.
+      - .claude/settings.json missing → write a new one with statusLine only.
+      - file exists, no statusLine → merge our statusLine in, keep other keys.
+      - statusLine already ours → idempotent (refresh path/refreshInterval if drifted).
+      - statusLine is a foreign command → leave alone (don't trample).
+
+    Returns (changed, message).
+    """
+    try:
+        project_dir = Path(project_dir).expanduser().resolve()
+    except (OSError, RuntimeError) as e:
+        return False, f"Could not resolve project path: {e}"
+    if not project_dir.is_dir():
+        return False, f"Project directory not found: {project_dir}"
+
+    path = project_settings_path(project_dir)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        return False, f"Could not create {path.parent}: {e}"
+
+    if path.exists():
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as e:
+            # File is there but we can't read it — most likely permission
+            # denied. Bail without writing, otherwise atomic_write_text
+            # would clobber a file we couldn't inspect.
+            return False, f"Could not read {path}: {e}"
+        try:
+            existing_data = json.loads(raw)
+            if not isinstance(existing_data, dict):
+                existing_data = {}
+        except json.JSONDecodeError:
+            # Corrupt JSON: treated as empty so the next write resets the file.
+            existing_data = {}
+    else:
+        existing_data = {}
+
+    existing_sl = existing_data.get("statusLine")
+    if (existing_sl is not None
+            and isinstance(existing_sl, dict)
+            and not _is_our_statusline(existing_sl)):
+        cmd = existing_sl.get("command", "?")
+        return False, (
+            f"{path} already has a non-cs statusLine ({cmd!r}). "
+            f"Edit it manually if you want cs there."
+        )
+
+    desired = _statusline_config(fast=fast, refresh_interval=refresh_interval)
+    if existing_sl == desired:
+        return False, f"statusLine already configured at {path}"
+
+    existing_data["statusLine"] = desired
+    if atomic_write_text(
+        path,
+        json.dumps(existing_data, indent=2, ensure_ascii=False) + "\n",
+    ):
+        return True, f"Wrote project statusLine to {path}"
+    return False, f"Could not write to {path}"
+
+
 def _packaged_commands_dir() -> Path:
     """Return the directory bundled with the package that holds slash commands."""
     here = Path(__file__).resolve()

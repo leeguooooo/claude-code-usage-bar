@@ -313,6 +313,20 @@ Integration:
         ),
     )
     parser.add_argument(
+        "--project",
+        type=str,
+        nargs="?",
+        const=".",
+        default=None,
+        metavar="PATH",
+        help=(
+            "When used with --setup, write a project-level "
+            ".claude/settings.json (in PATH, or the current directory if "
+            "no path is given) that overrides the global statusLine. Use "
+            "this when another tool keeps reclaiming the user-level slot."
+        ),
+    )
+    parser.add_argument(
         "--install-deps",
         action="store_true",
         help="Install claude-monitor dependency for full functionality",
@@ -379,6 +393,12 @@ Integration:
 
     args = parser.parse_args()
 
+    # --project only makes sense with --setup; rejecting up-front prevents
+    # the silent no-op of `cs --project foo` (which would otherwise render
+    # the bar and discard the flag).
+    if args.project is not None and not args.setup:
+        parser.error("--project requires --setup")
+
     if sys.version_info < (3, 9):
         print(
             "claude-statusbar requires Python 3.9+; please upgrade your interpreter.",
@@ -429,6 +449,17 @@ Integration:
         # Daemon (fast) mode is the default since 3.6.0; --inline opts out.
         # Keep the legacy --fast flag accepted (no-op) so existing scripts work.
         fast = not args.inline
+        if args.project is not None:
+            from pathlib import Path
+            from .setup import ensure_project_statusline_configured
+            ok, msg = ensure_project_statusline_configured(
+                Path(args.project), fast=fast
+            )
+            done = ok or "already configured" in msg
+            print(f"{'✓' if done else '!'} {msg}")
+            if ok:
+                print("  Restart Claude Code in this directory for the override to take effect.")
+            return 0 if done else 1
         return run_setup(verbose=True, fast=fast)
 
     if args.install_deps:

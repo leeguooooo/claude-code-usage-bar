@@ -77,6 +77,47 @@ def _is_fresh(meta: dict) -> bool:
 # daemon reads from per-session paths now.
 _LEGACY_STDIN_CACHE = _CACHE_DIR / "last_stdin.json"
 
+# Watched for displacement detection: if another tool (e.g. open-island)
+# rewrites this file's statusLine.command, we still want to surface that
+# in projects where a .claude/settings.json override keeps cs alive.
+_USER_SETTINGS = Path.home() / ".claude" / "settings.json"
+_OUR_BINARY_NAMES = ("cs", "cstatus", "claude-statusbar")
+
+
+def _displacement_suffix() -> str:
+    """If ~/.claude/settings.json statusLine points at a foreign binary,
+    return a short ANSI-red suffix the caller can append to the bar.
+    Empty string otherwise. Best-effort — never raises, never logs.
+
+    One read_text() per render tick: skip the redundant exists() syscall
+    and let FileNotFoundError (an OSError) signal "no file."
+    """
+    try:
+        data = json.loads(_USER_SETTINGS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):  # JSONDecodeError ⊂ ValueError
+        return ""
+    sl = data.get("statusLine") if isinstance(data, dict) else None
+    if not isinstance(sl, dict):
+        return ""
+    cmd = sl.get("command")
+    if not isinstance(cmd, str) or not cmd.strip():
+        return ""
+    name = Path(cmd.strip().split()[0]).name
+    if name in _OUR_BINARY_NAMES:
+        return ""
+    # ANSI red. Kept short so it doesn't blow up the bar on narrow terminals.
+    return f"  \x1b[31m⚠ statusLine 被 {name} 占用 · cs --setup\x1b[0m"
+
+
+def _append_suffix(content: str, suffix: str) -> str:
+    """Insert `suffix` before the trailing newline so it lands on the bar
+    line, not the next line. No-op if suffix is empty."""
+    if not suffix:
+        return content
+    if content.endswith("\n"):
+        return content[:-1] + suffix + "\n"
+    return content + suffix
+
 
 def _consume_stdin() -> bytes | None:
     """Read Claude Code's stdin payload (bytes) and return it.
@@ -167,9 +208,20 @@ def _spawn_daemon_async() -> None:
 
 
 def _fallback_inline() -> int:
-    """Run the legacy inline render path. Costs ~45ms (Phase A baseline)."""
+    """Run the legacy inline render path. Costs ~45ms (Phase A baseline).
+
+    Captures stdout so we can splice the displacement suffix onto the bar
+    line — same warning the fast path appends. If suffix is empty we hand
+    the captured output through unchanged.
+    """
+    import contextlib
+    import io as _io
     from .core import main as core_main
-    core_main()
+
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        core_main()
+    sys.stdout.write(_append_suffix(buf.getvalue(), _displacement_suffix()))
     return 0
 
 
@@ -195,7 +247,8 @@ def render() -> int:
     meta = _read_meta(meta_path)
     if meta is not None and _is_fresh(meta):
         try:
-            sys.stdout.write(rendered_path.read_text(encoding="utf-8"))
+            content = rendered_path.read_text(encoding="utf-8")
+            sys.stdout.write(_append_suffix(content, _displacement_suffix()))
             return 0
         except OSError:
             # rendered.ansi disappeared between the meta read and the read.

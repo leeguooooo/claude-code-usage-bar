@@ -9,6 +9,37 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.7.0 — 2026-05-15
+
+### Added
+- **`cs --setup --project [PATH]`** — write a project-level
+  `.claude/settings.json` (PATH defaults to the current directory) that
+  overrides the global statusLine. Use this when another tool keeps
+  reclaiming the user-level slot — the project file wins for any Claude
+  Code session opened in that directory. Preserves other keys (hooks,
+  permissions, etc.); refuses to trample a non-cs `statusLine` already
+  present. Honors `--inline`.
+- **Displacement warning on the bar.** If `~/.claude/settings.json`
+  `statusLine.command` no longer resolves to one of our binaries (`cs` /
+  `cstatus` / `claude-statusbar`), `cs render` appends a short red
+  `⚠ statusLine 被 <foreign> 占用 · cs --setup` suffix to the bar line.
+  Fires in both the fast (daemon-cat) path and the inline fallback —
+  useful when a project keeps `cs` alive via the new `--project` override
+  but the global file got hijacked. You see it the moment the bar renders.
+
+### Fixed
+- `ensure_project_statusline_configured` refuses to overwrite a
+  `.claude/settings.json` that exists but can't be read (e.g. permission
+  denied). Previously the read error was swallowed and treated as
+  "empty," which would have silently clobbered the file on the next write.
+- Clean error messages when `.claude` exists as a regular file (instead
+  of a directory) or when the project path can't be resolved (symlink
+  loop, unresolvable `~`). No more raw `NotADirectoryError` traceback.
+- `cs --project` without `--setup` is now rejected by argparse; the flag
+  used to be silently swallowed and the bar would render normally.
+
+---
+
 ## v3.6.0 — 2026-05-08
 
 ### Changed
