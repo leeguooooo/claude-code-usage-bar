@@ -70,23 +70,15 @@ Colors default to green / yellow / red at `30%` and `70%` — both thresholds co
 
 ## Install
 
-### One-line install (recommended)
+### Recommended: PyPI
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
+pip install claude-statusbar     # or: uv tool install claude-statusbar
+                                 # or: pipx install claude-statusbar
+cs --setup                       # wires the statusLine hook + installs the skill
 ```
 
-Installs the package, configures Claude Code's `statusLine`, sets up shell aliases. Restart Claude Code to see the bar.
-
-### Package managers
-
-```bash
-pip install claude-statusbar     # pip
-uv tool install claude-statusbar # uv
-pipx install claude-statusbar    # pipx
-```
-
-Then add to `~/.claude/settings.json`:
+Restart Claude Code to see the bar. `cs --setup` writes the following into `~/.claude/settings.json` (existing files are backed up first, other keys are preserved):
 
 ```json
 {
@@ -98,7 +90,25 @@ Then add to `~/.claude/settings.json`:
 }
 ```
 
-`cs --setup` (since v3.6.0) writes `cs render` + `refreshInterval: 1` by default — daemon mode, under 1% CPU continuously, smooth per-second ticks for the cache-age countdown. The daemon is auto-started by `cs --setup` and lazy-respawns on `cs render` if it ever dies, so you never see a frozen bar. To opt out and use the legacy inline path, run `cs --setup --inline` (writes plain `cs`, ~3% CPU at 1Hz). To go quieter regardless of mode, set `refreshInterval` to a higher value (`30`, `60`) — `cs --setup` preserves any explicit value you've already chosen.
+Since v3.6.0 `cs --setup` defaults to daemon mode (`cs render` + `refreshInterval: 1`), which keeps CPU under 1% continuously while ticking the cache-age countdown every second. The daemon is auto-started by `cs --setup` and lazy-respawns on `cs render` if it ever dies, so you never see a frozen bar. Opt out with `cs --setup --inline` (writes plain `cs`, ~3% CPU at 1Hz) or set `refreshInterval` to a higher value — `cs --setup` preserves any explicit value you've already chosen.
+
+### Alternative: one-shot installer (audit first, then run)
+
+A bash helper is available if you'd rather not chain `pip install` + `cs --setup` manually. **Please read it before running** — it modifies `~/.claude/settings.json` and (with your explicit `[y/N]` consent) `~/.bashrc` / `~/.zshrc`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh -o /tmp/cs-install.sh
+less /tmp/cs-install.sh    # audit it
+bash /tmp/cs-install.sh
+```
+
+Or, if you've already audited the script and trust this repo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh | bash
+```
+
+The header of [`web-install.sh`](web-install.sh) lists exactly what it touches.
 
 ### Skill-only install (already have `cs`)
 
