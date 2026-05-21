@@ -32,6 +32,7 @@ class StatusbarConfig:
     show_language: bool = True
     show_cost: bool = False
     show_cache_age: bool = True
+    show_project_branch: bool = False
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
@@ -68,6 +69,7 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
         show_language=_to_bool(raw.get("show_language", True)),
         show_cost=_to_bool(raw.get("show_cost", False)),
         show_cache_age=_to_bool(raw.get("show_cache_age", True)),
+        show_project_branch=_to_bool(raw.get("show_project_branch", False)),
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", DEFAULT_CACHE_TTL_SECONDS) or DEFAULT_CACHE_TTL_SECONDS),
         warning_threshold=raw.get("warning_threshold"),
         critical_threshold=raw.get("critical_threshold"),
@@ -86,11 +88,13 @@ def save_config(cfg: StatusbarConfig, path: Path = CONFIG_PATH) -> None:
 VALID_KEYS = {
     "style", "theme", "density", "auto_compact_width",
     "show_weekly", "show_language", "show_cost", "show_cache_age",
+    "show_project_branch",
     "cache_ttl_seconds",
     "warning_threshold", "critical_threshold",
     "color_ok", "color_warn", "color_hot",
 }
-_BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_cache_age"}
+_BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_cache_age",
+              "show_project_branch"}
 _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds"}
 _COLOR_KEYS = {"color_ok", "color_warn", "color_hot"}

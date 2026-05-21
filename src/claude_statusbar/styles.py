@@ -246,6 +246,46 @@ def render_classic(
     return result
 
 
+def render_identity_line(info, *, theme: Theme, dirty,
+                         use_color: bool = True) -> str:
+    """Render the optional 2nd-line `⤷ <project> ⎇ <branch>●` segment.
+
+    `dirty` is True / False / None — None means "unknown" (cache miss);
+    in that case we omit the dot rather than asserting clean.
+    """
+    if not use_color:
+        head = f"⤷ {info.project_name}"
+        if not info.in_git:
+            tail = " (no git)"
+        else:
+            branch = info.branch or "?"
+            dot = "●" if dirty else ""
+            tail = f" ⎇ {branch}{dot}"
+        if info.worktree_name:
+            tail += f" [worktree: {info.worktree_name}]"
+        return head + tail
+
+    MUTE = _fg(theme.mute)
+    EDGE = _fg(theme.edge)
+    INK = _fg(theme.pill_ink)
+    HOT = _fg(theme.s_warn)
+
+    head = f"{MUTE}⤷ {info.project_name}{RESET}"
+    if not info.in_git:
+        body = f" {MUTE}{ITAL}(no git){RESET}"
+    else:
+        branch = info.branch or "?"
+        if info.detached:
+            branch_styled = f"{MUTE}{ITAL}{branch}{RESET}"
+        else:
+            branch_styled = f"{INK}{branch}{RESET}"
+        dot = f"{HOT}●{RESET}" if dirty else ""
+        body = f" {EDGE}⎇{RESET} {branch_styled}{dot}"
+    if info.worktree_name:
+        body += f" {MUTE}[worktree: {info.worktree_name}]{RESET}"
+    return head + body
+
+
 RENDERERS = {
     "classic":  render_classic,
     "capsule":  render_capsule,
@@ -263,9 +303,25 @@ def render(style: str, **kwargs) -> str:
     Unknown kwargs are absorbed by each renderer's **_ignored, so callers can
     freely pass style-specific args (density, countdown_emoji, ...) to whichever
     renderer is selected.
+
+    The optional `show_project_branch`/`identity`/`identity_dirty` kwargs
+    cause a second `⤷ <project> ⎇ <branch>` line to be appended after the
+    style renderer returns. Identity rendering is style-agnostic.
     """
+    show_pb = kwargs.pop("show_project_branch", False)
+    info = kwargs.pop("identity", None)
+    dirty = kwargs.pop("identity_dirty", None)
+    theme = kwargs.get("theme") or get_theme("graphite")
+    use_color = kwargs.get("use_color", True)
+
     fn = RENDERERS.get(style, render_classic)
-    return fn(**kwargs)
+    out = fn(**kwargs)
+
+    if show_pb and info is not None:
+        out = out + "\n" + render_identity_line(
+            info, theme=theme, dirty=dirty, use_color=use_color,
+        )
+    return out
 
 
 def list_styles() -> list[str]:

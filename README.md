@@ -208,7 +208,8 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "show_weekly": true,
   "show_language": true,
   "show_cost": false,
-  "show_cache_age": true
+  "show_cache_age": true,
+  "show_project_branch": false
 }
 ```
 
@@ -222,6 +223,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_cost` | bool, default `false` | Append `$ X.XX` — the current session's cost as Claude Code reports it. For Pro/Max subscribers this is the **API-equivalent value** of your usage (what it would cost on the API), not money owed; many subscribers use it as a "subscription ROI" gauge. Opt-in because the "session" boundary is what Claude Code reports — not necessarily what you intuitively call one. |
 | `show_cache_age` | bool, default `true` | Append a `cache 4m23s` countdown to Anthropic's prompt-cache expiry. Three-level color: green (>1min remaining), yellow (<1min), red `cache COLD` (expired). Cache hits consume ~10× less rate-limit quota — for Pro/Max subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. `cs --setup` writes `refreshInterval: 1` by default so this segment ticks visibly. Original implementation contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). Disable with `cs config set show_cache_age false`. |
 | `cache_ttl_seconds` | int, default `300` | TTL the `show_cache_age` segment uses to decide warm vs. `COLD`. Defaults to Anthropic's 5-minute prompt cache. Set to `3600` if you've enabled the [1-hour extended cache](https://docs.claude.com/en/docs/build-with-claude/prompt-caching) via `ENABLE_PROMPT_CACHING_1H`. |
+| `show_project_branch` | bool, default `false` | Append a second line `⤷ <project> ⎇ <branch>●` below the bar. Project name comes from Claude Code's `workspace.repo.name` stdin field (falls back to cwd basename); branch is read from `.git/HEAD` directly. The `●` dirty marker is refreshed by a background helper and cached 5 s — the inline render path never blocks on `git`. Enable with `cs config set show_project_branch true`. |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
 
