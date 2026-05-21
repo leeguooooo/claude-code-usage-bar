@@ -9,7 +9,7 @@ For a quick overview of the latest release, see the
 
 ---
 
-## [Unreleased]
+## v3.8.0 — 2026-05-21
 
 ### Added
 - **Project + branch identity segment (default on).** Renders a second
