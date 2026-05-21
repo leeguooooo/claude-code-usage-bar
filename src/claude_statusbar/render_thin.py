@@ -52,13 +52,40 @@ def _read_meta(meta_path: Path) -> dict | None:
         return None
 
 
+_PKG_DIR = Path(__file__).resolve().parent
+
+
+def _pkg_mtime() -> float:
+    """Newest mtime among files in the installed package directory.
+
+    Used to detect "running daemon is older than the code on disk" (i.e.
+    the user just upgraded via PyPI but the long-lived daemon is still
+    serving stale renders). One `os.scandir` per render tick — cheap.
+    Returns 0 on any I/O error so the freshness check degrades to its
+    pre-upgrade behavior rather than thrashing.
+    """
+    try:
+        return max(e.stat().st_mtime for e in os.scandir(_PKG_DIR)
+                   if e.name.endswith(".py"))
+    except OSError:
+        return 0.0
+
+
 def _is_fresh(meta: dict) -> bool:
-    """Daemon's last write must be within stale_after_seconds of now.
+    """Daemon's last write must be within stale_after_seconds of now AND
+    the daemon must have started after the latest on-disk package code.
 
     Clock skew defense: if `generated_at` is in the future (NTP correction,
     container time-warp, user setting clock backward), treat the entry as
     STALE. Otherwise a wall-clock jump backward would freeze stale daemon
     output for the duration of the skew.
+
+    Code-drift defense: if the package directory on disk has files newer
+    than `daemon_started_at`, the daemon is running stale code (typical
+    after a `pip install -U` while a long-lived daemon keeps serving).
+    Treat as stale so the thin client falls back to inline + re-spawns
+    a fresh daemon. Pre-3.8.1 daemons don't write `daemon_started_at`;
+    those keep the old age-only behavior so upgrades roll out smoothly.
     """
     try:
         generated_at = float(meta.get("generated_at", 0))
@@ -69,7 +96,34 @@ def _is_fresh(meta: dict) -> bool:
     if delta < 0:
         # Future timestamp — treat as stale, fall back + re-spawn.
         return False
-    return delta <= stale_after
+    if delta > stale_after:
+        return False
+    daemon_started_at = meta.get("daemon_started_at")
+    if daemon_started_at is not None:
+        try:
+            started = float(daemon_started_at)
+        except (TypeError, ValueError):
+            return True  # malformed field; ignore code-drift check
+        if _pkg_mtime() > started:
+            return False
+    return True
+
+
+def _signal_outdated_daemon(meta: dict) -> None:
+    """Send SIGTERM to the daemon pid recorded in `meta`. Used after
+    `_is_fresh()` returns False due to code drift: the running daemon is
+    serving stale renders and won't restart on its own (its pidfile is
+    valid so lazy-spawn skips it). Best-effort — any error is silently
+    swallowed; the worst case is a duplicate daemon for one render tick.
+    """
+    pid = meta.get("pid")
+    if not isinstance(pid, int) or pid <= 1:
+        return
+    try:
+        import signal as _signal
+        os.kill(pid, _signal.SIGTERM)
+    except (OSError, ProcessLookupError, PermissionError):
+        pass
 
 
 # Legacy single-file path: still written for backward compat (old tooling
@@ -254,6 +308,13 @@ def render() -> int:
             # rendered.ansi disappeared between the meta read and the read.
             # Fall through to inline.
             pass
+
+    # If the meta is stale because the daemon is running outdated code
+    # (PyPI upgrade while daemon kept running), nudge it to exit so the
+    # spawn below can bring up a fresh process. Old daemon's pidfile is
+    # still valid otherwise and `_spawn_daemon_async` would refuse.
+    if meta is not None:
+        _signal_outdated_daemon(meta)
 
     # Fallback: render inline AND kick off a daemon spawn so the next
     # tick is fast. We don't wait for the daemon to come up — the user's

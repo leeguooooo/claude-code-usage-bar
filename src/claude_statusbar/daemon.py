@@ -295,6 +295,10 @@ def _render_session(sid: str) -> bool:
         "pid": os.getpid(),
         "stale_after_seconds": META_STALE_AFTER,
         "session_id": sid,
+        # Thin client compares this against the package directory mtime
+        # to detect "code on disk is newer than the running daemon".
+        # See render_thin._is_fresh / _signal_outdated_daemon.
+        "daemon_started_at": _DAEMON_STARTED_AT,
     }) + "\n")
     return True
 
@@ -370,6 +374,9 @@ def _log(msg: str) -> None:
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
+_DAEMON_STARTED_AT: float = 0.0
+
+
 def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
     """Block in the render loop until SIGTERM/SIGINT.
 
@@ -380,8 +387,9 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
     """
     # Reset module-level shutdown flag so an in-process restart (after a
     # previous SIGTERM call set _running=False) doesn't exit immediately.
-    global _running
+    global _running, _DAEMON_STARTED_AT
     _running = True
+    _DAEMON_STARTED_AT = time.time()
 
     if not _acquire_pidfile():
         existing = read_pidfile()
