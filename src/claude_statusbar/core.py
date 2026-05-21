@@ -585,6 +585,16 @@ def parse_stdin_data() -> Dict[str, Any]:
         # Version
         result['claude_version'] = data.get('version', '')
 
+        # Workspace identity (used by the optional project/branch segment).
+        ws = data.get('workspace') or {}
+        if isinstance(ws, dict):
+            result['workspace_current_dir'] = ws.get('current_dir') or data.get('cwd')
+            result['workspace_project_dir'] = ws.get('project_dir')
+            result['workspace_git_worktree'] = ws.get('git_worktree')
+            repo_obj = ws.get('repo') or {}
+            if isinstance(repo_obj, dict):
+                result['workspace_repo_name'] = repo_obj.get('name')
+
     except json.JSONDecodeError:
         # Bad JSON from stdin — treat as if there was no stdin at all.
         result.pop('_has_stdin', None)
