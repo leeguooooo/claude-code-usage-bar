@@ -1126,11 +1126,19 @@ git commit -m "feat(styles): render_identity_line for project + branch 2nd line"
 
 ---
 
-## Task 9: Wire identity line into `format_status_line`
+## Task 9: Wire identity line into the style dispatcher
+
+`format_status_line` is only consumed by `render_classic`. The other
+two styles (capsule, hairline) have their own renderers. To make the
+identity line work across all three styles without duplicating the
+glue, we append it inside `styles.render()` (the public dispatcher at
+`styles.py:260-268`), and pass the identity info / dirty flag through
+its `**kwargs`. The call to `styles.render(...)` happens inside `core.main()`
+(grep `grep -n "styles.render\|render(style" src/claude_statusbar/core.py` to confirm — likely a single call site).
 
 **Files:**
-- Modify: `src/claude_statusbar/progress.py` (`format_status_line`)
-- Modify: `src/claude_statusbar/core.py` (pass `show_project_branch` + stdin fields through)
+- Modify: `src/claude_statusbar/styles.py` (`render()` dispatcher, lines ~260-268)
+- Modify: `src/claude_statusbar/core.py` (pass `show_project_branch` + identity through to `styles.render`)
 - Test: `tests/test_project_branch_render.py` (extend)
 
 - [ ] **Step 1: Read current signature**
@@ -1142,9 +1150,10 @@ Look at `src/claude_statusbar/progress.py:220` — the `format_status_line` sign
 Append to `tests/test_project_branch_render.py`:
 
 ```python
-def test_format_status_line_appends_identity_when_enabled():
-    from claude_statusbar.progress import format_status_line
-    out = format_status_line(
+def test_dispatcher_appends_identity_when_enabled():
+    from claude_statusbar import styles
+    out = styles.render(
+        "classic",
         msgs_pct=10, weekly_pct=20, model="Opus 4.7",
         reset_5h="4h", reset_7d="6d",
         use_color=False, theme=THEME,
@@ -1159,15 +1168,32 @@ def test_format_status_line_appends_identity_when_enabled():
     assert "demo" in second and "main" in second
 
 
-def test_format_status_line_omits_identity_when_disabled():
-    from claude_statusbar.progress import format_status_line
-    out = format_status_line(
+def test_dispatcher_omits_identity_when_disabled():
+    from claude_statusbar import styles
+    out = styles.render(
+        "classic",
         msgs_pct=10, weekly_pct=20, model="Opus 4.7",
         reset_5h="4h", reset_7d="6d",
         use_color=False, theme=THEME,
         show_project_branch=False,
     )
     assert "\n" not in out
+
+
+def test_dispatcher_applies_to_capsule_too():
+    from claude_statusbar import styles
+    out = styles.render(
+        "capsule",
+        msgs_pct=10, weekly_pct=20, model="Opus 4.7",
+        reset_5h="4h", reset_7d="6d",
+        use_color=False, theme=THEME,
+        show_project_branch=True,
+        identity=IdentityInfo(project_name="demo", in_git=True,
+                              branch="main", detached=False,
+                              worktree_name=None, toplevel="/x"),
+        identity_dirty=False,
+    )
+    assert "demo" in out and "main" in out
 ```
 
 - [ ] **Step 3: Confirm failure**
@@ -1175,30 +1201,49 @@ def test_format_status_line_omits_identity_when_disabled():
 Run: `uv run pytest tests/test_project_branch_render.py -v`
 Expected: 2 new FAIL.
 
-- [ ] **Step 4: Implement in `progress.py`**
+- [ ] **Step 4: Implement in the dispatcher**
 
-In `format_status_line`, accept three new kwargs (`show_project_branch=False, identity=None, identity_dirty=None`). After the existing return-value `line` is built:
+In `src/claude_statusbar/styles.py`, change `render()` to extract the
+identity-related kwargs, call the underlying style renderer normally,
+then post-process:
 
 ```python
-    if show_project_branch and identity is not None:
-        from .styles import render_identity_line
-        line = line + "\n" + render_identity_line(
-            identity, theme=theme, dirty=identity_dirty, use_color=use_color,
+def render(style: str, **kwargs) -> str:
+    show_pb = kwargs.pop("show_project_branch", False)
+    info    = kwargs.pop("identity", None)
+    dirty   = kwargs.pop("identity_dirty", None)
+    theme   = kwargs.get("theme") or get_theme("graphite")
+    use_color = kwargs.get("use_color", True)
+
+    fn = RENDERERS.get(style, render_classic)
+    out = fn(**kwargs)
+
+    if show_pb and info is not None:
+        out = out + "\n" + render_identity_line(
+            info, theme=theme, dirty=dirty, use_color=use_color,
         )
-    return line
+    return out
 ```
+
+(The individual renderers already absorb unknown kwargs via `**_ignored`, so popping them here is safe even if a caller passes them along.)
 
 - [ ] **Step 5: Wire from `core.main`**
 
-In `src/claude_statusbar/core.py`, where `format_status_line` is called for the inline render:
+Find the call site with:
 
-- Read the resolved `StatusbarConfig` (already loaded).
+```bash
+grep -n "styles.render\|RENDERERS\[" src/claude_statusbar/core.py
+```
+
+At that call site:
+
+- The resolved `StatusbarConfig` is already loaded (look for `load_config` higher in the same function).
 - If `cfg.show_project_branch`:
-  - `info = resolve_identity(stdin_data)` (import from `.identity`)
-  - `dirty = identity.dirty_with_async_refresh(info.toplevel) if info.toplevel else None`
-  - Pass `show_project_branch=True, identity=info, identity_dirty=dirty` to `format_status_line`.
-
-(Exact line is the one place `format_status_line` is invoked from `main()` — locate via `grep -n "format_status_line" src/claude_statusbar/core.py`.)
+  - `from .identity import resolve_identity, dirty_with_async_refresh`
+  - `info = resolve_identity(stdin_data)`
+  - `dirty = dirty_with_async_refresh(info.toplevel) if info.toplevel else None`
+  - Add to the kwargs being passed to `styles.render(...)`: `show_project_branch=True, identity=info, identity_dirty=dirty`.
+- If `cfg.show_project_branch` is False: change nothing — `render()` defaults to no identity line.
 
 - [ ] **Step 6: Confirm pass**
 
@@ -1208,8 +1253,8 @@ Expected: all green.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/claude_statusbar/progress.py src/claude_statusbar/core.py tests/test_project_branch_render.py
-git commit -m "feat(progress): append identity line to status line when enabled"
+git add src/claude_statusbar/styles.py src/claude_statusbar/core.py tests/test_project_branch_render.py
+git commit -m "feat(styles): dispatcher appends identity line across all styles"
 ```
 
 ---
