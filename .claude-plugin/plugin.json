@@ -1,7 +1,7 @@
 {
   "name": "claude-statusbar",
   "description": "Lightweight Claude Code status-line monitor with switchable styles, themes, and slash commands. v3.7.0 defends against status-line hijacking: a new `cs --setup --project [PATH]` writes a project-level override so another tool stealing the global `~/.claude/settings.json` slot can't kick `cs` out of this project; when displacement is detected, the bar also surfaces a one-line warning. v3.6.0 makes daemon (fast) mode the default for `cs --setup` — under 1% CPU continuously instead of ~3% inline at refreshInterval=1; pass `--inline` to opt back. Requires the `cs` CLI from PyPI (`pip install claude-statusbar` or `uv tool install claude-statusbar`).",
-  "version": "3.8.0",
+  "version": "3.8.1",
   "author": {
     "name": "leeguooooo",
     "email": "leeguooooo@gmail.com"

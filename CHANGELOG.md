@@ -9,6 +9,19 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.8.1 — 2026-05-21
+
+### Fixed
+- **Outdated daemon after PyPI upgrade.** Long-lived daemon kept serving
+  stale renders because its `rendered.meta.json` was fresh by the 5 s
+  age check and lazy-spawn refused to restart over a live pidfile. Now
+  the daemon writes `daemon_started_at` into meta, and the thin client
+  compares it against the installed package's newest `.py` mtime — if
+  disk is newer than the running daemon, the meta is treated as stale,
+  the old daemon gets `SIGTERM`, and `_spawn_daemon_async` brings up a
+  fresh process on the next tick. Pre-3.8.1 daemons (without the new
+  field) keep the old age-only behavior for smooth rollout.
+
 ## v3.8.0 — 2026-05-21
 
 ### Added
