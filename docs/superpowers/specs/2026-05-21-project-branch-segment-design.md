@@ -63,6 +63,8 @@ the same way).
 
 Path: `~/.cache/claude-statusbar/git/<sha1(toplevel)>.json`. One file
 per repo, shared across sessions, shared between inline and daemon.
+First writer wins: both paths call `os.makedirs(cache_dir, exist_ok=True)`
+before the first atomic write; no startup-time owner.
 
 Contents:
 
@@ -162,6 +164,12 @@ theme is what changes:
 Detached HEAD branch is rendered as `theme.mute` italic 7-char SHA to
 distinguish from branch names.
 
+**Italic compatibility note.** The codebase already defines `ITAL =
+"\033[3m"` in `styles.py` but no current style emits it. Terminals that
+don't support italic typically fall back to underline or no styling
+(never garbled glyphs), so this is safe to use; verify with `cs preview`
+across the supported terminals during implementation.
+
 ## Config
 
 Adds one key to `config.py` defaults:
@@ -255,7 +263,10 @@ None required. Existing users see no change unless they run
    fields.
 2. New module `claude_statusbar/identity.py` containing
    `resolve_identity(stdin_data) -> IdentityInfo` (project + branch +
-   dirty + worktree-name).
+   dirty + worktree-name). Branch resolution reads `.git/HEAD` only;
+   `packed-refs` is **not** consulted because branch *name* (the only
+   thing we display) is always present in `HEAD` even for unborn or
+   packed branches.
 3. New module `claude_statusbar/_git_refresh.py` — the detached refresh
    helper invoked by inline.
 4. Extend `styles.py` with `render_identity_line(info, theme)`.
