@@ -32,7 +32,7 @@ class StatusbarConfig:
     show_language: bool = True
     show_cost: bool = False
     show_cache_age: bool = True
-    show_project_branch: bool = False
+    show_project_branch: bool = True
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
@@ -69,7 +69,7 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
         show_language=_to_bool(raw.get("show_language", True)),
         show_cost=_to_bool(raw.get("show_cost", False)),
         show_cache_age=_to_bool(raw.get("show_cache_age", True)),
-        show_project_branch=_to_bool(raw.get("show_project_branch", False)),
+        show_project_branch=_to_bool(raw.get("show_project_branch", True)),
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", DEFAULT_CACHE_TTL_SECONDS) or DEFAULT_CACHE_TTL_SECONDS),
         warning_threshold=raw.get("warning_threshold"),
         critical_threshold=raw.get("critical_threshold"),

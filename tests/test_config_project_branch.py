@@ -1,8 +1,8 @@
 from claude_statusbar.config import StatusbarConfig, load_config, set_value
 
 
-def test_default_off():
-    assert StatusbarConfig().show_project_branch is False
+def test_default_on():
+    assert StatusbarConfig().show_project_branch is True
 
 
 def test_set_via_set_value(tmp_path):

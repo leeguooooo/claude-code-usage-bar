@@ -12,17 +12,17 @@ For a quick overview of the latest release, see the
 ## [Unreleased]
 
 ### Added
-- **Project + branch identity segment (opt-in).** Enable with
-  `cs config set show_project_branch true` to render a second line
-  `⤷ <project> ⎇ <branch>●` below the existing status bar. Project name
-  is read from Claude Code's `workspace.repo.name` stdin field (falls
-  back to cwd basename); branch comes from `.git/HEAD` directly (no
-  `git` fork on the render hot path); the `●` dirty marker is
+- **Project + branch identity segment (default on).** Renders a second
+  line `⤷ <project> ⎇ <branch>●` below the existing status bar. Project
+  name is read from Claude Code's `workspace.repo.name` stdin field
+  (falls back to cwd basename); branch comes from `.git/HEAD` directly
+  (no `git` fork on the render hot path); the `●` dirty marker is
   refreshed in the background by a detached
   `python -m claude_statusbar._git_refresh` helper and cached for 5 s,
   so the inline render stays well under its 30 ms budget. Daemon mode
   exposes the same helper for in-thread cache warming. Outside a git
-  repo the line collapses to `⤷ <project> (no git)`.
+  repo the line collapses to `⤷ <project> (no git)`. Disable with
+  `cs config set show_project_branch false`.
 
 ---
 

@@ -33,6 +33,7 @@ give a short confirmation (one line, no lecture).
 | Disable fast mode | `cs daemon stop` then re-run `cs --setup` |
 | Toggle session cost display | `cs config set show_cost true\|false` |
 | Toggle prompt-cache countdown | `cs config set show_cache_age true\|false` |
+| Toggle project + branch 2nd line | `cs config set show_project_branch true\|false` (default `true`) |
 | Hide weekly bar | `cs config set show_weekly false` |
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |
