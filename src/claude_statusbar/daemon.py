@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Optional
 
 from .cache import atomic_write_text
+from ._git_refresh import refresh as _refresh_repo_sync
 
 
 # ---------------------------------------------------------------------------
