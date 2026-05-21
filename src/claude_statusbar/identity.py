@@ -63,3 +63,58 @@ def read_head(start: Path) -> Optional[Tuple[str, bool]]:
     if _SHA_RE.match(text):
         return text[:7], True
     return None
+
+
+@dataclass
+class IdentityInfo:
+    project_name: str
+    in_git: bool
+    branch: Optional[str]
+    detached: bool
+    worktree_name: Optional[str]
+    toplevel: Optional[str]
+
+
+def _resolve_toplevel(start: Path) -> Optional[Path]:
+    """Best-effort working-tree root for a path inside a git checkout.
+
+    For a normal `.git/` directory layout, returns the directory that
+    contains `.git/`. For a linked worktree (`.git` is a file pointing
+    elsewhere), returns the directory containing that `.git` file
+    (the checkout dir), not the linked gitdir.
+    """
+    cur = start.resolve() if start.exists() else start
+    for candidate in [cur, *cur.parents]:
+        dotgit = candidate / ".git"
+        if dotgit.exists():
+            return candidate
+    return None
+
+
+def resolve_identity(stdin: dict) -> IdentityInfo:
+    repo_name = stdin.get("workspace_repo_name")
+    project_dir = stdin.get("workspace_project_dir")
+    current_dir = stdin.get("workspace_current_dir")
+    worktree_name = stdin.get("workspace_git_worktree")
+
+    if repo_name:
+        project_name = repo_name
+    elif project_dir:
+        project_name = os.path.basename(project_dir.rstrip("/")) or project_dir
+    elif current_dir:
+        project_name = os.path.basename(current_dir.rstrip("/")) or current_dir
+    else:
+        project_name = os.path.basename(os.getcwd()) or "?"
+
+    start = Path(current_dir or project_dir or os.getcwd())
+    head = read_head(start)
+    toplevel = _resolve_toplevel(start) if head else None
+
+    return IdentityInfo(
+        project_name=project_name,
+        in_git=head is not None,
+        branch=head[0] if head else None,
+        detached=head[1] if head else False,
+        worktree_name=worktree_name,
+        toplevel=str(toplevel) if toplevel else None,
+    )

@@ -1,7 +1,7 @@
 """Pure-function tests for identity resolution."""
 from pathlib import Path
 
-from claude_statusbar.identity import read_head
+from claude_statusbar.identity import IdentityInfo, read_head, resolve_identity
 
 
 def _write(p: Path, text: str):
@@ -64,3 +64,53 @@ def test_no_git_returns_none(tmp_path):
 def test_malformed_head_returns_none(tmp_path):
     _write(tmp_path / ".git" / "HEAD", "garbage\n")
     assert read_head(tmp_path) is None
+
+
+def test_project_name_prefers_repo_name():
+    info = resolve_identity({
+        "workspace_repo_name": "fancy-repo",
+        "workspace_current_dir": "/tmp/elsewhere",
+    })
+    assert info.project_name == "fancy-repo"
+
+
+def test_falls_back_to_project_dir_basename():
+    info = resolve_identity({
+        "workspace_project_dir": "/srv/code/cool-thing",
+        "workspace_current_dir": "/srv/code/cool-thing/sub",
+    })
+    assert info.project_name == "cool-thing"
+
+
+def test_falls_back_to_current_dir():
+    info = resolve_identity({"workspace_current_dir": "/var/www/site"})
+    assert info.project_name == "site"
+
+
+def test_falls_back_to_os_getcwd(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    info = resolve_identity({})
+    assert info.project_name == tmp_path.name
+
+
+def test_carries_worktree_name():
+    info = resolve_identity({
+        "workspace_repo_name": "x",
+        "workspace_git_worktree": "feat-y",
+    })
+    assert info.worktree_name == "feat-y"
+
+
+def test_branch_extracted_from_head(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    info = resolve_identity({"workspace_current_dir": str(tmp_path)})
+    assert info.branch == "main"
+    assert info.detached is False
+    assert info.in_git is True
+
+
+def test_branch_none_when_no_git(tmp_path):
+    info = resolve_identity({"workspace_current_dir": str(tmp_path)})
+    assert info.in_git is False
+    assert info.branch is None
