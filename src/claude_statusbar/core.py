@@ -1099,6 +1099,18 @@ def main(json_output: bool = False,
     # Optional cache age segment.
     cache_age_text = get_cache_age_text(cfg.cache_ttl_seconds) if cfg.show_cache_age else ""
 
+    # Optional project + branch identity segment (second line).
+    identity_kwargs = {}
+    if cfg.show_project_branch:
+        from .identity import resolve_identity, dirty_with_async_refresh
+        info = resolve_identity(stdin_data)
+        dirty = dirty_with_async_refresh(info.toplevel) if info.toplevel else None
+        identity_kwargs = dict(
+            show_project_branch=True,
+            identity=info,
+            identity_dirty=dirty,
+        )
+
     try:
         if not json_output and not _suppress_side_effects:
             check_for_updates(stdin_data.get('session_id', ''))
@@ -1192,6 +1204,7 @@ def main(json_output: bool = False,
                     countdown_emoji=countdown,
                     density=cfg.density, show_weekly=cfg.show_weekly,
                     ctx_pct=ctx_pct,
+                    **identity_kwargs,
                 ))
         else:
             # No rate_limits yet — could be session start or old Claude Code
@@ -1232,6 +1245,7 @@ def main(json_output: bool = False,
                         critical_threshold=critical_threshold,
                         density=cfg.density, show_weekly=cfg.show_weekly,
                         ctx_pct=ctx_pct,
+                        **identity_kwargs,
                     ))
             else:
                 # No stdin at all — not running inside Claude Code statusLine
@@ -1262,6 +1276,7 @@ def main(json_output: bool = False,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
                 density=cfg.density, show_weekly=cfg.show_weekly,
+                **identity_kwargs,
             ))
 
 if __name__ == '__main__':

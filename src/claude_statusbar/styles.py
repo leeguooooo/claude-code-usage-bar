@@ -303,9 +303,25 @@ def render(style: str, **kwargs) -> str:
     Unknown kwargs are absorbed by each renderer's **_ignored, so callers can
     freely pass style-specific args (density, countdown_emoji, ...) to whichever
     renderer is selected.
+
+    The optional `show_project_branch`/`identity`/`identity_dirty` kwargs
+    cause a second `⤷ <project> ⎇ <branch>` line to be appended after the
+    style renderer returns. Identity rendering is style-agnostic.
     """
+    show_pb = kwargs.pop("show_project_branch", False)
+    info = kwargs.pop("identity", None)
+    dirty = kwargs.pop("identity_dirty", None)
+    theme = kwargs.get("theme") or get_theme("graphite")
+    use_color = kwargs.get("use_color", True)
+
     fn = RENDERERS.get(style, render_classic)
-    return fn(**kwargs)
+    out = fn(**kwargs)
+
+    if show_pb and info is not None:
+        out = out + "\n" + render_identity_line(
+            info, theme=theme, dirty=dirty, use_color=use_color,
+        )
+    return out
 
 
 def list_styles() -> list[str]:
