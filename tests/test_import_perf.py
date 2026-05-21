@@ -99,6 +99,20 @@ RENDER_THIN_BANNED = {
 }
 
 
+def test_identity_module_safe_to_import():
+    """Importing claude_statusbar.identity must not pull in subprocess.
+
+    The dirty-refresh path lazy-imports subprocess inside the stale
+    branch; top-level imports must stay clean so the render hot path
+    can call resolve_identity without paying the subprocess cost.
+    """
+    loaded = _list_imports_for("claude_statusbar.identity")
+    assert "subprocess" not in loaded, (
+        "identity.py must lazy-import subprocess inside the stale "
+        "branch only — found it at top-level import."
+    )
+
+
 def test_render_thin_imports_stay_minimal():
     """`cs render` (Phase B fast path) must import none of the heavy modules.
 

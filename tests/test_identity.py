@@ -1,7 +1,15 @@
 """Pure-function tests for identity resolution."""
+import subprocess
+import time
 from pathlib import Path
+from unittest.mock import patch
 
-from claude_statusbar.identity import IdentityInfo, read_head, resolve_identity
+from claude_statusbar.identity import (
+    IdentityInfo,
+    dirty_with_async_refresh,
+    read_head,
+    resolve_identity,
+)
 
 
 def _write(p: Path, text: str):
@@ -114,3 +122,46 @@ def test_branch_none_when_no_git(tmp_path):
     info = resolve_identity({"workspace_current_dir": str(tmp_path)})
     assert info.in_git is False
     assert info.branch is None
+
+
+def test_dirty_cache_hit_returns_immediately(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from claude_statusbar.git_cache import write_cache_atomic
+    write_cache_atomic("/x", {"toplevel": "/x", "branch": "main",
+                              "dirty": True, "ts": time.time()})
+    with patch("subprocess.Popen") as popen:
+        dirty = dirty_with_async_refresh("/x")
+    assert dirty is True
+    popen.assert_not_called()
+
+
+def test_dirty_stale_returns_old_value_and_spawns(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from claude_statusbar.git_cache import write_cache_atomic
+    write_cache_atomic("/x", {"toplevel": "/x", "branch": "main",
+                              "dirty": True, "ts": time.time() - 999})
+    with patch("subprocess.Popen") as popen:
+        dirty = dirty_with_async_refresh("/x")
+    assert dirty is True
+    assert popen.call_count == 1
+    _args, kwargs = popen.call_args
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["start_new_session"] is True
+    assert kwargs["close_fds"] is True
+
+
+def test_dirty_missing_returns_none_and_spawns(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with patch("subprocess.Popen") as popen:
+        dirty = dirty_with_async_refresh("/y")
+    assert dirty is None
+    assert popen.call_count == 1
+
+
+def test_inflight_prevents_double_spawn(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from claude_statusbar.git_cache import mark_inflight
+    mark_inflight("/z")
+    with patch("subprocess.Popen") as popen:
+        dirty_with_async_refresh("/z")
+    popen.assert_not_called()

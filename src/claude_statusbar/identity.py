@@ -118,3 +118,36 @@ def resolve_identity(stdin: dict) -> IdentityInfo:
         worktree_name=worktree_name,
         toplevel=str(toplevel) if toplevel else None,
     )
+
+
+def dirty_with_async_refresh(toplevel: str) -> Optional[bool]:
+    """Return the cached dirty state, kicking off a background refresh
+    if the cache is stale or missing. Never blocks on git.
+
+    Lazy-imports `subprocess` so `test_import_perf.py` invariants hold
+    on the render hot path when the cache is fresh.
+    """
+    from . import git_cache  # local import keeps top-level imports clean
+
+    entry = git_cache.read_cache(toplevel)
+    if git_cache.is_fresh(entry):
+        return bool(entry.get("dirty"))
+
+    if not git_cache.is_inflight(toplevel):
+        git_cache.mark_inflight(toplevel)
+        try:
+            import subprocess  # lazy
+            import sys
+            subprocess.Popen(
+                [sys.executable, "-m", "claude_statusbar._git_refresh",
+                 toplevel],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                start_new_session=True,
+            )
+        except (OSError, ValueError):
+            git_cache.clear_inflight(toplevel)
+
+    return None if entry is None else bool(entry.get("dirty"))
