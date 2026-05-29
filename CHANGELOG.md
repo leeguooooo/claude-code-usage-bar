@@ -9,6 +9,19 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.9.1 — 2026-05-29
+
+### Changed
+- **Cache countdown always shows seconds.** The adaptive granularity that
+  collapsed the 5min–1h band to a bare `Xm` (and the hour band to `Xh`/`XhYm`)
+  is gone. The countdown now always renders the seconds field — `58m23s`,
+  `1h59m03s`, `47s` — so it visibly ticks every render. A static `58m` read
+  as frozen; a ticking `58m23s` makes it obvious the widget is live and the
+  number is real. This pairs with v3.9.0's TTL auto-detect: subscription
+  users now sit in the 5min–1h band most of the time, which previously showed
+  no motion at all. Severity colors are unchanged — anything ≥1min keeps its
+  `m`/`h` glyph → green; sub-minute stays bare seconds → yellow.
+
 ## v3.9.0 — 2026-05-29
 
 ### Changed

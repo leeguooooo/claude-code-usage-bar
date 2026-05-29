@@ -1085,23 +1085,19 @@ def get_cache_age_text(ttl_seconds: Optional[int] = None) -> str:
     # not 4m59s — feels less surprising for the user who just hit enter.
     remaining_int = int(remaining) if remaining == int(remaining) else int(remaining) + 1
 
-    # Adaptive granularity: precision matches urgency.
-    # >= 1h remaining: "XhYm"      (e.g. "1h59m" / "1h05m" — minute precision
-    #                                preserved at the hour scale, otherwise
-    #                                a 2h-cache user sees "1h" for 59 minutes)
-    # 5min..1h:        "Xm"        (still plenty of time; minute granularity)
-    # 1..5min:         "XmYYs"     (countdown territory; user might press send soon)
-    # < 1min:          "Ys"        (warning state; styles layer flips to yellow)
+    # Always show seconds so the countdown visibly ticks every render — a
+    # static "58m" reads as frozen/broken, whereas "58m23s" ticking proves
+    # the widget is live and the number is real. Format scales with size but
+    # the seconds field is never dropped:
+    #   >= 1h:  "XhMMmSSs"   (e.g. "1h59m03s" — minutes never truncated)
+    #   >= 1min:"MmSSs"      (e.g. "58m23s", "4m07s", "1m00s")
+    #   < 1min: "Ys"         (bare seconds → styles layer flips to yellow)
+    secs = remaining_int % 60
     if remaining_int >= 3600:
         hours = remaining_int // 3600
         mins = (remaining_int % 3600) // 60
-        if mins == 0:
-            return f"{hours}h"
-        return f"{hours}h{mins:02d}m"
+        return f"{hours}h{mins:02d}m{secs:02d}s"
     mins = remaining_int // 60
-    secs = remaining_int % 60
-    if mins >= 5:
-        return f"{mins}m"
     if mins > 0:
         return f"{mins}m{secs:02d}s"
     return f"{secs}s"

@@ -100,7 +100,8 @@ def test_autodetects_1h(tmp_path: Path, monkeypatch):
     _write_jsonl(t, [_assistant(600, ttl_1h=1000)])
     _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(t)})
     out = core.get_cache_age_text()
-    assert out in ("50m", "49m"), f"expected ~50m auto-detected, got {out!r}"
+    assert out.startswith(("50m", "49m")) and out.endswith("s"), \
+        f"expected ~50m..s auto-detected, got {out!r}"
 
 
 def test_autodetects_5m(tmp_path: Path, monkeypatch):
@@ -119,8 +120,9 @@ def test_autodetect_uses_older_write_ttl(tmp_path: Path, monkeypatch):
     ])
     _install_fake_cache(monkeypatch, tmp_path, {"transcript_path": str(t)})
     out = core.get_cache_age_text()
-    # 3600 - 100 = 3500s = 58m20s -> ">=5min..1h" coarse minutes -> "58m"
-    assert out in ("58m", "57m", "59m"), f"expected ~58m, got {out!r}"
+    # 3600 - 100 = 3500s = 58m20s -> "MMmSSs"
+    assert out.startswith(("58m", "57m", "59m")) and out.endswith("s"), \
+        f"expected ~58m..s, got {out!r}"
 
 
 def test_falls_back_to_300_when_no_write_signal(tmp_path: Path, monkeypatch):
