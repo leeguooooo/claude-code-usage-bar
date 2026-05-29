@@ -64,7 +64,7 @@ Full release notes in [CHANGELOG.md](CHANGELOG.md).
 | `7d[79%]` | 7-day rate-limit usage |
 | `⏰11h28m` | Time until the 7-day window resets |
 | `Opus 4.7(350.0k/1.0M)` | Model name + current context window usage |
-| `cache 4m23s` / `cache COLD` | Countdown to prompt-cache expiry (5min TTL by default). Green when comfortable, yellow under 1min, red on COLD. Cache hits consume ~10× less rate-limit quota — for subscribers this means COLD prompts eat your 5h / 7d windows ~10× faster. Enabled by default; disable with `cs config set show_cache_age false` |
+| `cache 4m23s` / `cache COLD` | Countdown to prompt-cache expiry — the TTL (5min vs 1h) is auto-detected from the transcript, so it's right on a subscription (1h) or an API key (5min). Green when comfortable, yellow under 1min, red on COLD. Cache hits consume ~10× less rate-limit quota — for subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. Enabled by default; disable with `cs config set show_cache_age false` |
 | `$ 1.42` | Session cost in USD as Claude Code reports it. For Pro/Max subscribers this is the **API-equivalent value** of your usage (i.e. what it would cost on the API), not money owed. Useful as an ROI signal. Opt-in: `cs config set show_cost true` |
 | `⤷ <project> ⎇ <branch>●` | Second-line identity segment. Project comes from Claude Code's `workspace.repo.name` (cwd-basename fallback); branch reads `.git/HEAD` directly; the `●` dirty marker is refreshed by a background helper, cached 5 s. Enabled by default — turn off with `cs config set show_project_branch false`. |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
@@ -224,8 +224,8 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `auto_compact_width` | integer (e.g. `100`) | Force `hairline` when terminal narrower than this. `0` = disabled |
 | `show_weekly`, `show_language` | bool | Hide individual segments |
 | `show_cost` | bool, default `false` | Append `$ X.XX` — the current session's cost as Claude Code reports it. For Pro/Max subscribers this is the **API-equivalent value** of your usage (what it would cost on the API), not money owed; many subscribers use it as a "subscription ROI" gauge. Opt-in because the "session" boundary is what Claude Code reports — not necessarily what you intuitively call one. |
-| `show_cache_age` | bool, default `true` | Append a `cache 4m23s` countdown to Anthropic's prompt-cache expiry. Three-level color: green (>1min remaining), yellow (<1min), red `cache COLD` (expired). Cache hits consume ~10× less rate-limit quota — for Pro/Max subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. `cs --setup` writes `refreshInterval: 1` by default so this segment ticks visibly. Original implementation contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). Disable with `cs config set show_cache_age false`. |
-| `cache_ttl_seconds` | int, default `300` | TTL the `show_cache_age` segment uses to decide warm vs. `COLD`. Defaults to Anthropic's 5-minute prompt cache. Set to `3600` if you've enabled the [1-hour extended cache](https://docs.claude.com/en/docs/build-with-claude/prompt-caching) via `ENABLE_PROMPT_CACHING_1H`. |
+| `show_cache_age` | bool, default `true` | Append a `cache 4m23s` countdown to Anthropic's prompt-cache expiry, with the TTL (5min vs 1h) auto-detected from the transcript. Three-level color: green (>1min remaining), yellow (<1min), red `cache COLD` (expired). Cache hits consume ~10× less rate-limit quota — for Pro/Max subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. `cs --setup` writes `refreshInterval: 1` by default so this segment ticks visibly. Original implementation contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). Disable with `cs config set show_cache_age false`. |
+| `cache_ttl_seconds` | int, default `300` | **Deprecated since v3.9.0.** The segment now auto-detects the real TTL (5min vs 1h) from the transcript's `cache_creation` buckets, so this value is no longer consulted. Still accepted (and `cs config set cache_ttl_seconds …` still works) so existing configs don't break. See [How the cache countdown works](#how-the-cache-countdown-works). |
 | `show_project_branch` | bool, default `true` | Append a second line `⤷ <project> ⎇ <branch>●` below the bar. Project name comes from Claude Code's `workspace.repo.name` stdin field (falls back to cwd basename); branch is read from `.git/HEAD` directly. The `●` dirty marker is refreshed by a background helper and cached 5 s — the inline render path never blocks on `git`. Disable with `cs config set show_project_branch false`. |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
@@ -303,7 +303,6 @@ cs config set style hairline    # persist style → ~/.claude/claude-statusbar.j
 cs config set theme linen       # persist theme
 cs config set show_cost true    # session $ cost segment
 cs config set show_cache_age false  # hide prompt-cache age segment
-cs config set cache_ttl_seconds 3600  # for users on Anthropic's 1h cache
 cs config reset                 # wipe config back to defaults
 
 # Discovery
@@ -356,7 +355,7 @@ cs --json-output
 
 ## Data source
 
-Rate-limit percentages come directly from **Anthropic's official API headers**, surfaced into the JSON payload Claude Code injects on stdin to every `statusLine` command. Context-window usage comes from the same payload. The enabled-by-default `cache 4m23s` countdown is computed locally by tail-reading the active transcript JSONL — Anthropic's prompt cache TTL is 5 minutes by default ([Mar 2026 change](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)) or 1 hour with `ENABLE_PROMPT_CACHING_1H`.
+Rate-limit percentages come directly from **Anthropic's official API headers**, surfaced into the JSON payload Claude Code injects on stdin to every `statusLine` command. Context-window usage comes from the same payload. The enabled-by-default `cache 4m23s` countdown is computed locally by tail-reading the active transcript JSONL, with the TTL (5min vs 1h) auto-detected from Anthropic's per-turn `cache_creation` buckets — see [How the cache countdown works](#how-the-cache-countdown-works).
 
 Requires Claude Code `v2.1.80+`.
 
