@@ -56,7 +56,7 @@ def _real_data() -> Optional[dict]:
     # Optional segments — compute the same way core.main does so preview
     # actually shows what the live status line shows.
     from .core import get_cache_age_text
-    cache_age_text = get_cache_age_text(300)
+    cache_age_text = get_cache_age_text()  # auto-detect TTL, same as core.main
 
     cost_text = ""
     sc = raw.get("session_cost_usd") or (raw.get("cost") or {}).get("total_cost_usd")

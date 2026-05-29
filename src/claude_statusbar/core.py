@@ -9,7 +9,7 @@ import sys
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # Heavy stdlib imports (logging, subprocess, shutil, re) are deferred to
 # the functions that use them — they collectively cost ~12ms at import time
@@ -896,15 +896,75 @@ def format_number(num: float) -> str:
 # so a multi-MB transcript with no assistant entries can't blow up render time.
 _CACHE_AGE_CHUNK = 32 * 1024
 _CACHE_AGE_MAX_BYTES = 10 * _CACHE_AGE_CHUNK
+# Conservative fallback when the transcript carries no cache-write signal
+# (caching disabled, or a transcript old enough to predate the
+# cache_creation breakdown). Under-promising (early COLD) beats claiming a
+# dead cache is warm. Anthropic's own base default is also 5 minutes.
+_FALLBACK_TTL_S = 300
 
 
-def _last_assistant_age(transcript_path: str) -> Optional[float]:
-    """Find the last assistant entry's age in seconds by tail-reading the JSONL.
+def _entry_age(entry: Dict[str, Any]) -> Optional[float]:
+    """Seconds since this transcript entry's timestamp, or None if absent/bad."""
+    ts_str = entry.get("timestamp", "")
+    if not ts_str:
+        return None
+    if ts_str.endswith("Z"):
+        ts_str = ts_str[:-1] + "+00:00"
+    try:
+        last_ts = datetime.fromisoformat(ts_str)
+    except ValueError:
+        return None
+    # Treat naive timestamps as UTC (Claude Code convention) to avoid
+    # TypeError on aware-minus-naive subtraction.
+    if last_ts.tzinfo is None:
+        last_ts = last_ts.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - last_ts).total_seconds()
 
-    Reads the file from the end in 32KB chunks instead of slurping the whole
-    transcript — these files can be many MB and the status bar runs on every
-    Claude Code render. Caps at _CACHE_AGE_MAX_BYTES to bound worst-case I/O.
+
+def _entry_cache_ttl(entry: Dict[str, Any]) -> Optional[int]:
+    """The prompt-cache TTL Anthropic actually applied on this turn, in seconds.
+
+    Read from `message.usage.cache_creation`, which buckets cache-WRITE tokens
+    by TTL. A nonzero `ephemeral_1h_input_tokens` means the request used a
+    1-hour `cache_control` ttl; `ephemeral_5m_input_tokens` means 5 minutes.
+    Returns None when this turn wrote nothing to cache (both buckets 0/absent).
     """
+    msg = entry.get("message")
+    if not isinstance(msg, dict):
+        return None
+    usage = msg.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    cc = usage.get("cache_creation")
+    if not isinstance(cc, dict):
+        return None
+    if (cc.get("ephemeral_1h_input_tokens") or 0) > 0:
+        return 3600
+    if (cc.get("ephemeral_5m_input_tokens") or 0) > 0:
+        return 300
+    return None
+
+
+def _last_assistant_info(transcript_path: str) -> Optional[Tuple[float, Optional[int]]]:
+    """Return (age_seconds, detected_ttl) for the prompt-cache countdown.
+
+    - age          ← timestamp of the NEWEST assistant entry (the most recent
+                     cache touch).
+    - detected_ttl ← the real TTL Anthropic applied, read from the newest
+                     assistant entry that actually WROTE cache (see
+                     `_entry_cache_ttl`). None if no write signal exists within
+                     the byte budget (caching disabled / ancient transcript).
+
+    age and ttl are decoupled on purpose: a final read-only turn (both buckets
+    0) keeps its age but falls through to the last turn that wrote cache, so
+    the detected TTL isn't erased by a turn that happened to write nothing.
+
+    Both are gathered in ONE reverse-tail pass (32KB chunks, capped at
+    _CACHE_AGE_MAX_BYTES) — these files run to many MB and the status bar
+    renders on every turn. Returns as soon as both are known.
+    """
+    age: Optional[float] = None
+    ttl: Optional[int] = None
     try:
         with open(transcript_path, "rb") as f:
             f.seek(0, 2)
@@ -942,26 +1002,32 @@ def _last_assistant_age(transcript_path: str) -> Optional[float]:
                         continue
                     if entry.get("type") != "assistant":
                         continue
-                    ts_str = entry.get("timestamp", "")
-                    if not ts_str:
-                        continue
-                    if ts_str.endswith("Z"):
-                        ts_str = ts_str[:-1] + "+00:00"
-                    try:
-                        last_ts = datetime.fromisoformat(ts_str)
-                    except ValueError:
-                        continue
-                    # Treat naive timestamps as UTC (Claude Code convention)
-                    # to avoid TypeError on aware-minus-naive subtraction.
-                    if last_ts.tzinfo is None:
-                        last_ts = last_ts.replace(tzinfo=timezone.utc)
-                    return (datetime.now(timezone.utc) - last_ts).total_seconds()
+                    # age: first (newest) assistant entry with a usable timestamp.
+                    if age is None:
+                        age = _entry_age(entry)
+                    # ttl: first (newest) assistant entry that wrote cache.
+                    if ttl is None:
+                        ttl = _entry_cache_ttl(entry)
+                    if age is not None and ttl is not None:
+                        return (age, ttl)
     except OSError:
         return None
-    return None
+    if age is None:
+        return None
+    return (age, ttl)
 
 
-def get_cache_age_text(ttl_seconds: int = 300) -> str:
+def _last_assistant_age(transcript_path: str) -> Optional[float]:
+    """Age in seconds of the most recent assistant entry, or None.
+
+    Thin wrapper over `_last_assistant_info` — kept for callers/tests that
+    only need the age.
+    """
+    info = _last_assistant_info(transcript_path)
+    return info[0] if info is not None else None
+
+
+def get_cache_age_text(ttl_seconds: Optional[int] = None) -> str:
     """Return cache state as a COUNTDOWN to expiry.
 
     Display semantics:
@@ -973,9 +1039,16 @@ def get_cache_age_text(ttl_seconds: int = 300) -> str:
       - ""              — no signal at all (no last_stdin.json or
         no transcript_path); segment hidden.
 
-    `ttl_seconds` defaults to Anthropic's 5min prompt cache TTL but is
-    user-configurable via `cs config set cache_ttl_seconds 3600` for users
-    who've enabled the 1-hour extended cache (ENABLE_PROMPT_CACHING_1H).
+    The TTL is AUTO-DETECTED from the transcript (`_last_assistant_info`):
+    Anthropic reports, on every turn, which TTL it applied to the cache write
+    (5m vs 1h). That ground truth already reflects subscription-vs-API-key
+    auth, ENABLE_PROMPT_CACHING_1H, FORCE_PROMPT_CACHING_5M, and the
+    over-quota → 5m downgrade — so no static config can do better. When the
+    transcript carries no write signal we fall back to `_FALLBACK_TTL_S`.
+
+    `ttl_seconds` is an explicit override (testing / edge cases); production
+    leaves it None so the TTL is detected. The legacy `cache_ttl_seconds`
+    config is no longer consulted.
 
     Why countdown not elapsed: the widget exists to answer "should I send
     my next prompt before the cache dies?". A countdown answers directly;
@@ -991,9 +1064,13 @@ def get_cache_age_text(ttl_seconds: int = 300) -> str:
     tp = raw.get("transcript_path", "")
     if not tp:
         return ""
-    age_s = _last_assistant_age(tp)
-    if age_s is None:
+    info = _last_assistant_info(tp)
+    if info is None:
         return "COLD"
+    age_s, detected_ttl = info
+
+    if ttl_seconds is None:
+        ttl_seconds = detected_ttl if detected_ttl is not None else _FALLBACK_TTL_S
 
     # Clock-skew clamp: future transcript timestamp (NTP correction or
     # sandbox time-warp) → treat as just-now (full TTL remaining).
@@ -1097,7 +1174,7 @@ def main(json_output: bool = False,
             cost_text = f"{sc:.2f}"
 
     # Optional cache age segment.
-    cache_age_text = get_cache_age_text(cfg.cache_ttl_seconds) if cfg.show_cache_age else ""
+    cache_age_text = get_cache_age_text() if cfg.show_cache_age else ""
 
     # Optional project + branch identity segment (second line).
     identity_kwargs = {}

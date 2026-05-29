@@ -9,6 +9,33 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.9.0 — 2026-05-29
+
+### Changed
+- **Cache countdown auto-detects the TTL.** The `cache 4m23s` countdown no
+  longer trusts a fixed config value for the prompt-cache TTL. It now reads
+  the ground truth Anthropic reports on every turn —
+  `message.usage.cache_creation` buckets cache-write tokens by TTL, so a
+  nonzero `ephemeral_1h_input_tokens` means a 1-hour `cache_control` ttl and
+  `ephemeral_5m_input_tokens` means 5 minutes. This fixes a systematic
+  ~55-minute early `cache COLD` for **Claude subscription (Pro/Max)** users:
+  on a subscription, Claude Code requests the 1-hour TTL automatically, but
+  the bar was hard-coded to 5 minutes. The detected value already reflects
+  subscription-vs-API-key auth, `ENABLE_PROMPT_CACHING_1H`,
+  `FORCE_PROMPT_CACHING_5M`, and the over-quota → 5m downgrade, so no static
+  config could match it. Detection shares the existing reverse-tail read of
+  the transcript (one pass, still capped at 320 KB), pulling age and TTL
+  together; a final read-only turn (both buckets 0) keeps its age but falls
+  through to the last turn that actually wrote cache. When no write signal
+  exists (caching disabled / ancient transcript) it falls back to a
+  conservative 300 s — early COLD beats claiming a dead cache is warm.
+
+### Deprecated
+- **`cache_ttl_seconds` config.** No longer consulted for rendering (the TTL
+  is auto-detected). The key stays parseable and `cs config set
+  cache_ttl_seconds …` still succeeds so existing configs don't break, but it
+  has no effect.
+
 ## v3.8.1 — 2026-05-21
 
 ### Fixed

@@ -19,7 +19,13 @@ DEFAULT_STYLE = "classic"     # keep existing behavior for upgraders
 DEFAULT_THEME = "graphite"
 DEFAULT_DENSITY = "regular"   # cozy | regular | compact
 DEFAULT_AUTO_COMPACT_WIDTH = 0  # 0 = disabled; otherwise force hairline below this width
-DEFAULT_CACHE_TTL_SECONDS = 300  # 5min — Anthropic's default prompt cache TTL since Mar 2026
+DEFAULT_CACHE_TTL_SECONDS = 300  # 5min — Anthropic's base prompt cache TTL.
+# DEPRECATED: the cache countdown now auto-detects the real TTL (5m vs 1h)
+# from the transcript's message.usage.cache_creation buckets, which reflect
+# subscription/API-key auth, ENABLE_PROMPT_CACHING_1H, FORCE_PROMPT_CACHING_5M
+# and the over-quota downgrade — see core.get_cache_age_text. The
+# cache_ttl_seconds field below is kept only so existing configs and
+# `cs config set cache_ttl_seconds …` don't error; it no longer affects render.
 
 
 @dataclass
@@ -33,7 +39,7 @@ class StatusbarConfig:
     show_cost: bool = False
     show_cache_age: bool = True
     show_project_branch: bool = True
-    cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS
+    cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS  # deprecated; auto-detected now
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
     # Per-severity color overrides — hex like "#4ec85b". None means "use the
