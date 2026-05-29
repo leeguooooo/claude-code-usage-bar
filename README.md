@@ -27,6 +27,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 - [`cs doctor` — self-diagnostic](#cs-doctor--self-diagnostic)
 - [Usage cheatsheet](#usage)
 - [Environment variables](#environment-variables)
+- [How the cache countdown works](#how-the-cache-countdown-works)
 - [Troubleshooting](#troubleshooting)
 - [Upgrading](#upgrading)
 - [Comparison with alternatives](#comparison-with-alternatives)
@@ -358,6 +359,67 @@ cs --json-output
 Rate-limit percentages come directly from **Anthropic's official API headers**, surfaced into the JSON payload Claude Code injects on stdin to every `statusLine` command. Context-window usage comes from the same payload. The enabled-by-default `cache 4m23s` countdown is computed locally by tail-reading the active transcript JSONL — Anthropic's prompt cache TTL is 5 minutes by default ([Mar 2026 change](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)) or 1 hour with `ENABLE_PROMPT_CACHING_1H`.
 
 Requires Claude Code `v2.1.80+`.
+
+## How the cache countdown works
+
+The `cache 4m23s` segment is computed locally on every render from the active session transcript. Two design choices keep it accurate:
+
+- **Anchored on the most recent `assistant` entry** — not the last user message, not file mtime. Anthropic's prompt cache is a sliding window (refreshed on every hit), so "time left" is measured from the last turn, and each new turn refills the countdown.
+- **TTL is auto-detected** (since v3.9.0), not hard-coded. Anthropic reports, per turn, which TTL it applied in `message.usage.cache_creation`: a non-zero `ephemeral_1h_input_tokens` means a 1-hour cache, `ephemeral_5m_input_tokens` means 5 minutes. That bucket already reflects subscription-vs-API-key auth, `ENABLE_PROMPT_CACHING_1H`, and the over-quota → 5m downgrade, so no static value can match it.
+
+```mermaid
+flowchart TD
+    A["transcript.jsonl"] -->|"tail-read, &le; 320KB"| B["most recent assistant entry"]
+    B --> C["timestamp<br/>age = now − ts"]
+    B --> D["usage.cache_creation<br/>1h bucket → TTL 3600<br/>5m bucket → 300<br/>else → 300 (fallback)"]
+    C --> R["remaining = TTL − age"]
+    D --> R
+    R -->|"&gt; 0"| OK["cache 51m07s<br/>green; &lt; 1min → yellow"]
+    R -->|"&le; 0"| CO["cache COLD<br/>red"]
+    style OK fill:#eaf6ec,stroke:#2f9e44,color:#1b5e2a
+    style CO fill:#fbeceb,stroke:#e0443d,color:#8f2723
+```
+
+It's a couple dozen lines and not Claude-Code-specific — `message.usage.cache_creation` is a standard Claude API field, so you can reuse the logic in your own status bar, plugin, or script:
+
+```text
+# prompt-cache countdown. input: path to the current session transcript (JSONL).
+# three things to get right:
+#   1. anchor the most recent assistant entry (not the user message, not file mtime)
+#   2. read the TTL from the cache_creation buckets — don't hard-code it
+#   3. read the file tail only, don't slurp the whole thing
+
+function cacheCountdown(transcriptPath):
+    age = null            # seconds, from the newest assistant entry's timestamp
+    ttl = null            # seconds, from the newest entry that WROTE cache
+
+    # reverse-read the tail, at most 320KB (32KB chunks); grab age + ttl in one pass
+    for entry in reversedJsonlEntries(transcriptPath, maxBytes = 320 * 1024):
+        if entry.type != "assistant": continue
+        if age is null and entry.timestamp:
+            age = now() - parseTimeUTC(entry.timestamp)   # treat naive timestamps as UTC
+        if ttl is null:
+            cc = entry.message.usage.cache_creation
+            if   cc.ephemeral_1h_input_tokens > 0: ttl = 3600
+            elif cc.ephemeral_5m_input_tokens > 0: ttl = 300
+        if age is not null and ttl is not null: break
+
+    if age is null:  return "COLD"     # no assistant entry
+    if ttl is null:  ttl = 300         # no cache-write signal -> conservative fallback
+    if age < 0:      age = 0           # clock skew / future timestamp -> clamp to 0
+
+    remaining = ttl - age
+    if remaining <= 0: return "COLD"
+    return formatCountdown(ceil(remaining))
+
+# always show seconds so the number visibly ticks (proof it's live, not stuck)
+function formatCountdown(s):
+    if s >= 3600: return "{h}h{mm}m{ss}s"   # 1h59m03s
+    if s >= 60:   return "{m}m{ss}s"         # 58m23s / 4m07s
+    return "{s}s"                            # 47s (< 1min)
+```
+
+**Deep dive** — how accurate it really is, plus the Feb→May 2026 cache-TTL saga (1h → 5m → 1h) with sources: [状态栏那行 cache 4m23s，到底准不准？ (Chinese)](https://blog.misonote.com/zh/posts/claude-statusbar-cache-countdown/)
 
 ## Troubleshooting
 
