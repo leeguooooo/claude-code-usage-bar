@@ -1,6 +1,6 @@
 ---
 name: claude-statusbar
-description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age. Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, or asks to install / configure / diagnose / customize the bottom status line in Claude Code.
+description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age, or toggle the activity segments (todos, active tool, running subagents, session duration, lines changed, git ahead/behind). Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, todos / 待办, active tool, subagents / 子agent, session duration / 时长, lines changed / 行数, git ahead-behind / 领先落后, or asks to install / configure / diagnose / customize the bottom status line in Claude Code.
 ---
 
 # claude-statusbar control skill
@@ -34,6 +34,13 @@ give a short confirmation (one line, no lecture).
 | Toggle session cost display | `cs config set show_cost true\|false` |
 | Toggle prompt-cache countdown | `cs config set show_cache_age true\|false` |
 | Toggle project + branch 2nd line | `cs config set show_project_branch true\|false` (default `true`) |
+| Toggle todo progress (`▸ task 3/7`, 3rd line) | `cs config set show_todos true\|false` (default `true`) |
+| Toggle active-tool indicator `◐` (3rd line) | `cs config set show_tools true\|false` |
+| Toggle completed-tool rollup `✓ name×N` (3rd line) | `cs config set show_tool_rollup true\|false` (default off — volume tally) |
+| Toggle running-subagent bottom line(s) | `cs config set show_agents true\|false` (default off — Claude Code shows background agents natively) |
+| Toggle session duration `⏱` (on identity line) | `cs config set show_duration true\|false` |
+| Toggle lines added/removed `+/-` (on identity line) | `cs config set show_lines true\|false` |
+| Toggle git ahead/behind `↑↓` (on identity line) | `cs config set show_ahead_behind true\|false` |
 | Hide weekly bar | `cs config set show_weekly false` |
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |

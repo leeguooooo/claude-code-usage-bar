@@ -66,7 +66,9 @@ Full release notes in [CHANGELOG.md](CHANGELOG.md).
 | `Opus 4.7(350.0k/1.0M)` | Model name + current context window usage |
 | `cache 4m23s` / `cache COLD` | Countdown to prompt-cache expiry — the TTL (5min vs 1h) is auto-detected from the transcript, so it's right on a subscription (1h) or an API key (5min). Green when comfortable, yellow under 1min, red on COLD. Cache hits consume ~10× less rate-limit quota — for subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. Enabled by default; disable with `cs config set show_cache_age false` |
 | `$ 1.42` | Session cost in USD as Claude Code reports it. For Pro/Max subscribers this is the **API-equivalent value** of your usage (i.e. what it would cost on the API), not money owed. Useful as an ROI signal. Opt-in: `cs config set show_cost true` |
-| `⤷ <project> ⎇ <branch>●` | Second-line identity segment. Project comes from Claude Code's `workspace.repo.name` (cwd-basename fallback); branch reads `.git/HEAD` directly; the `●` dirty marker is refreshed by a background helper, cached 5 s. Enabled by default — turn off with `cs config set show_project_branch false`. |
+| `⤷ <project> ⎇ <branch>●↑2↓1 · +182 -47 · ⏱ 12m` | Second-line identity + session line. Project comes from Claude Code's `workspace.repo.name` (cwd-basename fallback); branch reads `.git/HEAD` directly; the `●` dirty marker is refreshed by a background helper, cached 5 s. Enabled by default — turn off with `cs config set show_project_branch false`. Opt-in extras live here too: `↑2↓1` commits ahead/behind upstream (`show_ahead_behind`, reuses the dirty-state `git status` — no extra spawn), session `⏱` duration (`show_duration`), and `+added -removed` lines (`show_lines`). |
+| `▸ <task> (3/7) · ◐ Edit auth.py · ✓ Read×3` | Third "activity" line — what's happening *right now*, parsed from the transcript: the in-progress **todo** + done/total (`show_todos`, on by default), the **active tool** (`◐`, `show_tools`), and an optional completed-tool rollup (`✓ name×N`, `show_tool_rollup`, default off). Omitted entirely when nothing is active. |
+| `◐ explore[haiku] <task> 2m15s` | Bottom line(s) — one per running **subagent** (`show_agents`, opt-in, default **off**). Note: Claude Code already shows background agents in its own native panel, so this largely duplicates that; off by default for that reason. |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
 Colors default to green / yellow / red at `30%` and `70%` — both thresholds configurable.
@@ -212,7 +214,13 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "show_language": true,
   "show_cost": false,
   "show_cache_age": true,
-  "show_project_branch": true
+  "show_project_branch": true,
+  "show_todos": true,
+  "show_tools": false,
+  "show_agents": false,
+  "show_duration": false,
+  "show_lines": false,
+  "show_ahead_behind": false
 }
 ```
 
@@ -227,6 +235,13 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_cache_age` | bool, default `true` | Append a `cache 4m23s` countdown to Anthropic's prompt-cache expiry, with the TTL (5min vs 1h) auto-detected from the transcript. Three-level color: green (>1min remaining), yellow (<1min), red `cache COLD` (expired). Cache hits consume ~10× less rate-limit quota — for Pro/Max subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. `cs --setup` writes `refreshInterval: 1` by default so this segment ticks visibly. Original implementation contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). Disable with `cs config set show_cache_age false`. |
 | `cache_ttl_seconds` | int, default `300` | **Deprecated since v3.9.0.** The segment now auto-detects the real TTL (5min vs 1h) from the transcript's `cache_creation` buckets, so this value is no longer consulted. Still accepted (and `cs config set cache_ttl_seconds …` still works) so existing configs don't break. See [How the cache countdown works](#how-the-cache-countdown-works). |
 | `show_project_branch` | bool, default `true` | Append a second line `⤷ <project> ⎇ <branch>●` below the bar. Project name comes from Claude Code's `workspace.repo.name` stdin field (falls back to cwd basename); branch is read from `.git/HEAD` directly. The `●` dirty marker is refreshed by a background helper and cached 5 s — the inline render path never blocks on `git`. Disable with `cs config set show_project_branch false`. |
+| `show_ahead_behind` | bool, default `false` | Append a `↑2↓1` commits-ahead/behind-upstream marker after the branch on the identity line. Reuses the same cached `git status --branch` call as the dirty dot, so it adds no extra git spawn. Only takes effect when `show_project_branch` is on (it lives on that line). Arrows show only for nonzero directions; in sync → nothing. |
+| `show_todos` | bool, default `true` | Third "activity" line: the in-progress todo + `done/total`, e.g. `▸ Wire the activity line (1/3)`. Parsed from the newest `TodoWrite` in the transcript (full list, last-write-wins) via the same bounded reverse-tail read as the cache countdown. The clearest "is my long turn making progress?" signal. Disable with `cs config set show_todos false`. |
+| `show_tools` | bool, default `false` | Activity line: the **active tool** (`◐ Edit auth.py` — the newest tool_use with no result yet). MCP names are shortened (`mcp__figma__get_screenshot` → `get_screenshot`). Opt-in. |
+| `show_tool_rollup` | bool, default `false` | Activity line: a frequency rollup of recently-completed tools (`✓ Edit×14 Bash×6 Read×4`). A volume tally rather than a live signal — separate from `show_tools` and off by default. Opt-in. |
+| `show_agents` | bool, default `false` | One **bottom line per running subagent**, e.g. `◐ explore[haiku] 探索 RsaKeyPairPool 2m15s` (multiple agents → multiple lines). Inline agents finish via their tool_result; background (`run_in_background`) agents finish via the queue-operation that carries their tool-use-id. **Off by default because Claude Code already shows background agents in its own native panel** — enabling this largely duplicates that. |
+| `show_duration` | bool, default `false` | **Identity line:** session wall-clock duration as Claude Code reports it (`⏱ 12m`). Already on stdin — no transcript scan. Shows next to the project (needs `show_project_branch` on). Opt-in. |
+| `show_lines` | bool, default `false` | **Identity line:** session lines added/removed as Claude Code reports it (`+182 -47`, +green/−red). This is Claude Code's own cumulative session tally (every Write/Edit), **not a git diff** — it can exceed the net working-tree change. Needs `show_project_branch` on. Opt-in. |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
 
@@ -303,6 +318,12 @@ cs config set style hairline    # persist style → ~/.claude/claude-statusbar.j
 cs config set theme linen       # persist theme
 cs config set show_cost true    # session $ cost segment
 cs config set show_cache_age false  # hide prompt-cache age segment
+cs config set show_tools true   # activity line: active tool + completed rollup
+cs config set show_agents true  # bottom line(s): running subagents + elapsed
+cs config set show_duration true # identity line: ⏱ session duration
+cs config set show_lines true   # identity line: +added -removed
+cs config set show_ahead_behind true  # ↑2↓1 on the project/branch line
+cs config set show_todos false  # hide the todo-progress segment (on by default)
 cs config reset                 # wipe config back to defaults
 
 # Discovery

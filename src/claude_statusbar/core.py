@@ -475,6 +475,10 @@ def parse_stdin_data() -> Dict[str, Any]:
         # Session ID
         result['session_id'] = data.get('session_id', '')
 
+        # Transcript path — used by the prompt-cache countdown and the
+        # optional live-activity line (todos / active tool / agents).
+        result['transcript_path'] = data.get('transcript_path', '')
+
         # Model
         model_obj = data.get('model', {})
         if isinstance(model_obj, dict):
@@ -906,7 +910,7 @@ _FALLBACK_TTL_S = 300
 def _entry_age(entry: Dict[str, Any]) -> Optional[float]:
     """Seconds since this transcript entry's timestamp, or None if absent/bad."""
     ts_str = entry.get("timestamp", "")
-    if not ts_str:
+    if not isinstance(ts_str, str) or not ts_str:
         return None
     if ts_str.endswith("Z"):
         ts_str = ts_str[:-1] + "+00:00"
@@ -1068,39 +1072,10 @@ def get_cache_age_text(ttl_seconds: Optional[int] = None) -> str:
     if info is None:
         return "COLD"
     age_s, detected_ttl = info
-
-    if ttl_seconds is None:
-        ttl_seconds = detected_ttl if detected_ttl is not None else _FALLBACK_TTL_S
-
-    # Clock-skew clamp: future transcript timestamp (NTP correction or
-    # sandbox time-warp) → treat as just-now (full TTL remaining).
-    if age_s < 0:
-        age_s = 0
-
-    remaining = ttl_seconds - age_s
-    if remaining <= 0:
-        return "COLD"
-
-    # Round UP so a render at t=0.4s into a 5min TTL still shows 5m00s,
-    # not 4m59s — feels less surprising for the user who just hit enter.
-    remaining_int = int(remaining) if remaining == int(remaining) else int(remaining) + 1
-
-    # Always show seconds so the countdown visibly ticks every render — a
-    # static "58m" reads as frozen/broken, whereas "58m23s" ticking proves
-    # the widget is live and the number is real. Format scales with size but
-    # the seconds field is never dropped:
-    #   >= 1h:  "XhMMmSSs"   (e.g. "1h59m03s" — minutes never truncated)
-    #   >= 1min:"MmSSs"      (e.g. "58m23s", "4m07s", "1m00s")
-    #   < 1min: "Ys"         (bare seconds → styles layer flips to yellow)
-    secs = remaining_int % 60
-    if remaining_int >= 3600:
-        hours = remaining_int // 3600
-        mins = (remaining_int % 3600) // 60
-        return f"{hours}h{mins:02d}m{secs:02d}s"
-    mins = remaining_int // 60
-    if mins > 0:
-        return f"{mins}m{secs:02d}s"
-    return f"{secs}s"
+    # Formatting (countdown + clock-skew clamp + COLD) is shared with the
+    # merged single-scan render path so both produce identical output.
+    from .activity import format_cache_countdown
+    return format_cache_countdown(age_s, detected_ttl, ttl_seconds)
 
 
 def main(json_output: bool = False,
@@ -1169,8 +1144,42 @@ def main(json_output: bool = False,
         if isinstance(sc, (int, float)) and sc >= 0:
             cost_text = f"{sc:.2f}"
 
-    # Optional cache age segment.
-    cache_age_text = get_cache_age_text() if cfg.show_cache_age else ""
+    # ONE transcript tail-scan serves BOTH the activity line and the prompt-
+    # cache countdown: read_activity also returns cache_age_seconds/cache_ttl.
+    # When the activity line isn't wanted, fall back to the lean early-exit
+    # cache reader (get_cache_age_text) so a cache-only render stays cheap.
+    _want_scan = cfg.show_todos or cfg.show_tools or cfg.show_agents
+    _tp = stdin_data.get("transcript_path", "")
+    activity = None
+    if _want_scan and _tp:
+        from .activity import read_activity
+        # Runs BEFORE main()'s big try/except — guard so a scanner failure
+        # degrades to "no activity line" instead of blanking the whole bar.
+        try:
+            activity = read_activity(_tp)
+        except Exception:
+            activity = None
+
+    # Optional cache age segment — from the shared scan when we did one, else
+    # the standalone reader (cache-only render, no transcript, or scan failed).
+    cache_age_text = ""
+    if cfg.show_cache_age:
+        if activity is not None:
+            from .activity import format_cache_countdown
+            cache_age_text = format_cache_countdown(
+                activity.cache_age_seconds, activity.cache_ttl)
+        else:
+            cache_age_text = get_cache_age_text()
+
+    # Cheap session stats from stdin (no transcript scan). Rendered on the
+    # identity line — next to the project — rather than alone on the activity
+    # line. (They therefore appear only when show_project_branch is on.)
+    from .activity import format_duration_short, format_lines
+    duration_text = (format_duration_short(stdin_data.get("total_duration_ms", 0))
+                     if cfg.show_duration else "")
+    lines_text = (format_lines(stdin_data.get("lines_added", 0),
+                               stdin_data.get("lines_removed", 0))
+                  if cfg.show_lines else "")
 
     # Optional project + branch identity segment (second line).
     identity_kwargs = {}
@@ -1182,6 +1191,30 @@ def main(json_output: bool = False,
             show_project_branch=True,
             identity=info,
             identity_dirty=dirty,
+            identity_duration=duration_text,
+            identity_lines=lines_text,
+        )
+        # git ahead/behind reuses the same cached `git status --branch` the
+        # dirty refresh just triggered — only meaningful on the identity line.
+        if cfg.show_ahead_behind and info.toplevel:
+            from .identity import read_ahead_behind
+            ahead, behind = read_ahead_behind(info.toplevel)
+            identity_kwargs["identity_ahead"] = ahead
+            identity_kwargs["identity_behind"] = behind
+
+    # Optional live-activity line (3rd line): todos / active tool + rollup.
+    # Subagents (show_agents) render on their own bottom line(s). Reuses the
+    # single `activity` scan done above.
+    activity_kwargs = {}
+    if _want_scan:
+        activity_kwargs = dict(
+            activity=activity,
+            activity_opts=dict(
+                show_todos=cfg.show_todos,
+                show_tools=cfg.show_tools,
+                show_tool_rollup=cfg.show_tool_rollup,
+                show_agents=cfg.show_agents,
+            ),
         )
 
     try:
@@ -1278,6 +1311,7 @@ def main(json_output: bool = False,
                     density=cfg.density, show_weekly=cfg.show_weekly,
                     ctx_pct=ctx_pct,
                     **identity_kwargs,
+                    **activity_kwargs,
                 ))
         else:
             # No rate_limits yet — could be session start or old Claude Code
@@ -1319,6 +1353,7 @@ def main(json_output: bool = False,
                         density=cfg.density, show_weekly=cfg.show_weekly,
                         ctx_pct=ctx_pct,
                         **identity_kwargs,
+                        **activity_kwargs,
                     ))
             else:
                 # No stdin at all — not running inside Claude Code statusLine

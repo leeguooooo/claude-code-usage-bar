@@ -96,6 +96,49 @@ def test_dispatcher_omits_identity_when_disabled():
     assert "\n" not in out
 
 
+def test_identity_line_shows_duration_and_lines():
+    s = render_identity_line(
+        IdentityInfo(project_name="proj", in_git=True, branch="main",
+                     detached=False, worktree_name=None, toplevel="/x"),
+        theme=THEME, dirty=False, duration_text="1h12m", lines_text="+235",
+        use_color=False,
+    )
+    assert "proj" in s and "main" in s
+    assert "⏱" in s and "1h12m" in s
+    assert "+235" in s
+
+
+def test_identity_line_lines_diff_colored():
+    s = render_identity_line(
+        IdentityInfo(project_name="p", in_git=True, branch="main",
+                     detached=False, worktree_name=None, toplevel="/x"),
+        theme=THEME, dirty=False, lines_text="+41 -15", use_color=True,
+    )
+    from claude_statusbar.styles import _fg
+    assert _fg(THEME.s_ok) in s    # +41 green
+    assert _fg(THEME.s_hot) in s   # -15 red
+
+
+def test_identity_line_lines_before_duration():
+    # Lines (productivity) read first; the weaker duration signal trails it.
+    s = render_identity_line(
+        IdentityInfo(project_name="p", in_git=True, branch="main",
+                     detached=False, worktree_name=None, toplevel="/x"),
+        theme=THEME, dirty=False, duration_text="1h12m", lines_text="+235",
+        use_color=False,
+    )
+    assert s.index("+235") < s.index("1h12m")
+
+
+def test_identity_line_no_stats_when_absent():
+    s = render_identity_line(
+        IdentityInfo(project_name="p", in_git=True, branch="main",
+                     detached=False, worktree_name=None, toplevel="/x"),
+        theme=THEME, dirty=False, use_color=False,
+    )
+    assert "⏱" not in s
+
+
 def test_dispatcher_applies_to_capsule_too():
     from claude_statusbar import styles
     out = styles.render(

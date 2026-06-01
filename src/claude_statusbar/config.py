@@ -39,6 +39,16 @@ class StatusbarConfig:
     show_cost: bool = False
     show_cache_age: bool = True
     show_project_branch: bool = True
+    # Live-activity / session-stats segments (3rd "activity" line). Only
+    # show_todos defaults on — the rest are opt-in so the curated identity
+    # line isn't crowded for users who didn't ask.
+    show_todos: bool = True
+    show_tools: bool = False
+    show_tool_rollup: bool = False
+    show_agents: bool = False
+    show_duration: bool = False
+    show_lines: bool = False
+    show_ahead_behind: bool = False
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS  # deprecated; auto-detected now
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
@@ -76,6 +86,13 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
         show_cost=_to_bool(raw.get("show_cost", False)),
         show_cache_age=_to_bool(raw.get("show_cache_age", True)),
         show_project_branch=_to_bool(raw.get("show_project_branch", True)),
+        show_todos=_to_bool(raw.get("show_todos", True)),
+        show_tools=_to_bool(raw.get("show_tools", False)),
+        show_tool_rollup=_to_bool(raw.get("show_tool_rollup", False)),
+        show_agents=_to_bool(raw.get("show_agents", False)),
+        show_duration=_to_bool(raw.get("show_duration", False)),
+        show_lines=_to_bool(raw.get("show_lines", False)),
+        show_ahead_behind=_to_bool(raw.get("show_ahead_behind", False)),
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", DEFAULT_CACHE_TTL_SECONDS) or DEFAULT_CACHE_TTL_SECONDS),
         warning_threshold=raw.get("warning_threshold"),
         critical_threshold=raw.get("critical_threshold"),
@@ -95,12 +112,16 @@ VALID_KEYS = {
     "style", "theme", "density", "auto_compact_width",
     "show_weekly", "show_language", "show_cost", "show_cache_age",
     "show_project_branch",
+    "show_todos", "show_tools", "show_tool_rollup", "show_agents",
+    "show_duration", "show_lines", "show_ahead_behind",
     "cache_ttl_seconds",
     "warning_threshold", "critical_threshold",
     "color_ok", "color_warn", "color_hot",
 }
 _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_cache_age",
-              "show_project_branch"}
+              "show_project_branch",
+              "show_todos", "show_tools", "show_tool_rollup", "show_agents",
+              "show_duration", "show_lines", "show_ahead_behind"}
 _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds"}
 _COLOR_KEYS = {"color_ok", "color_warn", "color_hot"}

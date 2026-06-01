@@ -151,3 +151,18 @@ def dirty_with_async_refresh(toplevel: str) -> Optional[bool]:
             git_cache.clear_inflight(toplevel)
 
     return None if entry is None else bool(entry.get("dirty"))
+
+
+def read_ahead_behind(toplevel: str) -> Tuple[Optional[int], Optional[int]]:
+    """Return (ahead, behind) from the git cache without triggering a refresh.
+
+    The refresh is already kicked off by ``dirty_with_async_refresh`` (both
+    values come from the same ``git status --branch`` call), so this is a
+    cheap cache read. (None, None) when unknown / no upstream / cache miss.
+    """
+    from . import git_cache
+
+    entry = git_cache.read_cache(toplevel)
+    if entry is None:
+        return None, None
+    return entry.get("ahead"), entry.get("behind")

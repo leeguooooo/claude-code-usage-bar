@@ -9,6 +9,46 @@ For a quick overview of the latest release, see the
 
 ---
 
+## Unreleased
+
+### Added
+- **Live-activity line (3rd line).** An opt-in third status line surfaces what
+  Claude is doing *right now*, parsed from the transcript via the same bounded
+  reverse-tail read (≤320 KB) the cache countdown already uses:
+  - **Todos** `▸ <in-progress task> (3/7)` — from the newest `TodoWrite` (full
+    list, last-write-wins). On by default (`show_todos`); it's the clearest
+    "is my long turn making progress?" signal.
+  - **Active tool** `◐ Edit auth.py` (newest tool_use with no result yet). MCP
+    names shortened (`mcp__figma__get_screenshot` → `get_screenshot`). Opt-in
+    (`show_tools`). A separate completed-tool rollup `✓ Edit×14 Bash×6` is
+    available via `show_tool_rollup` (a volume tally; default off).
+  The line is style-agnostic (renders the same under classic / capsule /
+  hairline) and is omitted entirely when nothing is active. The curated
+  main line is untouched.
+- **Identity line gains opt-in session context.** Next to `⤷ project ⎇ branch`:
+  - **git ahead/behind** `↑2↓1` (`show_ahead_behind`) — reuses the dirty-state
+    `git status --branch` call, no extra spawn; arrows only for nonzero
+    directions.
+  - **session duration** `⏱ 12m` (`show_duration`) and **lines changed**
+    `+182 -47` (`show_lines`, +green/−red) — straight from stdin. These are
+    Claude Code's own cumulative session tally, not a git diff.
+- **Running subagents** — one **bottom line per agent** `◐ explore[haiku]
+  <task> 2m15s` (`show_agents`, opt-in, **default off**). Background agents are
+  detected as running until their queue-operation task-notification (their
+  immediate launch-ack tool_result does *not* count as completion). Off by
+  default because Claude Code already shows background agents in its own
+  native panel, so enabling this largely duplicates it.
+- **`.claude-plugin/marketplace.json`** — the repo is now a self-hosted plugin
+  marketplace: `/plugin marketplace add leeguooooo/claude-code-usage-bar` then
+  `/plugin install claude-statusbar`. (The render engine is still the `cs` CLI
+  from PyPI.)
+
+### Robustness
+- The activity scan is fully defensive against malformed transcript shapes
+  (non-string `file_path`, non-dict tool `input`, non-string `timestamp`) and
+  is wrapped so any scanner failure degrades to "no activity line" rather than
+  blanking the whole status bar — the scan runs before `main()`'s try/except.
+
 ## v3.9.1 — 2026-05-29
 
 ### Changed

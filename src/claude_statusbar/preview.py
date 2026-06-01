@@ -63,6 +63,13 @@ def _real_data() -> Optional[dict]:
     if isinstance(sc, (int, float)) and sc >= 0:
         cost_text = f"{sc:.2f}"
 
+    # Live-activity line — read the real transcript when we have one, so the
+    # preview's 3rd line is the user's actual todos / tools / agents.
+    from .activity import read_activity, format_duration_short, format_lines
+    cost = raw.get("cost") or {}
+    tp = raw.get("transcript_path", "")
+    activity = read_activity(tp) if tp else None
+
     return dict(
         msgs_pct=int(round(fh.get("used_percentage", 0))),
         weekly_pct=int(round(sd.get("used_percentage", 0))),
@@ -71,16 +78,33 @@ def _real_data() -> Optional[dict]:
         model=name,
         cache_age_text=cache_age_text,
         cost_text=cost_text,
+        activity=activity,
+        duration_text=format_duration_short(cost.get("total_duration_ms", 0)),
+        lines_text=format_lines(cost.get("total_lines_added", 0),
+                                cost.get("total_lines_removed", 0)),
     )
 
 
 def _demo_data() -> dict:
+    from .activity import ActivityInfo
     return dict(
         msgs_pct=42, weekly_pct=18,
         reset_5h="3h28m", reset_7d="5d12h",
         model="Opus 4.7(45.0k/1.0M)",
         cache_age_text="3m24s",  # warm — demo what countdown looks like
         cost_text="2.18",
+        activity=ActivityInfo(
+            todos=[("Wire the activity line", "in_progress"),
+                   ("Add tests", "completed"),
+                   ("Ship it", "pending")],
+            active_tool=("Edit", "core.py"),
+            completed_counts=[("Read", 3), ("Bash", 2)],
+            agents=[{"name": "explore", "model": "haiku",
+                     "description": "find code", "elapsed_seconds": 135,
+                     "background": False}],
+        ),
+        duration_text="12m",
+        lines_text="+182 -47",
     )
 
 
@@ -96,6 +120,12 @@ def run(use_color: bool = True, theme_filter: Optional[str] = None,
     real = _real_data()
     data = real or _demo_data()
     src_label = "用你当前的真实数据" if real else "演示数据(找不到 last_stdin.json)"
+
+    # Show the activity line (todos + active tool / completed rollup) so users
+    # see it the same way the cache + cost segments are shown. Session stats
+    # (duration/lines) live on the identity line and agents on their own lines,
+    # neither of which the style×theme matrix renders.
+    act_opts = dict(show_todos=True, show_tools=True, show_tool_rollup=True)
 
     GOLD = "\033[38;2;212;175;55m\033[1m"
     DIM  = "\033[38;2;110;110;115m"
@@ -151,6 +181,7 @@ def run(use_color: bool = True, theme_filter: Optional[str] = None,
                 bypass=False,
                 use_color=use_color,
                 warning_threshold=30.0, critical_threshold=70.0,
+                activity=data.get("activity"), activity_opts=act_opts,
             )
             print(f"  {DIM}[theme-agnostic]{R} {line}")
             continue
@@ -166,6 +197,7 @@ def run(use_color: bool = True, theme_filter: Optional[str] = None,
                 bypass=False,
                 use_color=use_color,
                 warning_threshold=30.0, critical_threshold=70.0,
+                activity=data.get("activity"), activity_opts=act_opts,
             )
             print(f"  {DIM}[{theme.name:<9}]{R} {line}")
     print()
