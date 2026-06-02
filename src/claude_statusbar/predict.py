@@ -25,9 +25,11 @@ See docs/superpowers/specs/2026-06-02-rate-limit-forecast-design.md."""
 from __future__ import annotations
 
 import json
+import math
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Fixed nominal window lengths (seconds). The 5h and 7d limits are plan-level
 # constants; resets_at gives the reset instant, so the window started one length
@@ -56,6 +58,21 @@ DEBUG_PLACEHOLDER = "→--"   # "→--"
 # tick. ONE record per window, overwrite-on-newer (not an append log) → trivial
 # last-writer-wins concurrency, no write storm.
 _LATEST_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "rate_latest.json"
+
+MAX_PROJECTION_SAMPLES = 5000
+MAX_PROJECTION_SNAPSHOTS = 1000
+MAX_CLOSED_WINDOWS = 100
+_PROJECTION_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "rate_projection.json"
+
+LOCAL_OFFSET = timedelta(hours=9)  # Asia/Tokyo, no DST.
+DEFAULT_BUCKET_PRIORS = {
+    "night": 0.02,
+    "weekday_work_hours": 0.45,
+    "weekday_non_work_hours": 0.12,
+    "weekend": 0.10,
+}
+LEARNED_BUCKET_FULL_WEIGHT_SAMPLES = 20
+TAU_SECONDS = {"five_hour": 8 * 60, "seven_day": 2 * 3600}
 
 
 def format_eta(seconds: float) -> str:
@@ -91,35 +108,32 @@ def project_window(used_pct, time_to_reset: float,
 
 
 def forecast_chip(window: str, used_pct, resets_at, now: float) -> Optional[str]:
-    """Raw chip for one window when `show_forecast` is on (always shows):
-    `→NN%` = projected end-of-window usage at the average pace so far (the normal
-    case), upgrading to `⚠<eta>` when projected to hit 100% before reset (the
-    actionable warning). `→--` while it can't be computed yet (too early / no
-    usage / odd input). Never raises."""
-    miss = DEBUG_PLACEHOLDER
+    """Raw ETA chip for one window. Returns `~<eta>` only when the window is
+    projected to hit 100% within the imminent ETA band before reset. Otherwise
+    returns None. End-of-window `→NN%` projections are handled by projection()."""
     try:
         used = float(used_pct)
     except (TypeError, ValueError):
-        return miss
+        return None
     if resets_at is None:
-        return miss
+        return None
     try:
         time_to_reset = float(resets_at) - now
     except (TypeError, ValueError):
-        return miss
+        return None
     length = WINDOW_LEN_S.get(window)
     if length is None or time_to_reset <= 0:
-        return miss
+        return None
     elapsed = length - time_to_reset
     if elapsed < MIN_ELAPSED_S.get(window, 0):
-        return miss                        # too early in the window to trust
+        return None                        # too early in the window to trust
     projected = project_window(used, time_to_reset, length)
     if projected is None:
-        return miss
+        return None
     projected_final, ttl = projected
     if projected_final >= 100 and ttl <= IMMINENT_ETA_S:
         return format_eta(ttl)             # ⚠ imminent — show the countdown
-    return f"→{projected_final:.0f}%"       # projected end-of-window % (coloured)
+    return None
 
 
 def _coerce(x):
@@ -190,3 +204,321 @@ def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
         return c5, c7
     except Exception:
         return None, None
+
+
+def empty_projection_store() -> Dict[str, Any]:
+    return {
+        "version": 1,
+        "five_hour": [],
+        "seven_day": [],
+        "display": {},
+        "snapshots": [],
+        "closed_windows": [],
+    }
+
+
+def load_projection_store(path=None) -> Dict[str, Any]:
+    p = Path(path) if path is not None else _PROJECTION_PATH
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return empty_projection_store()
+    except (OSError, json.JSONDecodeError, ValueError):
+        return empty_projection_store()
+    store = empty_projection_store()
+    for key in store:
+        if key in data:
+            store[key] = data[key]
+    for key in ("five_hour", "seven_day", "snapshots", "closed_windows"):
+        if not isinstance(store.get(key), list):
+            store[key] = []
+    if not isinstance(store.get("display"), dict):
+        store["display"] = {}
+    store["version"] = 1
+    return store
+
+
+def save_projection_store(store: Dict[str, Any], path=None) -> None:
+    p = Path(path) if path is not None else _PROJECTION_PATH
+    from .cache import atomic_write_text
+    atomic_write_text(p, json.dumps(store, separators=(",", ":")))
+
+
+def _valid_window(window: str) -> bool:
+    return window in WINDOW_LEN_S
+
+
+def record_projection_sample(store: Dict[str, Any], window: str, used_pct, resets_at,
+                             observed_at: float, session_id: str = "") -> Dict[str, Any]:
+    if not _valid_window(window):
+        return store
+    try:
+        used = float(used_pct)
+        reset = float(resets_at)
+        ts = float(observed_at)
+    except (TypeError, ValueError):
+        return store
+    if ts <= 0 or reset <= 0 or used < 0:
+        return store
+    sample = {
+        "observed_at": ts,
+        "used_pct": max(0.0, min(100.0, used)),
+        "resets_at": reset,
+        "session_id": str(session_id or ""),
+    }
+    series = store.setdefault(window, [])
+    if not isinstance(series, list):
+        series = []
+        store[window] = series
+    if series and series[-1] == sample:
+        return store
+    series.append(sample)
+    series.sort(key=lambda s: float(s.get("observed_at", 0.0)))
+    del series[:-MAX_PROJECTION_SAMPLES]
+    return store
+
+
+def _local_datetime(ts: float) -> datetime:
+    return datetime.fromtimestamp(float(ts), tz=timezone.utc) + LOCAL_OFFSET
+
+
+def bucket_for_time(ts: float) -> str:
+    dt = _local_datetime(ts)
+    hour = dt.hour
+    if hour < 7:
+        return "night"
+    if dt.weekday() >= 5:
+        return "weekend"
+    if 9 <= hour < 18:
+        return "weekday_work_hours"
+    return "weekday_non_work_hours"
+
+
+def learn_bucket_rates(samples: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+    out: Dict[str, Dict[str, float]] = {}
+    ordered = sorted(samples, key=lambda s: float(s.get("observed_at", 0.0)))
+    for prev, cur in zip(ordered, ordered[1:]):
+        try:
+            dt = float(cur["observed_at"]) - float(prev["observed_at"])
+            du = float(cur["used_pct"]) - float(prev["used_pct"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if dt < 300 or du <= 0:
+            continue
+        rate_per_hour = du / (dt / 3600.0)
+        if rate_per_hour > 20.0:
+            continue
+        bucket = bucket_for_time(float(prev["observed_at"]))
+        agg = out.setdefault(bucket, {"total_rate": 0.0, "samples": 0})
+        agg["total_rate"] += rate_per_hour
+        agg["samples"] += 1
+    for bucket, agg in out.items():
+        samples_n = int(agg["samples"])
+        agg["rate_per_hour"] = (
+            agg["total_rate"] / samples_n
+            if samples_n else DEFAULT_BUCKET_PRIORS.get(bucket, 0.0)
+        )
+    return out
+
+
+def expected_bucket_rate(bucket: str, learned: Optional[Dict[str, float]] = None) -> float:
+    prior = DEFAULT_BUCKET_PRIORS.get(bucket, 0.0)
+    if not learned:
+        return prior
+    try:
+        learned_rate = float(learned.get("rate_per_hour", prior))
+        samples_n = max(0.0, float(learned.get("samples", 0.0)))
+    except (TypeError, ValueError):
+        return prior
+    weight = min(1.0, samples_n / LEARNED_BUCKET_FULL_WEIGHT_SAMPLES)
+    return prior * (1.0 - weight) + learned_rate * weight
+
+
+def integrate_future_buckets(start_ts: float, end_ts: float,
+                             learned_rates: Dict[str, Dict[str, float]]) -> float:
+    start = float(start_ts)
+    end = float(end_ts)
+    if end <= start:
+        return 0.0
+    total = 0.0
+    cursor = start
+    while cursor < end:
+        step_end = min(end, cursor + 3600.0)
+        bucket = bucket_for_time(cursor)
+        rate = expected_bucket_rate(bucket, learned_rates.get(bucket, {}))
+        total += rate * ((step_end - cursor) / 3600.0)
+        cursor = step_end
+    return total
+
+
+def _samples_for_reset(samples: List[Dict[str, Any]], resets_at: float) -> List[Dict[str, Any]]:
+    return [s for s in samples if _coerce(s.get("resets_at")) == float(resets_at)]
+
+
+def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: float) -> Optional[float]:
+    cutoff = now - lookback_s
+    in_window = [
+        s for s in samples
+        if float(s.get("observed_at", 0.0)) >= cutoff
+        and float(s.get("observed_at", 0.0)) <= now
+    ]
+    if len(in_window) < 2:
+        return None
+    first, last = in_window[0], in_window[-1]
+    try:
+        dt = float(last["observed_at"]) - float(first["observed_at"])
+        du = float(last["used_pct"]) - float(first["used_pct"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if dt <= 0 or du <= 0:
+        return None
+    rate = du / dt
+    if rate > 20.0 / 3600.0:
+        return None
+    return rate
+
+
+def project_5h(current_used: float, resets_at: float, now: float,
+               samples: List[Dict[str, Any]]) -> float:
+    used = float(current_used)
+    ttr = max(0.0, float(resets_at) - float(now))
+    window_avg = project_window(used, ttr, WINDOW_LEN_S["five_hour"])
+    avg_rate = None
+    if window_avg is not None and ttr > 0:
+        projected_final, _ttl = window_avg
+        avg_rate = max(0.0, (projected_final - used) / ttr)
+    recent = _rate_from_samples(samples, float(now), 3600.0)
+    learned = learn_bucket_rates(samples)
+    bucket = bucket_for_time(now)
+    bucket_rate = expected_bucket_rate(bucket, learned.get(bucket, {})) / 3600.0
+    rates = []
+    weights = []
+    if recent is not None:
+        rates.append(recent)
+        weights.append(0.55)
+    if avg_rate is not None:
+        rates.append(avg_rate)
+        weights.append(0.30 if recent is not None else 0.75)
+    rates.append(bucket_rate)
+    weights.append(0.15 if recent is not None else 0.25)
+    total_w = sum(weights)
+    blended = sum(r * w for r, w in zip(rates, weights)) / total_w if total_w else 0.0
+    return max(used, min(100.0, used + blended * ttr))
+
+
+def project_7d(current_used: float, resets_at: float, now: float,
+               samples: List[Dict[str, Any]]) -> float:
+    used = float(current_used)
+    learned = learn_bucket_rates(samples)
+    future = integrate_future_buckets(float(now), float(resets_at), learned)
+    ttr = max(0.0, float(resets_at) - float(now))
+    window_avg = project_window(used, ttr, WINDOW_LEN_S["seven_day"])
+    sanity = 0.0
+    if window_avg is not None:
+        sanity = max(0.0, window_avg[0] - used) * 0.10
+    return max(used, min(100.0, used + future + sanity))
+
+
+def smooth_projection(window: str, raw: float, current_used: float,
+                      observed_at: float, previous: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
+    raw = max(float(current_used), min(100.0, float(raw)))
+    ts = float(observed_at)
+    if not previous:
+        return {"projected_pct": raw, "updated_at": ts}
+    prev_ts = _coerce(previous.get("updated_at"))
+    prev_pct = _coerce(previous.get("projected_pct"))
+    if prev_ts is None or prev_pct is None:
+        return {"projected_pct": raw, "updated_at": ts}
+    if ts <= prev_ts:
+        return {"projected_pct": max(float(current_used), min(100.0, prev_pct)),
+                "updated_at": prev_ts}
+    tau = TAU_SECONDS.get(window, 900)
+    alpha = 1.0 - math.exp(-(ts - prev_ts) / tau)
+    smoothed = prev_pct * (1.0 - alpha) + raw * alpha
+    return {"projected_pct": max(float(current_used), min(100.0, smoothed)),
+            "updated_at": ts}
+
+
+def record_projection_snapshot(store: Dict[str, Any], window: str, observed_at: float,
+                               used_pct: float, resets_at: float, projected_pct: float) -> Dict[str, Any]:
+    snap = {
+        "window": window,
+        "observed_at": float(observed_at),
+        "used_pct": float(used_pct),
+        "resets_at": float(resets_at),
+        "model": "projection_v1",
+        "projected_pct": float(projected_pct),
+    }
+    snaps = store.setdefault("snapshots", [])
+    if not isinstance(snaps, list):
+        snaps = []
+        store["snapshots"] = snaps
+    snaps.append(snap)
+    del snaps[:-MAX_PROJECTION_SNAPSHOTS]
+    return store
+
+
+def close_changed_windows(store: Dict[str, Any], window: str) -> Dict[str, Any]:
+    series = store.get(window, [])
+    if not isinstance(series, list) or len(series) < 2:
+        return store
+    closed = store.setdefault("closed_windows", [])
+    if not isinstance(closed, list):
+        closed = []
+        store["closed_windows"] = closed
+    seen = {
+        (c.get("window"), c.get("previous_resets_at"))
+        for c in closed if isinstance(c, dict)
+    }
+    for prev, cur in zip(series, series[1:]):
+        prev_reset = prev.get("resets_at")
+        cur_reset = cur.get("resets_at")
+        if prev_reset != cur_reset and (window, prev_reset) not in seen:
+            closed.append({
+                "window": window,
+                "previous_resets_at": prev_reset,
+                "actual_final_pct": prev.get("used_pct"),
+                "closed_at": cur.get("observed_at"),
+            })
+            seen.add((window, prev_reset))
+    del closed[:-MAX_CLOSED_WINDOWS]
+    return store
+
+
+def _format_projection_pct(value: float) -> str:
+    return f"→{max(0.0, min(100.0, float(value))):.0f}%"
+
+
+def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_at,
+                           now: float, session_id: str) -> str:
+    try:
+        used = float(used_pct)
+        reset = float(resets_at)
+    except (TypeError, ValueError):
+        prev = store.get("display", {}).get(window, {})
+        prev_pct = _coerce(prev.get("projected_pct")) if isinstance(prev, dict) else None
+        return _format_projection_pct(prev_pct if prev_pct is not None else 0.0)
+    store = record_projection_sample(store, window, used, reset, now, session_id)
+    close_changed_windows(store, window)
+    samples = _samples_for_reset(store.get(window, []), reset)
+    raw = (
+        project_5h(used, reset, now, samples)
+        if window == "five_hour"
+        else project_7d(used, reset, now, samples)
+    )
+    display = store.setdefault("display", {})
+    previous = display.get(window) if isinstance(display.get(window), dict) else None
+    display[window] = smooth_projection(window, raw, used, now, previous)
+    record_projection_snapshot(store, window, now, used, reset, display[window]["projected_pct"])
+    return _format_projection_pct(display[window]["projected_pct"])
+
+
+def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):
+    try:
+        store = load_projection_store()
+        p5 = _projection_for_window(store, "five_hour", used_5h, resets_5h, now, session_id)
+        p7 = _projection_for_window(store, "seven_day", used_7d, resets_7d, now, session_id)
+        save_projection_store(store)
+        return p5, p7
+    except Exception:
+        return "", ""

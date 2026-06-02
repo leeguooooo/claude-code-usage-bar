@@ -44,11 +44,10 @@ def test_project_window_bad_input_is_none():
     assert project_window(None, time_to_reset=3600, window_len=W5) is None
 
 
-# --- forecast_chip: always-show (show_forecast on) ---
-# Normal → `→NN%`; on track to exhaust → `⚠<eta>`; can't compute → `→--`.
-def test_forecast_chip_safe_shows_projection():
+# --- forecast_chip: ETA-only (show_forecast on) ---
+def test_forecast_chip_safe_returns_none():
     now = 1000.0
-    assert forecast_chip("five_hour", 8.0, resets_at=now + 11580, now=now) == "→22%"
+    assert forecast_chip("five_hour", 8.0, resets_at=now + 11580, now=now) is None
 
 def test_forecast_chip_at_risk_shows_eta():
     now = 1000.0
@@ -58,25 +57,25 @@ def test_forecast_chip_at_risk_shows_eta():
 def test_forecast_chip_too_early_is_placeholder():
     now = 1000.0
     ttr = W5 - 300   # only 5 min elapsed (< MIN_ELAPSED 10m)
-    assert forecast_chip("five_hour", 5.0, resets_at=now + ttr, now=now) == DEBUG_PLACEHOLDER
+    assert forecast_chip("five_hour", 5.0, resets_at=now + ttr, now=now) is None
 
 def test_forecast_chip_missing_resets_at_is_placeholder():
-    assert forecast_chip("five_hour", 90.0, resets_at=None, now=1000.0) == DEBUG_PLACEHOLDER
+    assert forecast_chip("five_hour", 90.0, resets_at=None, now=1000.0) is None
 
 def test_forecast_chip_unknown_window_is_placeholder():
-    assert forecast_chip("bogus", 90.0, resets_at=1e12, now=1000.0) == DEBUG_PLACEHOLDER
+    assert forecast_chip("bogus", 90.0, resets_at=1e12, now=1000.0) is None
 
 def test_forecast_chip_seven_day_uses_week_length():
     now = 1000.0
-    assert forecast_chip("seven_day", 8.0, resets_at=now + 536400, now=now) == "→71%"
+    assert forecast_chip("seven_day", 8.0, resets_at=now + 536400, now=now) is None
     # Heavy 7d pace (90%, 1 day left → projected ~105%, but the cap is ~16h away)
-    # → show the projection, NOT a multi-day ⚠ETA.
-    assert forecast_chip("seven_day", 90.0, resets_at=now + 86400, now=now) == "→105%"
+    # → not imminent enough for a warning chip.
+    assert forecast_chip("seven_day", 90.0, resets_at=now + 86400, now=now) is None
 
 def test_forecast_chip_eta_only_when_imminent():
     now = 1000.0
-    # 5h projected ~108% but the cap is ~3.2h away (ttl > 1h) → projection.
-    assert forecast_chip("five_hour", 30.0, resets_at=now + 13000, now=now) == "→108%"
+    # 5h projected ~108% but the cap is ~3.2h away (ttl > 1h) → no ETA yet.
+    assert forecast_chip("five_hour", 30.0, resets_at=now + 13000, now=now) is None
     # 5h projected 112% with the cap ~26 min away (ttl ≤ 1h) → the countdown.
     assert forecast_chip("five_hour", 90.0, resets_at=now + 3600, now=now) == "~26m"
 
@@ -85,18 +84,17 @@ def test_forecast_chip_eta_only_when_imminent():
 def test_forecast_returns_pair():
     now = 1000.0
     c5, c7 = forecast(90.0, now + 3600, 8.0, now + 536400, now)
-    assert c5 == "~26m" and c7 == "→71%"
+    assert c5 == "~26m" and c7 is None
 
-def test_forecast_safe_shows_projections():
+def test_forecast_safe_returns_none_pair():
     now = 1000.0
     c5, c7 = forecast(8.0, now + 11580, 8.0, now + 536400, now)
-    assert c5 == "→22%" and c7 == "→71%"
+    assert c5 is None and c7 is None
 
 def test_forecast_never_raises_on_garbage():
-    # No usable data → placeholder pair, never an error.
-    assert forecast(None, None, None, None, now=1000.0) == (DEBUG_PLACEHOLDER, DEBUG_PLACEHOLDER)
+    assert forecast(None, None, None, None, now=1000.0) == (None, None)
     c5, c7 = forecast("x", "y", object(), [], now=1000.0)
-    assert c5 == DEBUG_PLACEHOLDER and c7 == DEBUG_PLACEHOLDER
+    assert c5 is None and c7 is None
 
 
 # --- reconcile_account: all windows converge to the freshest account reading ---
