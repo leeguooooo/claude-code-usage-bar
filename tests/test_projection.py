@@ -1,11 +1,34 @@
 import json
+import os
+import time
 from datetime import datetime, timezone
+
+import pytest
 
 from claude_statusbar import predict
 
 
 def _ts(year, month, day, hour, minute=0):
     return datetime(year, month, day, hour, minute, tzinfo=timezone.utc).timestamp()
+
+
+@pytest.fixture
+def use_tz(monkeypatch):
+    old_tz = os.environ.get("TZ")
+
+    def apply(name):
+        monkeypatch.setenv("TZ", name)
+        if hasattr(time, "tzset"):
+            time.tzset()
+
+    yield apply
+
+    if old_tz is None:
+        monkeypatch.delenv("TZ", raising=False)
+    else:
+        monkeypatch.setenv("TZ", old_tz)
+    if hasattr(time, "tzset"):
+        time.tzset()
 
 
 def test_load_projection_store_missing_is_empty(tmp_path):
@@ -55,14 +78,24 @@ def test_save_projection_store_atomic_roundtrip(tmp_path):
     assert raw["five_hour"][0]["used_pct"] == 7.0
 
 
-def test_bucket_for_time_distinguishes_weekday_work_weekend_and_night():
+def test_bucket_for_time_distinguishes_weekday_work_weekend_and_night(use_tz):
+    use_tz("Asia/Tokyo")
     assert predict.bucket_for_time(_ts(2026, 6, 1, 1)) == "weekday_work_hours"      # Mon 10:00 JST
     assert predict.bucket_for_time(_ts(2026, 6, 1, 10)) == "weekday_non_work_hours" # Mon 19:00 JST
     assert predict.bucket_for_time(_ts(2026, 6, 1, 18)) == "night"                  # Tue 03:00 JST
     assert predict.bucket_for_time(_ts(2026, 6, 6, 3)) == "weekend"                # Sat 12:00 JST
 
 
-def test_learned_bucket_rates_from_positive_deltas():
+def test_bucket_for_time_uses_system_local_timezone(use_tz):
+    ts = _ts(2026, 6, 1, 1)  # 01:00 UTC, 10:00 JST.
+    use_tz("UTC")
+    assert predict.bucket_for_time(ts) == "night"
+    use_tz("Asia/Tokyo")
+    assert predict.bucket_for_time(ts) == "weekday_work_hours"
+
+
+def test_learned_bucket_rates_from_positive_deltas(use_tz):
+    use_tz("Asia/Tokyo")
     samples = [
         {"observed_at": _ts(2026, 6, 1, 1), "used_pct": 10.0, "resets_at": 1780927200.0, "session_id": "s"},
         {"observed_at": _ts(2026, 6, 1, 2), "used_pct": 12.0, "resets_at": 1780927200.0, "session_id": "s"},
@@ -81,7 +114,8 @@ def test_expected_bucket_rate_blends_prior_and_learned_by_coverage():
     assert prior < low < high < 4.01
 
 
-def test_integrate_future_buckets_uses_future_schedule():
+def test_integrate_future_buckets_uses_future_schedule(use_tz):
+    use_tz("Asia/Tokyo")
     start = _ts(2026, 6, 1, 1)  # Monday 10:00 Tokyo.
     end = start + 2 * 3600
     usage = predict.integrate_future_buckets(start, end, {})

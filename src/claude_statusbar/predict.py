@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import math
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -64,7 +64,6 @@ MAX_PROJECTION_SNAPSHOTS = 1000
 MAX_CLOSED_WINDOWS = 100
 _PROJECTION_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "rate_projection.json"
 
-LOCAL_OFFSET = timedelta(hours=9)  # Asia/Tokyo, no DST.
 DEFAULT_BUCKET_PRIORS = {
     "night": 0.02,
     "weekday_work_hours": 0.45,
@@ -279,7 +278,7 @@ def record_projection_sample(store: Dict[str, Any], window: str, used_pct, reset
 
 
 def _local_datetime(ts: float) -> datetime:
-    return datetime.fromtimestamp(float(ts), tz=timezone.utc) + LOCAL_OFFSET
+    return datetime.fromtimestamp(float(ts))
 
 
 def bucket_for_time(ts: float) -> str:
