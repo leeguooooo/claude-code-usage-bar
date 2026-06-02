@@ -9,7 +9,7 @@
 Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage, reset timers, current model, context window, prompt-cache freshness, and (optionally) session cost — in a single compact line driven by Claude Code's `statusLine` hook.
 
 ```
-5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s
+5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s
 ```
 
 ![claude-statusbar live demo](docs/images/hero.gif)
@@ -57,7 +57,7 @@ Full release notes in [CHANGELOG.md](CHANGELOG.md).
 ## What it shows
 
 ```
-5h[   27%    ]⏰1h28m | 7d[   79%    ]⏰11h28m | Opus 4.7(350.0k/1.0M) | cache 4m23s | $ 1.42
+5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s | $ 1.42
 ⤷ claude-code-usage-bar ⎇ main●
 ```
 
@@ -67,7 +67,9 @@ Full release notes in [CHANGELOG.md](CHANGELOG.md).
 | `⏰1h28m` | Time until the 5-hour window resets |
 | `7d[79%]` | 7-day rate-limit usage |
 | `⏰11h28m` | Time until the 7-day window resets |
-| `Opus 4.7(350.0k/1.0M)` | Model name + current context window usage |
+| `→42%` / `→88%` | Projected end-of-window usage at your current rhythm (`show_projection`, on by default). Muted < 80%, yellow ≥ 80%, red ≥ 100%. The 5h model blends recent pace + whole-window average + a local baseline; the 7d model integrates learned day/night/weekend buckets so a busy first day isn't extrapolated across the week. |
+| `⚠~18m` | At-risk warning chip — only when a window is projected to hit 100% **and** the cap is imminent (≤ 1 h). Separate from the projection (`show_forecast`, on by default). |
+| `Opus 4.8(350.0k/1.0M)` | Model name + current context window usage |
 | `cache 4m23s` / `cache COLD` | Countdown to prompt-cache expiry — the TTL (5min vs 1h) is auto-detected from the transcript, so it's right on a subscription (1h) or an API key (5min). Green when comfortable, yellow under 1min, red on COLD. Cache hits consume ~10× less rate-limit quota — for subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. Enabled by default; disable with `cs config set show_cache_age false` |
 | `$ 1.42` | Session cost in USD as Claude Code reports it. For Pro/Max subscribers this is the **API-equivalent value** of your usage (i.e. what it would cost on the API), not money owed. Useful as an ROI signal. Opt-in: `cs config set show_cost true` |
 | `⤷ <project> ⎇ <branch>●↑2↓1 · +182 -47 · ⏱ 12m` | Second-line identity + session line. Project comes from Claude Code's `workspace.repo.name` (cwd-basename fallback); branch reads `.git/HEAD` directly; the `●` dirty marker is refreshed by a background helper, cached 5 s. Enabled by default — turn off with `cs config set show_project_branch false`. Opt-in extras live here too: `↑2↓1` commits ahead/behind upstream (`show_ahead_behind`, reuses the dirty-state `git status` — no extra spawn), session `⏱` duration (`show_duration`), and `+added -removed` lines (`show_lines`). |
@@ -331,7 +333,8 @@ cs config set show_duration true # identity line: ⏱ session duration
 cs config set show_lines true   # identity line: +added -removed
 cs config set show_ahead_behind true  # ↑2↓1 on the project/branch line
 cs config set bar_shimmer true  # experimental: twinkling starfield on the battery bars
-cs config set show_forecast false  # hide the rate-limit forecast (→NN% / ⚠eta)
+cs config set show_projection false  # hide the →NN% end-of-window projection
+cs config set show_forecast false    # hide the ⚠~eta at-risk warning chip
 cs config set show_todos false  # hide the todo-progress segment (on by default)
 cs config reset                 # wipe config back to defaults
 
