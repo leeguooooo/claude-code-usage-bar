@@ -12,29 +12,14 @@ For a quick overview of the latest release, see the
 ## v3.11.0 — 2026-06-02
 
 ### Added
-- **Rate-limit forecast (`show_forecast`, default on).** After each window's
-  `⏰<reset>` timer, the bar shows where you're headed:
-  - `→NN%` — the **projected end-of-window usage** at your *average pace so far
-    this window* (`used% × window_len / elapsed`). Colored by how close to the
-    cap it projects: muted < 80%, yellow ≥ 80%, red ≥ 100% (`→106%` = on track
-    to exceed). Updates live.
-  - upgrades to a `⚠<eta>` countdown **only when the cap is imminent** (≤ 1 h
-    away) — a far-off overage stays a colored `→NN%` rather than an absurd
-    multi-day ETA.
-  - `→--` while it's too early in the window to project (5h: first 10 min, 7d:
-    first hour).
-
-  It uses the **average pace over the elapsed window**, not a recent burst rate
-  — bursty usage and the coarse integer `used%` made an instantaneous rate
-  whipsaw into absurd ETAs, so that approach was dropped. The forecast needs
-  only the current stdin (no history file). Disable with
-  `cs config set show_forecast false`.
-- **Cross-window consistency.** The 5h/7d quota is account-global, but each
-  Claude window only sees the `used%` Claude last pushed into *its* stdin (per
-  session, not every second), so windows could disagree. A tiny shared
-  latest-reading store (`~/.cache/claude-statusbar/rate_latest.json`,
-  single-record, monotonic merge, atomic) reconciles every render so all open
-  windows converge to the same forecast within a tick.
+- **Always-visible rate-limit projections (`show_projection`, default on).**
+  The 5h/7d windows now show `→NN%` estimates for expected end-of-window usage.
+  The model records local samples, learns coarse usage rhythm, smooths by sample
+  time instead of render frequency, and keeps a bounded error log for future
+  tuning. Disable with `cs config set show_projection false`.
+- **Separate imminent ETA warning (`show_forecast`, default on).** `show_forecast`
+  now controls only the `⚠~ETA` chip, which appears after the projection when a
+  window is projected to hit 100% before reset and the cap is imminent.
 
 ### Fixed
 - **`context_window.used_percentage = null` handled as unknown.** Claude
