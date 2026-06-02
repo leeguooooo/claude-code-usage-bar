@@ -53,6 +53,7 @@ class StatusbarConfig:
     # advancing one cell per render. Capped at the statusLine's ~1Hz refresh,
     # so it's a slow step, not smooth. Default off; classic style only.
     bar_shimmer: bool = False
+    show_forecast: bool = True
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS  # deprecated; auto-detected now
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
@@ -98,6 +99,7 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
         show_lines=_to_bool(raw.get("show_lines", False)),
         show_ahead_behind=_to_bool(raw.get("show_ahead_behind", False)),
         bar_shimmer=_to_bool(raw.get("bar_shimmer", False)),
+        show_forecast=_to_bool(raw.get("show_forecast", True)),
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", DEFAULT_CACHE_TTL_SECONDS) or DEFAULT_CACHE_TTL_SECONDS),
         warning_threshold=raw.get("warning_threshold"),
         critical_threshold=raw.get("critical_threshold"),
@@ -119,7 +121,7 @@ VALID_KEYS = {
     "show_project_branch",
     "show_todos", "show_tools", "show_tool_rollup", "show_agents",
     "show_duration", "show_lines", "show_ahead_behind",
-    "bar_shimmer",
+    "bar_shimmer", "show_forecast",
     "cache_ttl_seconds",
     "warning_threshold", "critical_threshold",
     "color_ok", "color_warn", "color_hot",
@@ -128,7 +130,7 @@ _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_cache_age",
               "show_project_branch",
               "show_todos", "show_tools", "show_tool_rollup", "show_agents",
               "show_duration", "show_lines", "show_ahead_behind",
-              "bar_shimmer"}
+              "bar_shimmer", "show_forecast"}
 _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds"}
 _COLOR_KEYS = {"color_ok", "color_warn", "color_hot"}

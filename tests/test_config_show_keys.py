@@ -13,5 +13,5 @@ def test_config_show_lists_all_show_flags(capsys, monkeypatch):
     assert rc == 0
     for key in ("show_project_branch", "show_ahead_behind", "show_todos",
                 "show_tools", "show_tool_rollup", "show_agents",
-                "show_duration", "show_lines"):
+                "show_duration", "show_lines", "show_forecast"):
         assert key in out, f"{key} missing from `cs config show`"
