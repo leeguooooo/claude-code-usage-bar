@@ -1306,6 +1306,22 @@ def main(json_output: bool = False,
 
                 countdown = get_countdown_emoji(minutes_to_reset)
 
+                forecast_kwargs = {}
+                if cfg.show_forecast:
+                    try:
+                        import time as _t
+                        from .predict import forecast
+                        f5, f7 = forecast(
+                            used_5h=stdin_data.get("rate_limit_pct"),
+                            resets_5h=stdin_data.get("rate_limit_resets_at"),
+                            used_7d=stdin_data.get("rate_limit_7d_pct"),
+                            resets_7d=stdin_data.get("rate_limit_7d_resets_at"),
+                            now=_t.time(),
+                        )
+                        forecast_kwargs = {"forecast_5h": f5 or "", "forecast_7d": f7 or ""}
+                    except Exception:
+                        forecast_kwargs = {}
+
                 print(_render_style(
                     chosen_style,
                     msgs_pct=msgs_pct, weekly_pct=weekly_pct,
@@ -1319,6 +1335,7 @@ def main(json_output: bool = False,
                     density=cfg.density, show_weekly=cfg.show_weekly,
                     ctx_pct=ctx_pct,
                     shimmer_phase=shimmer_phase,
+                    **forecast_kwargs,
                     **identity_kwargs,
                     **activity_kwargs,
                 ))
