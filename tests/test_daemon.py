@@ -97,6 +97,28 @@ def test_active_sessions_lists_recent_buckets(monkeypatch, tmp_path: Path):
     assert "stale-sid" not in sids
 
 
+def test_active_sessions_skips_idle_buckets_before_gc(monkeypatch, tmp_path: Path):
+    """A Claude window that stopped ticking must not stay in the daemon's
+    1Hz render set until the 24h GC window expires."""
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+    sroot = tmp_path / "sessions"
+    sroot.mkdir(parents=True)
+    active = sroot / "active-sid"
+    active.mkdir()
+    (active / "last_stdin.json").write_text("{}", encoding="utf-8")
+    idle = sroot / "idle-sid"
+    idle.mkdir()
+    p = idle / "last_stdin.json"
+    p.write_text("{}", encoding="utf-8")
+    old = time.time() - (_d.ACTIVE_SESSION_AFTER_S + 1)
+    os.utime(p, (old, old))
+
+    sids = _d._active_sessions()
+
+    assert "active-sid" in sids
+    assert "idle-sid" not in sids
+
+
 def test_session_dir_sanitises_session_id(monkeypatch, tmp_path: Path):
     """Defensive: a malicious session_id with path traversal must not
     escape sessions/ directory."""
@@ -119,6 +141,29 @@ def test_thin_client_stale_meta():
     assert render_thin._is_fresh(
         {"generated_at": now - 30.0, "stale_after_seconds": 5.0}
     ) is False
+
+
+def test_thin_client_does_not_signal_daemon_for_age_stale_meta(monkeypatch, tmp_path: Path):
+    """A slow session render can make one bucket older than stale_after.
+    That should fall back and spawn-if-dead, not kill the shared daemon."""
+    _setup_session_paths(monkeypatch, tmp_path)
+    sdir = tmp_path / "sessions" / "default"
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("old\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time() - 30.0,
+        "stale_after_seconds": 5.0,
+        "daemon_started_at": time.time(),
+        "pid": 12345,
+    }), encoding="utf-8")
+
+    signalled = []
+    monkeypatch.setattr(render_thin, "_signal_outdated_daemon", lambda meta: signalled.append(meta))
+    monkeypatch.setattr(render_thin, "_spawn_daemon_async", lambda: None)
+    monkeypatch.setattr(render_thin, "_fallback_inline", lambda: 0)
+
+    assert render_thin.render() == 0
+    assert signalled == []
 
 
 def test_thin_client_handles_missing_fields():

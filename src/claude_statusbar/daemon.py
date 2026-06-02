@@ -95,6 +95,9 @@ def session_meta_path(session_id: str) -> Path:
 
 
 SESSION_GC_AFTER_S = 24 * 60 * 60  # drop session dirs idle > 1 day
+# Render only windows that are still ticking. Stopped Claude windows keep their
+# session dirs for GC/debugging, but must not stay in the daemon's 1Hz work set.
+ACTIVE_SESSION_AFTER_S = 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -304,23 +307,28 @@ def _render_session(sid: str) -> bool:
 
 
 def _active_sessions() -> list[str]:
-    """List session_ids with a recent last_stdin.json. Sessions older than
-    SESSION_GC_AFTER_S are skipped (and pruned by _gc_old_sessions)."""
-    out = []
-    cutoff = time.time() - SESSION_GC_AFTER_S
+    """List session_ids whose statusLine stdin was refreshed recently.
+
+    This is intentionally much shorter than SESSION_GC_AFTER_S: GC decides when
+    to delete old buckets, while this decides what the 1Hz daemon still renders.
+    """
+    out: list[tuple[float, str]] = []
+    cutoff = time.time() - ACTIVE_SESSION_AFTER_S
     try:
         for d in sessions_root().iterdir():
             if not d.is_dir():
                 continue
             stdin = d / "last_stdin.json"
             try:
-                if stdin.stat().st_mtime >= cutoff:
-                    out.append(d.name)
+                mtime = stdin.stat().st_mtime
+                if mtime >= cutoff:
+                    out.append((mtime, d.name))
             except OSError:
                 continue
     except OSError:
         pass
-    return out
+    out.sort(reverse=True)
+    return [sid for _, sid in out]
 
 
 def _gc_old_sessions() -> None:

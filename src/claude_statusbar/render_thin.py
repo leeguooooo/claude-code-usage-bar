@@ -98,15 +98,19 @@ def _is_fresh(meta: dict) -> bool:
         return False
     if delta > stale_after:
         return False
+    return not _is_outdated_daemon(meta)
+
+
+def _is_outdated_daemon(meta: dict) -> bool:
+    """True only when meta proves the daemon predates installed package code."""
     daemon_started_at = meta.get("daemon_started_at")
-    if daemon_started_at is not None:
-        try:
-            started = float(daemon_started_at)
-        except (TypeError, ValueError):
-            return True  # malformed field; ignore code-drift check
-        if _pkg_mtime() > started:
-            return False
-    return True
+    if daemon_started_at is None:
+        return False
+    try:
+        started = float(daemon_started_at)
+    except (TypeError, ValueError):
+        return False  # malformed field; ignore code-drift check
+    return _pkg_mtime() > started
 
 
 def _signal_outdated_daemon(meta: dict) -> None:
@@ -312,8 +316,10 @@ def render() -> int:
     # If the meta is stale because the daemon is running outdated code
     # (PyPI upgrade while daemon kept running), nudge it to exit so the
     # spawn below can bring up a fresh process. Old daemon's pidfile is
-    # still valid otherwise and `_spawn_daemon_async` would refuse.
-    if meta is not None:
+    # still valid otherwise and `_spawn_daemon_async` would refuse. Do not
+    # signal on ordinary age-stale output; a slow shared daemon would otherwise
+    # get killed by every session it has not reached yet.
+    if meta is not None and _is_outdated_daemon(meta):
         _signal_outdated_daemon(meta)
 
     # Fallback: render inline AND kick off a daemon spawn so the next
