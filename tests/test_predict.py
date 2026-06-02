@@ -154,6 +154,32 @@ def test_forecast_chip_fires_on_sustained_7d_burn():
     assert chip is not None and chip.startswith("~")
 
 
+# --- Recording throttle: bound sample density so the series spans real time ---
+# Regression: in daemon mode every active session wrote the account-global store
+# each tick, packing 200 samples into <1 min → span < min-span → chip stuck on
+# `~--`. A global time-throttle records at most one sample per gap.
+def test_record_sample_throttles_within_gap():
+    h = {}
+    record_sample(h, "five_hour", 5.0, now=1000.0, min_gap_s=30)
+    record_sample(h, "five_hour", 6.0, now=1010.0, min_gap_s=30)  # +10s, changed → throttled
+    record_sample(h, "five_hour", 7.0, now=1040.0, min_gap_s=30)  # +40s → recorded
+    assert h["five_hour"] == [[1000.0, 5.0], [1040.0, 7.0]]
+
+def test_record_sample_no_throttle_by_default():
+    h = {}
+    record_sample(h, "five_hour", 5.0, now=1000.0)
+    record_sample(h, "five_hour", 6.0, now=1001.0)  # default gap 0 → both land
+    assert len(h["five_hour"]) == 2
+
+def test_forecast_throttles_rapid_multiwriter_calls(tmp_path, monkeypatch):
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_HISTORY_PATH", tmp_path / "h.json")
+    predict.forecast(5.0, 1e12, 1.0, 1e12, now=1000.0)
+    predict.forecast(6.0, 1e12, 2.0, 1e12, now=1005.0)  # 5s later (another session) → throttled
+    h = predict.load_history()
+    assert len(h["five_hour"]) == 1 and len(h["seven_day"]) == 1
+
+
 # --- Debug always-show: a temporary validation toggle (forecast_debug) ---
 # Normally the chip is silent unless at-risk; debug mode surfaces the estimate
 # continuously so the burn-rate model can be eyeballed against real usage.

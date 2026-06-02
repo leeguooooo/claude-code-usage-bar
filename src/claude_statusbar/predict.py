@@ -19,6 +19,12 @@ LOOKBACK_S = {"five_hour": 30 * 60, "seven_day": 2 * 3600}
 # a 60s 6%→7% tick on the 7d window forecast "~20m to limit". Require samples to
 # span at least this long; until then, stay silent (fail-safe direction).
 MIN_OBS_SPAN_S = {"five_hour": 5 * 60, "seven_day": 30 * 60}
+# Minimum wall-clock gap between recorded samples. The store is account-global
+# and, in daemon mode, every active session writes it each tick — without a
+# throttle that packed 200 samples into <1 min, so the series never spanned the
+# min-observation window and the chip was stuck on "~--". One sample / 30s keeps
+# 200 samples spanning ~100 min, comfortably beyond both MIN_OBS_SPAN_S floors.
+REC_GAP_S = 30
 _MAX_SAMPLES = 200          # hard cap per series so the file stays tiny
 
 
@@ -77,10 +83,13 @@ def load_history(path: Optional[Path] = None) -> dict:
         return {}
 
 
-def record_sample(history: dict, window: str, pct: float, now: float) -> dict:
+def record_sample(history: dict, window: str, pct: float, now: float,
+                  min_gap_s: float = 0) -> dict:
     """Append (now, pct) for `window` ONLY when pct changed from the last sample
-    (used_pct is a step function), then prune to _MAX_SAMPLES. Returns history
-    (mutated in place + returned for chaining). Caller persists via save_history."""
+    (used_pct is a step function) AND at least `min_gap_s` has elapsed since the
+    last recorded sample (throttle — many sessions write this shared store each
+    daemon tick). Then prune to _MAX_SAMPLES. Returns history (mutated in place +
+    returned for chaining). Caller persists via save_history."""
     try:
         pct = float(pct)
     except (TypeError, ValueError):
@@ -90,8 +99,11 @@ def record_sample(history: dict, window: str, pct: float, now: float) -> dict:
         series = []
         history[window] = series
     last = series[-1] if series else None
-    if isinstance(last, (list, tuple)) and len(last) == 2 and last[1] == pct:
-        return history  # dedup unchanged pct
+    if isinstance(last, (list, tuple)) and len(last) == 2:
+        if last[1] == pct:
+            return history  # dedup unchanged pct
+        if min_gap_s and 0 <= now - last[0] < min_gap_s:
+            return history  # throttle: too soon since the last recorded sample
     series.append([float(now), pct])
     if len(series) > _MAX_SAMPLES:
         del series[: len(series) - _MAX_SAMPLES]
@@ -152,9 +164,9 @@ def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float, debug: bool = F
     try:
         history = load_history()
         if used_5h is not None:
-            record_sample(history, "five_hour", used_5h, now)
+            record_sample(history, "five_hour", used_5h, now, REC_GAP_S)
         if used_7d is not None:
-            record_sample(history, "seven_day", used_7d, now)
+            record_sample(history, "seven_day", used_7d, now, REC_GAP_S)
         save_history(history)
         c5 = forecast_chip(history, "five_hour", used_5h, resets_5h, now, debug)
         c7 = forecast_chip(history, "seven_day", used_7d, resets_7d, now, debug)
