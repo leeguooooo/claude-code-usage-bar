@@ -212,6 +212,7 @@ def render_classic(
     warning_threshold=30.0, critical_threshold=70.0,
     countdown_emoji: str = "",
     ctx_pct: Optional[float] = None,
+    shimmer_phase=None,
     **_ignored,
 ) -> str:
     from .progress import format_status_line, _fg, colorize, RESET
@@ -232,6 +233,7 @@ def render_classic(
         lang_text=lang_text,
         cost_text=cost_text,
         theme=theme,
+        shimmer_phase=shimmer_phase,
     )
     if cache_age_text:
         # Three-level severity: COLD red, <1m yellow, otherwise green.

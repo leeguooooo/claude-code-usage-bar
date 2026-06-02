@@ -19,6 +19,77 @@ def _fg(rgb): return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 def _bg(rgb): return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 
 
+def _lighten(rgb, amount=0.45):
+    """Blend an RGB tuple toward white by `amount` (0=unchanged, 1=white)."""
+    return tuple(int(c + (255 - c) * amount) for c in rgb)
+
+
+def _blend(a, b, t):
+    """Blend RGB `a` toward RGB `b` by `t` (0=a, 1=b). Used to sink the
+    static dot field most of the way to the bar's dark background so the
+    resting field reads as faint distant stars, not a gray smear."""
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+# Particle tunables. ONE star field that twinkles in place:
+#  • a STATIC field fixes WHERE the stars are — fixed cells, never moving; each
+#    is a small STAR glyph (not a period), sunk near the background. SPARSE
+#    (~1 cell in 4) and NEVER two in a row — a run collapses to its first cell
+#    so the field never shows a mechanical `⋆⋆` pair;
+#  • TWINKLE happens only at those fixed cells: a star flares bright (⋆→✦/✧)
+#    1 tick in `_STAR_RARITY`, then rests. Bare sky never spawns a transient
+#    star, so a bright flash always lands ON a dot — never beside it.
+# Stars are the fill hue lightened; the filled color is never changed.
+# The status line ticks ~1Hz, so with a sparse field this lands a flare every
+# few seconds at irregular intervals — a calm twinkle, NOT a flash every second.
+_STAR_RARITY = 6            # a star at a dot cell flares bright ~1 tick in N
+_DOT_DENSITY = 4            # ~1 empty cell in N carries a static dot (rest = sky)
+_DOT_SEED = 0x5bd1e995      # fixed seed → the dot field is phase-independent
+_SPARKLE_GLINT = 0.82       # star colour = fill hue lightened this much
+_DOT_SINK = 0.62            # how far the faint dot tier sinks toward background
+_DOT_GLYPHS = ("⋆",)        # faint star glyph for the resting field (star-shaped, not a period)
+_STAR_GLYPHS = ("✦", "✧")
+
+
+def _sparkle_hash(i, phase):
+    """Deterministic mixing hash of (cell index, render phase) → uint32.
+    Cheap integer avalanche so adjacent cells/ticks scatter rather than march."""
+    h = (i * 374761393 + phase * 668265263) & 0xFFFFFFFF
+    h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+    return (h ^ (h >> 16)) & 0xFFFFFFFF
+
+
+def _field_seed(label):
+    """Deterministic per-bar seed from its label ("5h", "7d", …) so each bar
+    gets its OWN star arrangement — without it, every width-10 bar shares the
+    identical field and two side-by-side bars look like mirror-image skies."""
+    return _sparkle_hash(sum(ord(c) for c in label), 0xA5A5)
+
+
+def _is_dot_cell(i, seed=0):
+    """Whether cell `i` is a static-dot candidate (before adjacency thinning).
+    Phase-independent → the field never moves. `seed` shifts the arrangement
+    per bar so the 5h and 7d skies differ."""
+    return _sparkle_hash(i, _DOT_SEED + seed) % _DOT_DENSITY == 0
+
+
+def _static_dot(i, seed=0):
+    """Faint star glyph for the STATIC background field at cell `i`, or None
+    for blank sky. Sparse (~1 cell in `_DOT_DENSITY`) and NEVER adjacent: when
+    a candidate's left neighbour is also a candidate we drop this one, so a run
+    collapses to its first cell and the field can't show a mechanical `⋆⋆`
+    pair. Mostly dark sky with the occasional faint star behind the twinkle.
+    `seed` gives each bar a distinct arrangement."""
+    if not _is_dot_cell(i, seed) or (i > 0 and _is_dot_cell(i - 1, seed)):
+        return None
+    return _DOT_GLYPHS[_sparkle_hash(i, _DOT_SEED + seed) % len(_DOT_GLYPHS)]
+
+
+def _dot_is_bright(i, seed=0):
+    """Two brightness tiers for the static field → near/far star depth."""
+    return bool((_sparkle_hash(i, _DOT_SEED + seed) >> 6) & 1)
+
+
 def normalize_thresholds(warning_threshold=None, critical_threshold=None):
     warning = DEFAULT_WARNING_THRESHOLD if warning_threshold is None else float(warning_threshold)
     critical = DEFAULT_CRITICAL_THRESHOLD if critical_threshold is None else float(critical_threshold)
@@ -62,7 +133,8 @@ def colorize(text, color, use_color=True):
 
 
 def build_battery_bar(percent, width=10, use_color=True, theme=None,
-                      warning_threshold=None, critical_threshold=None):
+                      warning_threshold=None, critical_threshold=None,
+                      shimmer_phase=None, seed=0):
     theme = theme or get_theme("graphite")
     clamped = max(0.0, min(percent, 100.0))
     filled = int(clamped / 100 * width + 0.5)
@@ -78,15 +150,40 @@ def build_battery_bar(percent, width=10, use_color=True, theme=None,
             else:
                 result += ch
         return result
-    bg_fill = bg_for_percent(percent, theme=theme,
-                             warning_threshold=warning_threshold,
-                             critical_threshold=critical_threshold)
+    warning, critical = normalize_thresholds(warning_threshold, critical_threshold)
+    fill_rgb = (theme.s_hot if percent >= critical
+                else theme.s_warn if percent >= warning else theme.s_ok)
+    bg_fill = _bg(fill_rgb)
     bg_empty = _bg(theme.edge)
     fg_overlay = _fg(theme.pill_ink)
+    # Optional particles (opt-in) in the EMPTY space: a static faint dot field
+    # (never moves) overlaid with bright stars that twinkle in/out per tick.
+    # The filled color is untouched — particles only occupy blank empty cells.
+    star = _fg(_lighten(fill_rgb, _SPARKLE_GLINT))
+    # Two depth tiers, both sunk toward the dark bar background so the resting
+    # field whispers rather than smudges: `dim` is a far/faint star almost on
+    # the background, `dim_bright` a nearer one at plain mute.
+    dim = _fg(_blend(theme.mute, theme.edge, _DOT_SINK))
+    dim_bright = _fg(theme.mute)
     result = ""
     for i, ch in enumerate(padded):
         if i < filled:
             result += f"{bg_fill}{fg_overlay}{ch}"
+        elif shimmer_phase is not None and ch == " ":
+            dot = _static_dot(i, seed)
+            if dot is None:
+                # Blank sky — stays empty. A star NEVER spawns in a bare cell;
+                # twinkling only happens where a star already lives, so the
+                # bright flash always lands ON a dot, not beside it.
+                result += f"{bg_empty}{fg_overlay} "
+            elif _sparkle_hash(i, shimmer_phase + seed) % _STAR_RARITY == 0:
+                # This star flares bright IN PLACE — same cell as its resting
+                # dot — blooming from ⋆ to a brighter ✦/✧ for this tick.
+                h = _sparkle_hash(i, shimmer_phase + seed)
+                result += f"{bg_empty}{star}{_STAR_GLYPHS[(h >> 4) & 1]}"
+            else:
+                dcol = dim_bright if _dot_is_bright(i, seed) else dim
+                result += f"{bg_empty}{dcol}{dot}"          # resting faint star
         else:
             result += f"{bg_empty}{fg_overlay}{ch}"
     result += RESET
@@ -94,12 +191,15 @@ def build_battery_bar(percent, width=10, use_color=True, theme=None,
 
 
 def _build_dimension(label, pct, severity_color, use_color,
-                     warning_threshold, critical_threshold, theme):
+                     warning_threshold, critical_threshold, theme,
+                     shimmer_phase=None):
     mute = _fg(theme.mute)
     if pct is not None:
         bar = build_battery_bar(pct, use_color=use_color, theme=theme,
                                 warning_threshold=warning_threshold,
-                                critical_threshold=critical_threshold)
+                                critical_threshold=critical_threshold,
+                                shimmer_phase=shimmer_phase,
+                                seed=_field_seed(label))
     else:
         if use_color:
             bar = f"{_bg(theme.edge)}{_fg(theme.pill_ink)}" + "--%".center(10) + RESET
@@ -226,6 +326,7 @@ def format_status_line(
     warning_threshold=None, critical_threshold=None,
     lang_text="", cost_text="",
     theme=None,
+    shimmer_phase=None,
 ):
     """Build the complete classic-style status line.
 
@@ -254,12 +355,14 @@ def format_status_line(
     ) if weekly_pct is not None else mute
 
     dim_5h = _build_dimension("5h", msgs_pct, color_5h, use_color,
-                              warning_threshold, critical_threshold, theme)
+                              warning_threshold, critical_threshold, theme,
+                              shimmer_phase=shimmer_phase)
     dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", color_5h, use_color)
     parts = [dim_5h]
 
     dim_7d = _build_dimension("7d", weekly_pct, color_7d, use_color,
-                              warning_threshold, critical_threshold, theme)
+                              warning_threshold, critical_threshold, theme,
+                              shimmer_phase=shimmer_phase)
     if reset_time_7d:
         dim_7d += colorize(f"⏰{reset_time_7d}", color_7d, use_color)
     parts.append(dim_7d)

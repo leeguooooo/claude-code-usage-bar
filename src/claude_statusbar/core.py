@@ -1171,6 +1171,13 @@ def main(json_output: bool = False,
         else:
             cache_age_text = get_cache_age_text()
 
+    # Experimental bar shimmer: a phase that advances one cell per render.
+    # Capped at the statusLine's ~1Hz refresh, so it's a slow step. classic only.
+    shimmer_phase = None
+    if cfg.bar_shimmer:
+        import time as _t
+        shimmer_phase = int(_t.time())
+
     # Cheap session stats from stdin (no transcript scan). Rendered on the
     # identity line — next to the project — rather than alone on the activity
     # line. (They therefore appear only when show_project_branch is on.)
@@ -1310,6 +1317,7 @@ def main(json_output: bool = False,
                     countdown_emoji=countdown,
                     density=cfg.density, show_weekly=cfg.show_weekly,
                     ctx_pct=ctx_pct,
+                    shimmer_phase=shimmer_phase,
                     **identity_kwargs,
                     **activity_kwargs,
                 ))
@@ -1352,6 +1360,7 @@ def main(json_output: bool = False,
                         critical_threshold=critical_threshold,
                         density=cfg.density, show_weekly=cfg.show_weekly,
                         ctx_pct=ctx_pct,
+                        shimmer_phase=shimmer_phase,
                         **identity_kwargs,
                         **activity_kwargs,
                     ))

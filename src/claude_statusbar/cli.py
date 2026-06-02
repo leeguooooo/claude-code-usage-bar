@@ -38,6 +38,7 @@ def _run_config_subcommand(rest):
         print(f"show_agents         = {cfg.show_agents}")
         print(f"show_duration       = {cfg.show_duration}")
         print(f"show_lines          = {cfg.show_lines}")
+        print(f"bar_shimmer         = {cfg.bar_shimmer}")
         print(f"cache_ttl_seconds   = {cfg.cache_ttl_seconds}")
         print(f"warning_threshold   = {cfg.warning_threshold}")
         print(f"critical_threshold  = {cfg.critical_threshold}")
