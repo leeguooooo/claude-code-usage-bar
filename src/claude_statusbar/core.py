@@ -888,6 +888,36 @@ def build_json_output(usage_data: Dict[str, Any], reset_time: str, model: str, d
     }
 
 
+def _context_window_usage(stdin_data: Dict[str, Any]) -> Tuple[Optional[float], int, int]:
+    """Return (ctx_pct, ctx_size, ctx_used) for renderer/model suffix.
+
+    Claude sometimes sends null for context_window.used_percentage. Treat that
+    as unknown instead of falling into the expensive reset-time fallback.
+    """
+    raw_size = stdin_data.get('context_window_size', 0)
+    try:
+        ctx_size_f = float(raw_size)
+    except (TypeError, ValueError):
+        return None, 0, 0
+    if ctx_size_f <= 0:
+        return None, 0, 0
+
+    raw_pct = stdin_data.get('context_used_pct', 0)
+    try:
+        ctx_pct = float(raw_pct)
+    except (TypeError, ValueError):
+        ctx_pct = None
+
+    if ctx_pct is not None:
+        ctx_used = int(ctx_size_f * ctx_pct / 100)
+    else:
+        ctx_used = (
+            stdin_data.get('total_input_tokens', 0)
+            + stdin_data.get('total_output_tokens', 0)
+        )
+    return ctx_pct, int(ctx_size_f), int(ctx_used)
+
+
 def format_number(num: float) -> str:
     """Format number for detail display."""
     if num >= 1_000_000:
@@ -1289,15 +1319,7 @@ def main(json_output: bool = False,
                 }))
             else:
                 # Append context window usage to model name: Opus 4.6(10k/1M)
-                ctx_size = stdin_data.get('context_window_size', 0)
-                raw_pct = stdin_data.get('context_used_pct', 0)
-                # ctx_pct: Optional[float] for the renderer.
-                # ctx_size > 0 is the discriminator (not raw_pct, which is falsy at 0%).
-                ctx_pct = float(raw_pct) if ctx_size > 0 else None
-                if raw_pct and ctx_size:
-                    ctx_used = int(ctx_size * raw_pct / 100)
-                else:
-                    ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
+                ctx_pct, ctx_size, ctx_used = _context_window_usage(stdin_data)
                 if ctx_size > 0:
                     # Strip redundant size suffix like "(1M context)" from display_name
                     import re as _re
@@ -1346,15 +1368,7 @@ def main(json_output: bool = False,
 
             if stdin_data.get('_has_stdin'):
                 # Have stdin but no rate_limits — session just started, show placeholders
-                ctx_size = stdin_data.get('context_window_size', 0)
-                raw_pct = stdin_data.get('context_used_pct', 0)
-                # ctx_pct: Optional[float] for the renderer.
-                # ctx_size > 0 is the discriminator (not raw_pct, which is falsy at 0%).
-                ctx_pct = float(raw_pct) if ctx_size > 0 else None
-                if raw_pct and ctx_size:
-                    ctx_used = int(ctx_size * raw_pct / 100)
-                else:
-                    ctx_used = stdin_data.get('total_input_tokens', 0) + stdin_data.get('total_output_tokens', 0)
+                ctx_pct, ctx_size, ctx_used = _context_window_usage(stdin_data)
                 if ctx_size > 0:
                     import re as _re
                     model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)

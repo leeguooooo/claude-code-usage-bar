@@ -123,6 +123,37 @@ def test_has_stdin_unset_when_stdin_empty(monkeypatch, isolated_cache):
     assert out.get("_has_stdin") is None
 
 
+def test_main_handles_null_context_used_pct_without_reset_fallback(
+    monkeypatch, isolated_cache, capsys
+):
+    """Claude can send context_window.used_percentage=null. Rendering must
+    treat that as unknown/0-ish context, not fall into claude-monitor fallback."""
+    _stdin_with({
+        "model": {"id": "claude-opus-4-1", "display_name": "Opus 4.1 (1M context)"},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 12, "resets_at": 9999999999},
+            "seven_day": {"used_percentage": 34, "resets_at": 9999999999},
+        },
+        "context_window": {
+            "used_percentage": None,
+            "context_window_size": 1_000_000,
+            "total_input_tokens": 1234,
+            "total_output_tokens": 56,
+        },
+    }, monkeypatch)
+
+    def fail_reset(*_args, **_kwargs):
+        pytest.fail("null context_used_pct should not call calculate_reset_time fallback")
+
+    monkeypatch.setattr(core, "calculate_reset_time", fail_reset)
+    import claude_statusbar.styles as styles_mod
+    monkeypatch.setattr(styles_mod, "render", lambda *_args, **_kwargs: "OK")
+
+    core.main(_suppress_side_effects=True)
+
+    assert capsys.readouterr().out.strip() == "OK"
+
+
 # ---------------------------------------------------------------------------
 # Time-based window rollover (cached-fallback only).
 # Fresh stdin from Anthropic is trusted verbatim — comparing its resets_at

@@ -6,14 +6,11 @@ and writes it as top-level `context_used_pct`). These tests feed the
 already-flattened shape directly.
 """
 
+from claude_statusbar import core
+
 
 def _compute_ctx_pct(stdin_data):
-    """Mirror the discriminator that lives at core.py:1146-1158 (after
-    Step 3 below lands). Kept here as a self-contained helper so the
-    test pins the exact contract independent of surrounding core.py code."""
-    ctx_size = stdin_data.get("context_window_size", 0)
-    raw_pct = stdin_data.get("context_used_pct", 0)
-    return float(raw_pct) if ctx_size > 0 else None
+    return core._context_window_usage(stdin_data)[0]
 
 
 def test_no_context_window_yields_none():
@@ -35,3 +32,15 @@ def test_normal_context_returns_float():
     out = _compute_ctx_pct({"context_window_size": 1_000_000, "context_used_pct": 42})
     assert out == 42.0
     assert isinstance(out, float)
+
+
+def test_null_context_pct_is_unknown_not_error():
+    ctx_pct, ctx_size, ctx_used = core._context_window_usage({
+        "context_window_size": 1_000_000,
+        "context_used_pct": None,
+        "total_input_tokens": 1200,
+        "total_output_tokens": 34,
+    })
+    assert ctx_pct is None
+    assert ctx_size == 1_000_000
+    assert ctx_used == 1234
