@@ -321,6 +321,10 @@ def _render_forecast(chip: str, theme, use_color: bool) -> str:
     return colorize(chip, _projection_color(chip, theme), use_color)
 
 
+def _render_projection(chip: str, theme, use_color: bool) -> str:
+    return colorize(chip, _projection_color(chip, theme), use_color)
+
+
 def get_countdown_emoji(minutes_to_reset):
     if minutes_to_reset is None:
         return ""
@@ -367,6 +371,8 @@ def format_status_line(
     lang_text="", cost_text="",
     theme=None,
     shimmer_phase=None,
+    projection_5h: str = "",
+    projection_7d: str = "",
     forecast_5h: str = "",
     forecast_7d: str = "",
 ):
@@ -400,6 +406,8 @@ def format_status_line(
                               warning_threshold, critical_threshold, theme,
                               shimmer_phase=shimmer_phase)
     dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", color_5h, use_color)
+    if projection_5h:
+        dim_5h += " " + _render_projection(projection_5h, theme, use_color)
     if forecast_5h:
         dim_5h += " " + _render_forecast(forecast_5h, theme, use_color)
     parts = [dim_5h]
@@ -409,6 +417,8 @@ def format_status_line(
                               shimmer_phase=shimmer_phase)
     if reset_time_7d:
         dim_7d += colorize(f"⏰{reset_time_7d}", color_7d, use_color)
+    if projection_7d:
+        dim_7d += " " + _render_projection(projection_7d, theme, use_color)
     if forecast_7d:
         dim_7d += " " + _render_forecast(forecast_7d, theme, use_color)
     parts.append(dim_7d)

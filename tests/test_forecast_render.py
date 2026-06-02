@@ -35,3 +35,49 @@ def test_color_mode_chip_is_clean_when_off():
                              model="Opus", weekly_pct=10, reset_time_7d="6d",
                              use_color=False, theme=TH, forecast_5h="~8m")
     assert "\x1b" not in out
+
+
+def test_projection_after_reset_before_eta():
+    out = format_status_line(
+        msgs_pct=80,
+        tkns_pct=None,
+        reset_time="1h28m",
+        model="Opus",
+        weekly_pct=10,
+        reset_time_7d="6d",
+        use_color=False,
+        theme=TH,
+        projection_5h="→92%",
+        forecast_5h="~40m",
+    )
+    assert out.index("→92%") > out.index("1h28m")
+    assert out.index("→92%") < out.index("~40m")
+
+
+def test_projection_after_7d_reset():
+    out = format_status_line(
+        msgs_pct=10,
+        tkns_pct=None,
+        reset_time="1h",
+        model="Opus",
+        weekly_pct=30,
+        reset_time_7d="6d05h",
+        use_color=False,
+        theme=TH,
+        projection_7d="→67%",
+    )
+    assert out.index("→67%") > out.index("6d05h")
+
+
+def test_no_projection_when_absent():
+    out = format_status_line(
+        msgs_pct=10,
+        tkns_pct=None,
+        reset_time="1h",
+        model="Opus",
+        weekly_pct=30,
+        reset_time_7d="6d05h",
+        use_color=False,
+        theme=TH,
+    )
+    assert "→" not in out

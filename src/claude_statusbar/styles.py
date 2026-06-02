@@ -213,6 +213,8 @@ def render_classic(
     countdown_emoji: str = "",
     ctx_pct: Optional[float] = None,
     shimmer_phase=None,
+    projection_5h: str = "",
+    projection_7d: str = "",
     forecast_5h: str = "",
     forecast_7d: str = "",
     **_ignored,
@@ -236,6 +238,8 @@ def render_classic(
         cost_text=cost_text,
         theme=theme,
         shimmer_phase=shimmer_phase,
+        projection_5h=projection_5h,
+        projection_7d=projection_7d,
         forecast_5h=forecast_5h,
         forecast_7d=forecast_7d,
     )

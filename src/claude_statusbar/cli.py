@@ -40,6 +40,7 @@ def _run_config_subcommand(rest):
         print(f"show_lines          = {cfg.show_lines}")
         print(f"bar_shimmer         = {cfg.bar_shimmer}")
         print(f"show_forecast       = {cfg.show_forecast}")
+        print(f"show_projection     = {cfg.show_projection}")
         print(f"cache_ttl_seconds   = {cfg.cache_ttl_seconds}")
         print(f"warning_threshold   = {cfg.warning_threshold}")
         print(f"critical_threshold  = {cfg.critical_threshold}")
