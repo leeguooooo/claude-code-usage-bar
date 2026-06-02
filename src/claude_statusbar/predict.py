@@ -15,7 +15,6 @@ Sample = Tuple[float, float]  # (unix_ts, used_pct)
 # Provisional, tune empirically (sensitivity only, not correctness):
 LOOKBACK_S = {"five_hour": 30 * 60, "seven_day": 2 * 3600}
 _MAX_SAMPLES = 200          # hard cap per series so the file stays tiny
-URGENT_ETA_S = 10 * 60      # ≤ this → "hot" color (decided in the renderer)
 
 
 def format_eta(seconds: float) -> str:
@@ -32,7 +31,12 @@ def burn_rate(samples: List[Sample], now: float, lookback_s: float) -> Optional[
     """Recent burn in percent/second over samples within `lookback_s` of `now`.
     None when <2 in-window samples, Δt ≤ 0, or the rate is ≤ 0 (plateau/dip —
     e.g. rolling-window ageing-out: fail safe, show nothing)."""
-    recent = [(t, p) for (t, p) in samples if 0 <= now - t <= lookback_s]
+    # Tolerate a hand-corrupted store: keep only well-formed [ts, pct] pairs
+    # so a malformed element never raises (fail-safe contract → None, not crash).
+    recent = [
+        (s[0], s[1]) for s in samples
+        if isinstance(s, (list, tuple)) and len(s) == 2 and 0 <= now - s[0] <= lookback_s
+    ]
     if len(recent) < 2:
         return None
     recent.sort()
@@ -78,7 +82,8 @@ def record_sample(history: dict, window: str, pct: float, now: float) -> dict:
     if not isinstance(series, list):
         series = []
         history[window] = series
-    if series and series[-1][1] == pct:
+    last = series[-1] if series else None
+    if isinstance(last, (list, tuple)) and len(last) == 2 and last[1] == pct:
         return history  # dedup unchanged pct
     series.append([float(now), pct])
     if len(series) > _MAX_SAMPLES:

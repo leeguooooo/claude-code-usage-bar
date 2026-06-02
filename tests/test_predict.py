@@ -121,3 +121,31 @@ def test_forecast_records_and_returns_both(tmp_path, monkeypatch):
     assert c5 is None and c7 is None
     # Persisted.
     assert (tmp_path / "h.json").exists()
+
+
+# --- Fail-safe on a hand-corrupted (structurally-valid-JSON) history series ---
+# A malformed element (wrong arity / non-list) must never raise: the contract is
+# "odd input → None/skip", enforced at the helper level, not just the orchestrator.
+def test_burn_rate_skips_malformed_elements():
+    samples = [[1000.0], "garbage", {"t": 1}, [1100.0, 30.0], [1000.0, 20.0]]
+    # Only the two well-formed pairs survive → 10% / 100s = 0.1 %/s.
+    assert abs(burn_rate(samples, now=1100.0, lookback_s=300) - 0.1) < 1e-9
+
+def test_record_sample_survives_malformed_last_element():
+    hist = {"five_hour": [[1000.0], "garbage"]}
+    # Must not raise on the dedup peek; appends the new well-formed sample.
+    out = record_sample(hist, "five_hour", 42.0, now=1100.0)
+    assert out["five_hour"][-1] == [1100.0, 42.0]
+
+def test_forecast_returns_none_pair_on_malformed_history(tmp_path, monkeypatch):
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_HISTORY_PATH", tmp_path / "h.json")
+    (tmp_path / "h.json").write_text(
+        '{"five_hour": [[1.0], "x"], "seven_day": "nope"}',
+        encoding="utf-8",
+    )
+    # Malformed series elements (wrong arity / non-list) must be skipped, never
+    # raise. After seeding one fresh sample each window still has <2 well-formed
+    # pairs, so the orchestrator degrades to (None, None) instead of crashing.
+    assert forecast(used_5h=90.0, resets_5h=1e12, used_7d=10.0,
+                    resets_7d=1e12, now=1000.0) == (None, None)
