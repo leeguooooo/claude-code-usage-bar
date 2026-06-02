@@ -77,7 +77,8 @@ def _to_bool(v):
     return s in ("1", "true", "yes", "on", "y", "t")
 
 
-def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
+def load_config(path: Optional[Path] = None) -> StatusbarConfig:
+    path = CONFIG_PATH if path is None else path
     if not path.exists():
         return StatusbarConfig()
     try:
@@ -115,8 +116,9 @@ def load_config(path: Path = CONFIG_PATH) -> StatusbarConfig:
     )
 
 
-def save_config(cfg: StatusbarConfig, path: Path = CONFIG_PATH) -> None:
+def save_config(cfg: StatusbarConfig, path: Optional[Path] = None) -> None:
     """Persist config atomically — Ctrl+C mid-write must not corrupt JSON."""
+    path = CONFIG_PATH if path is None else path
     from .cache import atomic_write_text
     atomic_write_text(path, json.dumps(asdict(cfg), indent=2, ensure_ascii=False) + "\n")
 
@@ -143,7 +145,8 @@ _COLOR_KEYS = {"color_ok", "color_warn", "color_hot"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}
 
 
-def set_value(key: str, value: str, path: Path = CONFIG_PATH) -> StatusbarConfig:
+def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarConfig:
+    path = CONFIG_PATH if path is None else path
     if key not in VALID_KEYS:
         raise KeyError(f"unknown config key: {key} (valid: {sorted(VALID_KEYS)})")
     cfg = load_config(path)
@@ -215,7 +218,8 @@ def set_value(key: str, value: str, path: Path = CONFIG_PATH) -> StatusbarConfig
     return cfg
 
 
-def get_value(key: str, path: Path = CONFIG_PATH) -> Any:
+def get_value(key: str, path: Optional[Path] = None) -> Any:
+    path = CONFIG_PATH if path is None else path
     if key not in VALID_KEYS:
         raise KeyError(f"unknown config key: {key}")
     return getattr(load_config(path), key)

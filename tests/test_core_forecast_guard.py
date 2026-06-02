@@ -1,13 +1,20 @@
 import io, json, sys
 
 
+def _write_config(tmp_path, payload):
+    (tmp_path / ".claude").mkdir(parents=True)
+    path = tmp_path / ".claude" / "claude-statusbar.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
 def test_main_survives_forecast_exception(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(tmp_path))
-    (tmp_path / ".claude").mkdir(parents=True)
-    (tmp_path / ".claude" / "claude-statusbar.json").write_text(
-        json.dumps({"show_forecast": True, "show_project_branch": False,
-                    "show_cache_age": False, "show_todos": False}),
-        encoding="utf-8")
+    config_path = _write_config(tmp_path, {"show_forecast": True, "show_projection": False,
+                                           "show_project_branch": False,
+                                           "show_cache_age": False, "show_todos": False})
+    import claude_statusbar.config as config
+    monkeypatch.setattr(config, "CONFIG_PATH", config_path)
     import claude_statusbar.predict as predict
     monkeypatch.setattr(predict, "forecast",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -25,11 +32,11 @@ def test_main_survives_forecast_exception(tmp_path, monkeypatch, capsys):
 def test_chip_appears_when_forecast_returns_one(tmp_path, monkeypatch, capsys):
     # True RED→GREEN: a non-throwing forecast returning a chip must reach the bar.
     monkeypatch.setenv("HOME", str(tmp_path))
-    (tmp_path / ".claude").mkdir(parents=True)
-    (tmp_path / ".claude" / "claude-statusbar.json").write_text(
-        json.dumps({"show_forecast": True, "show_project_branch": False,
-                    "show_cache_age": False, "show_todos": False}),
-        encoding="utf-8")
+    config_path = _write_config(tmp_path, {"show_forecast": True, "show_projection": False,
+                                           "show_project_branch": False,
+                                           "show_cache_age": False, "show_todos": False})
+    import claude_statusbar.config as config
+    monkeypatch.setattr(config, "CONFIG_PATH", config_path)
     import claude_statusbar.predict as predict
     monkeypatch.setattr(predict, "forecast", lambda *a, **k: ("~8m", ""))
     payload = json.dumps({

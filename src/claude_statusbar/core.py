@@ -1328,6 +1328,23 @@ def main(json_output: bool = False,
 
                 countdown = get_countdown_emoji(minutes_to_reset)
 
+                projection_kwargs = {}
+                if cfg.show_projection:
+                    try:
+                        import time as _t
+                        from .predict import projection
+                        p5, p7 = projection(
+                            used_5h=stdin_data.get("rate_limit_pct"),
+                            resets_5h=stdin_data.get("rate_limit_resets_at"),
+                            used_7d=stdin_data.get("rate_limit_7d_pct"),
+                            resets_7d=stdin_data.get("rate_limit_7d_resets_at"),
+                            now=_t.time(),
+                            session_id=stdin_data.get("session_id", ""),
+                        )
+                        projection_kwargs = {"projection_5h": p5 or "", "projection_7d": p7 or ""}
+                    except Exception:
+                        projection_kwargs = {}
+
                 forecast_kwargs = {}
                 if cfg.show_forecast:
                     try:
@@ -1357,6 +1374,7 @@ def main(json_output: bool = False,
                     density=cfg.density, show_weekly=cfg.show_weekly,
                     ctx_pct=ctx_pct,
                     shimmer_phase=shimmer_phase,
+                    **projection_kwargs,
                     **forecast_kwargs,
                     **identity_kwargs,
                     **activity_kwargs,
