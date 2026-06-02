@@ -281,6 +281,21 @@ def format_language_segment(progress_path, use_color=True, theme=None):
     return colorize(f"📚 {body}", _fg(theme.s_ok), use_color)
 
 
+def _forecast_color(chip: str, theme):
+    """hot when ≤10 min (bare seconds, or '~Nm' with N≤10), else warn."""
+    body = chip.lstrip("~")
+    if "h" in body:
+        return _fg(theme.s_warn)
+    if body.endswith("s"):
+        return _fg(theme.s_hot)
+    if body.endswith("m"):
+        try:
+            return _fg(theme.s_hot if int(body[:-1]) <= 10 else theme.s_warn)
+        except ValueError:
+            return _fg(theme.s_warn)
+    return _fg(theme.s_warn)
+
+
 def get_countdown_emoji(minutes_to_reset):
     if minutes_to_reset is None:
         return ""
@@ -327,6 +342,8 @@ def format_status_line(
     lang_text="", cost_text="",
     theme=None,
     shimmer_phase=None,
+    forecast_5h: str = "",
+    forecast_7d: str = "",
 ):
     """Build the complete classic-style status line.
 
@@ -358,6 +375,8 @@ def format_status_line(
                               warning_threshold, critical_threshold, theme,
                               shimmer_phase=shimmer_phase)
     dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", color_5h, use_color)
+    if forecast_5h:
+        dim_5h += " " + colorize(f"⚠{forecast_5h}", _forecast_color(forecast_5h, theme), use_color)
     parts = [dim_5h]
 
     dim_7d = _build_dimension("7d", weekly_pct, color_7d, use_color,
@@ -365,6 +384,8 @@ def format_status_line(
                               shimmer_phase=shimmer_phase)
     if reset_time_7d:
         dim_7d += colorize(f"⏰{reset_time_7d}", color_7d, use_color)
+    if forecast_7d:
+        dim_7d += " " + colorize(f"⚠{forecast_7d}", _forecast_color(forecast_7d, theme), use_color)
     parts.append(dim_7d)
 
     if ctx_pct is None:

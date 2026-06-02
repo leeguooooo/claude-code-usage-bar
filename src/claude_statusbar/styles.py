@@ -213,6 +213,8 @@ def render_classic(
     countdown_emoji: str = "",
     ctx_pct: Optional[float] = None,
     shimmer_phase=None,
+    forecast_5h: str = "",
+    forecast_7d: str = "",
     **_ignored,
 ) -> str:
     from .progress import format_status_line, _fg, colorize, RESET
@@ -234,6 +236,8 @@ def render_classic(
         cost_text=cost_text,
         theme=theme,
         shimmer_phase=shimmer_phase,
+        forecast_5h=forecast_5h,
+        forecast_7d=forecast_7d,
     )
     if cache_age_text:
         # Three-level severity: COLD red, <1m yellow, otherwise green.
