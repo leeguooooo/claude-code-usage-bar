@@ -38,6 +38,8 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 
 ## Latest release
 
+**v3.10.0** (2026-06-02) — **live-activity line** (in-progress todo, active tool, completed-tool rollup), **git ahead/behind + session duration/lines** on the project line, **running-subagent** lines, an opt-in **`bar_shimmer`** starfield on the battery bars, and a **self-hosted plugin marketplace**. Plus: auto-update now actually runs in daemon mode (detached, non-blocking), and the cache countdown is per-session-correct. All new segments are opt-in except the todo line.
+
 **v3.6.0** (2026-05-08) — **`cs --setup` now defaults to daemon (fast) mode**: under 1% CPU continuously instead of ~3% inline. Pass `--inline` to opt back. Also: py3.9 compat fixes, GitHub Actions CI, animated hero GIF.
 
 **v3.5.1** — `npx skills add` install path, `show_cache_age` on by default.
@@ -239,6 +241,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_todos` | bool, default `true` | Third "activity" line: the in-progress todo + `done/total`, e.g. `▸ Wire the activity line (1/3)`. Parsed from the newest `TodoWrite` in the transcript (full list, last-write-wins) via the same bounded reverse-tail read as the cache countdown. The clearest "is my long turn making progress?" signal. Disable with `cs config set show_todos false`. |
 | `show_tools` | bool, default `false` | Activity line: the **active tool** (`◐ Edit auth.py` — the newest tool_use with no result yet). MCP names are shortened (`mcp__figma__get_screenshot` → `get_screenshot`). Opt-in. |
 | `show_tool_rollup` | bool, default `false` | Activity line: a frequency rollup of recently-completed tools (`✓ Edit×14 Bash×6 Read×4`). A volume tally rather than a live signal — separate from `show_tools` and off by default. Opt-in. |
+| `bar_shimmer` | bool, default `false` | **Experimental, classic style only.** A faint twinkling starfield in the *empty* part of the 5h/7d battery bars (static high/mid/low dot field + bright `✦`/`✧` stars winking in/out). The fill color is never changed. Capped at the statusLine's ~1Hz refresh, so it's a gentle twinkle, not a smooth animation. Off by default. |
 | `show_agents` | bool, default `false` | One **bottom line per running subagent**, e.g. `◐ explore[haiku] 探索 RsaKeyPairPool 2m15s` (multiple agents → multiple lines). Inline agents finish via their tool_result; background (`run_in_background`) agents finish via the queue-operation that carries their tool-use-id. **Off by default because Claude Code already shows background agents in its own native panel** — enabling this largely duplicates that. |
 | `show_duration` | bool, default `false` | **Identity line:** session wall-clock duration as Claude Code reports it (`⏱ 12m`). Already on stdin — no transcript scan. Shows next to the project (needs `show_project_branch` on). Opt-in. |
 | `show_lines` | bool, default `false` | **Identity line:** session lines added/removed as Claude Code reports it (`+182 -47`, +green/−red). This is Claude Code's own cumulative session tally (every Write/Edit), **not a git diff** — it can exceed the net working-tree change. Needs `show_project_branch` on. Opt-in. |
@@ -323,6 +326,7 @@ cs config set show_agents true  # bottom line(s): running subagents + elapsed
 cs config set show_duration true # identity line: ⏱ session duration
 cs config set show_lines true   # identity line: +added -removed
 cs config set show_ahead_behind true  # ↑2↓1 on the project/branch line
+cs config set bar_shimmer true  # experimental: twinkling starfield on the battery bars
 cs config set show_todos false  # hide the todo-progress segment (on by default)
 cs config reset                 # wipe config back to defaults
 

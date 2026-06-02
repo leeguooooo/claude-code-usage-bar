@@ -9,7 +9,7 @@ For a quick overview of the latest release, see the
 
 ---
 
-## Unreleased
+## v3.10.0 — 2026-06-02
 
 ### Added
 - **Live-activity line (3rd line).** An opt-in third status line surfaces what
@@ -42,6 +42,33 @@ For a quick overview of the latest release, see the
   marketplace: `/plugin marketplace add leeguooooo/claude-code-usage-bar` then
   `/plugin install claude-statusbar`. (The render engine is still the `cs` CLI
   from PyPI.)
+- **`bar_shimmer` (experimental, opt-in, default off, classic only)** — a faint
+  twinkling starfield in the *empty* portion of the 5h/7d battery bars: a static
+  high/mid/low dot field with bright stars (`✦`/`✧`) winking in and out. The
+  fill color is never changed. Capped at the statusLine's ~1Hz refresh, so it's
+  a gentle twinkle, not a smooth animation. `cs config set bar_shimmer true`.
+- **Local worktree detection** — the identity line shows a bare `[worktree]`
+  marker when the checkout is a linked git worktree (detected from `.git`
+  pointing under `worktrees/`), independent of whether Claude Code passes the
+  hint.
+
+### Changed
+- **One transcript scan, not two.** The cache countdown and the activity line
+  now share a single bounded reverse-tail read (`read_activity` also returns
+  `cache_age_seconds`/`cache_ttl`). Also makes the cache countdown
+  **per-session-correct** — it reads the session's own transcript instead of
+  the shared top-level `last_stdin.json` (which is last-writer-wins across
+  windows and could show another session's cache age).
+
+### Fixed
+- **Auto-update now actually runs in daemon mode, without blocking renders.**
+  Previously the once-a-day check only fired on the rare inline-fallback path
+  (the daemon suppresses it and `cs render` just cats a frame), and when it did
+  fire it ran the upgrade *synchronously* (up to ~65s) in the triggering render.
+  Now the check spawns a **detached** background upgrade (never blocks), and the
+  **daemon** triggers it on its own 24h-throttled cadence. After a successful
+  upgrade the package mtime changes and the daemon restarts onto new code via
+  the existing code-drift detection.
 
 ### Robustness
 - The activity scan is fully defensive against malformed transcript shapes
