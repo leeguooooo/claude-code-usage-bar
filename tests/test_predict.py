@@ -154,6 +154,31 @@ def test_forecast_chip_fires_on_sustained_7d_burn():
     assert chip is not None and chip.startswith("~")
 
 
+# --- Debug always-show: a temporary validation toggle (forecast_debug) ---
+# Normally the chip is silent unless at-risk; debug mode surfaces the estimate
+# continuously so the burn-rate model can be eyeballed against real usage.
+def test_forecast_chip_debug_shows_safe_estimate():
+    now = 1_000_000.0
+    # 0.2% over 30min → ttl ~230h, far beyond the 6-day reset → safe (None normally).
+    hist = _hist("seven_day", [(now - 1800, 6.0), (now, 6.2)])
+    assert forecast_chip(hist, "seven_day", 6.2, now + 6 * 86400, now) is None
+    chip = forecast_chip(hist, "seven_day", 6.2, now + 6 * 86400, now, debug=True)
+    assert chip is not None and chip.startswith("~") and chip != "~--"
+
+def test_forecast_chip_debug_placeholder_while_warming():
+    now = 1_000_000.0
+    hist = _hist("seven_day", [(now - 60, 6.0), (now, 7.0)])  # 60s span < min → no rate
+    assert forecast_chip(hist, "seven_day", 7.0, now + 6 * 86400, now) is None
+    assert forecast_chip(hist, "seven_day", 7.0, now + 6 * 86400, now, debug=True) == "~--"
+
+def test_forecast_debug_orchestrator_always_returns_chips(tmp_path, monkeypatch):
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_HISTORY_PATH", tmp_path / "h.json")
+    # First call seeds one sample each → warming → placeholders (not None).
+    c5, c7 = predict.forecast(50.0, 1e12, 10.0, 1e12, now=1000.0, debug=True)
+    assert c5 == "~--" and c7 == "~--"
+
+
 # --- Fail-safe on a hand-corrupted (structurally-valid-JSON) history series ---
 # A malformed element (wrong arity / non-list) must never raise: the contract is
 # "odd input → None/skip", enforced at the helper level, not just the orchestrator.
