@@ -95,3 +95,43 @@ def save_history(history: dict, path: Optional[Path] = None) -> None:
         atomic_write_text(path, json.dumps(history))
     except OSError:
         pass
+
+
+def forecast_chip(history: dict, window: str, used_pct, resets_at,
+                  now: float) -> Optional[str]:
+    """Raw `~<eta>` chip string when this window is projected to hit 100% before
+    it resets, else None. Pure given `history` (does NOT record/persist)."""
+    try:
+        used = float(used_pct)
+    except (TypeError, ValueError):
+        return None
+    if resets_at is None:
+        return None
+    try:
+        time_to_reset = float(resets_at) - now
+    except (TypeError, ValueError):
+        return None
+    if time_to_reset <= 0:
+        return None
+    rate = burn_rate(history.get(window, []), now, LOOKBACK_S.get(window, 1800))
+    ttl = time_to_limit(used, rate)
+    if ttl is None or ttl >= time_to_reset:
+        return None
+    return format_eta(ttl)
+
+
+def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
+    """Record both windows' current samples, persist once, and return
+    (chip_5h, chip_7d). One read + at-most-one write per render. Never raises."""
+    try:
+        history = load_history()
+        if used_5h is not None:
+            record_sample(history, "five_hour", used_5h, now)
+        if used_7d is not None:
+            record_sample(history, "seven_day", used_7d, now)
+        save_history(history)
+        c5 = forecast_chip(history, "five_hour", used_5h, resets_5h, now)
+        c7 = forecast_chip(history, "seven_day", used_7d, resets_7d, now)
+        return c5, c7
+    except Exception:
+        return None, None

@@ -81,3 +81,43 @@ def test_save_then_load_roundtrip(tmp_path):
     hist = {"five_hour": [[1.0, 2.0]], "seven_day": []}
     save_history(hist, p)
     assert load_history(p) == hist
+
+
+# append to tests/test_predict.py
+from claude_statusbar.predict import forecast_chip, forecast
+
+
+def _hist(window, samples):
+    return {window: [[t, p] for (t, p) in samples]}
+
+def test_forecast_chip_at_risk():
+    # 60%→90% over 300s = 0.1%/s; ttl=(100-90)/0.1=100s; reset is 9999s away → at risk
+    hist = _hist("five_hour", [(1000.0, 60.0), (1300.0, 90.0)])
+    chip = forecast_chip(hist, "five_hour", used_pct=90.0,
+                         resets_at=1300.0 + 9999, now=1300.0)
+    assert chip == "~1m"   # 100s → "~1m" (floored)
+
+def test_forecast_chip_safe_when_reset_first():
+    # ttl huge vs reset soon → no chip
+    hist = _hist("five_hour", [(1000.0, 10.0), (1300.0, 11.0)])  # ~0.0033%/s
+    chip = forecast_chip(hist, "five_hour", used_pct=11.0,
+                         resets_at=1300.0 + 60, now=1300.0)  # resets in 60s
+    assert chip is None
+
+def test_forecast_chip_none_without_resets_at():
+    hist = _hist("five_hour", [(1000.0, 60.0), (1300.0, 90.0)])
+    assert forecast_chip(hist, "five_hour", 90.0, resets_at=None, now=1300.0) is None
+
+def test_forecast_chip_none_insufficient_samples():
+    hist = _hist("five_hour", [(1300.0, 90.0)])
+    assert forecast_chip(hist, "five_hour", 90.0, resets_at=1e12, now=1300.0) is None
+
+def test_forecast_records_and_returns_both(tmp_path, monkeypatch):
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_HISTORY_PATH", tmp_path / "h.json")
+    # First call seeds the history (one sample each) → no chips yet.
+    c5, c7 = forecast(used_5h=50.0, resets_5h=1e12, used_7d=10.0,
+                      resets_7d=1e12, now=1000.0)
+    assert c5 is None and c7 is None
+    # Persisted.
+    assert (tmp_path / "h.json").exists()
