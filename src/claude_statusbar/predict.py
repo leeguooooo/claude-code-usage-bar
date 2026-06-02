@@ -84,13 +84,13 @@ def project_window(used_pct, time_to_reset: float,
     return projected_final, ttl
 
 
-def forecast_chip(window: str, used_pct, resets_at, now: float,
-                  debug: bool = False) -> Optional[str]:
-    """Raw chip for one window. Production: `~<eta>` when projected to hit 100%
-    before reset, else None. `debug=True` (a temporary validation aid) instead
-    surfaces the projected end-of-window % continuously — `→72%`, or `→--` while
-    it can't be computed yet — so the model can be eyeballed against real usage."""
-    miss = DEBUG_PLACEHOLDER if debug else None
+def forecast_chip(window: str, used_pct, resets_at, now: float) -> Optional[str]:
+    """Raw chip for one window when `show_forecast` is on (always shows):
+    `→NN%` = projected end-of-window usage at the average pace so far (the normal
+    case), upgrading to `⚠<eta>` when projected to hit 100% before reset (the
+    actionable warning). `→--` while it can't be computed yet (too early / no
+    usage / odd input). Never raises."""
+    miss = DEBUG_PLACEHOLDER
     try:
         used = float(used_pct)
     except (TypeError, ValueError):
@@ -112,10 +112,8 @@ def forecast_chip(window: str, used_pct, resets_at, now: float,
         return miss
     projected_final, ttl = projected
     if projected_final >= 100:             # on track to exhaust before reset
-        return format_eta(ttl)             # at-risk ETA — the production signal
-    if debug:
-        return f"→{projected_final:.0f}%"   # "→72%" projected end-of-window
-    return None
+        return format_eta(ttl)             # ⚠ ETA — the actionable warning
+    return f"→{projected_final:.0f}%"       # normal: projected end-of-window %
 
 
 def _coerce(x):
@@ -176,15 +174,13 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None):
         return used_5h, resets_5h, used_7d, resets_7d
 
 
-def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float,
-             debug: bool = False):
+def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
     """Compute (chip_5h, chip_7d). Reconciles against the shared account-global
-    latest reading first (so all windows agree), then projects. Never raises.
-    `debug` forwards to forecast_chip (projected-% always-show validation mode)."""
+    latest reading first (so all windows agree), then projects. Never raises."""
     try:
         u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d)
-        c5 = forecast_chip("five_hour", u5, r5, now, debug)
-        c7 = forecast_chip("seven_day", u7, r7, now, debug)
+        c5 = forecast_chip("five_hour", u5, r5, now)
+        c7 = forecast_chip("seven_day", u7, r7, now)
         return c5, c7
     except Exception:
         return None, None
