@@ -107,6 +107,41 @@ def test_carries_worktree_name():
         "workspace_git_worktree": "feat-y",
     })
     assert info.worktree_name == "feat-y"
+    assert info.is_worktree is True  # stdin hint also flips the boolean
+
+
+def test_detects_worktree_from_local_dotgit_file(tmp_path):
+    # Linked worktree: `.git` is a FILE pointing under .../worktrees/<name>.
+    main = tmp_path / "main"
+    (main / ".git" / "worktrees" / "wt").mkdir(parents=True)
+    (main / ".git" / "worktrees" / "wt" / "HEAD").write_text(
+        "ref: refs/heads/feat-x\n")
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / ".git").write_text(
+        f"gitdir: {main / '.git' / 'worktrees' / 'wt'}\n")
+    info = resolve_identity({"workspace_current_dir": str(wt)})
+    assert info.is_worktree is True
+    assert info.branch == "feat-x"
+
+
+def test_normal_checkout_is_not_a_worktree(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    info = resolve_identity({"workspace_current_dir": str(tmp_path)})
+    assert info.is_worktree is False
+
+
+def test_submodule_is_not_a_worktree(tmp_path):
+    # A submodule's `.git` file points under .../modules/<name>, not worktrees.
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    modules = tmp_path / ".git" / "modules" / "sub"
+    modules.mkdir(parents=True)
+    (modules / "HEAD").write_text("ref: refs/heads/main\n")
+    (sub / ".git").write_text(f"gitdir: {modules}\n")
+    info = resolve_identity({"workspace_current_dir": str(sub)})
+    assert info.is_worktree is False
 
 
 def test_branch_extracted_from_head(tmp_path):

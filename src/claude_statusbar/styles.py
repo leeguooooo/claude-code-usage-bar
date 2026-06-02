@@ -301,7 +301,10 @@ def render_identity_line(info, *, theme: Theme, dirty,
     are commits relative to upstream (None = unknown/no upstream, 0 = in sync);
     arrows render only for nonzero directions and only inside a git repo.
     `duration_text`/`lines_text` are the session stats, shown here (next to the
-    project) rather than on the live-activity line.
+    project) rather than on the live-activity line. When the checkout is a
+    linked git worktree (`info.is_worktree`), a bare ``[worktree]`` marker is
+    appended after the branch — a boolean signal only; the branch already
+    says which worktree it is, so the name isn't repeated.
     """
     ab = _ahead_behind_glyphs(ahead, behind) if info.in_git else ""
     stats = _stats_segment(duration_text, lines_text, theme=theme,
@@ -317,8 +320,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
             tail = f" ⎇ {branch}{dot}"
             if ab:
                 tail += f" {ab}"
-        if info.worktree_name:
-            tail += f" [worktree: {info.worktree_name}]"
+        if info.is_worktree:
+            tail += " [worktree]"
         return head + tail + stats
 
     MUTE = _fg(theme.mute)
@@ -340,8 +343,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
         if ab:
             # Soft accent (not bare mute) — a gentle "unpushed/behind work" nudge.
             body += f" {_fg(theme.s_ok)}{ab}{RESET}"
-    if info.worktree_name:
-        body += f" {MUTE}[worktree: {info.worktree_name}]{RESET}"
+    if info.is_worktree:
+        body += f" {MUTE}[worktree]{RESET}"
     return head + body + stats
 
 
