@@ -502,7 +502,7 @@ There are a few good Claude Code usage monitors. They solve overlapping but dist
 Install the [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach) Claude Code plugin to get IELTS band progress tracking. After setup, the status bar automatically shows your current writing level and trend:
 
 ```
-... | Opus 4.7(350k/1M) | 📚 EN:6.0↑ JA:5.0→
+... | Opus 4.8(350k/1M) | 📚 EN:6.0↑ JA:5.0→
 ```
 
 - `↑` improved from last session · `↓` dropped · `→` no change
