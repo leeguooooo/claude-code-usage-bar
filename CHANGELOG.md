@@ -47,6 +47,13 @@ For a quick overview of the latest release, see the
   high/mid/low dot field with bright stars (`✦`/`✧`) winking in and out. The
   fill color is never changed. Capped at the statusLine's ~1Hz refresh, so it's
   a gentle twinkle, not a smooth animation. `cs config set bar_shimmer true`.
+- **At-risk forecast chip (`show_forecast`, default on).** After each window's
+  `⏰<reset>` timer, a `⚠~<eta>` chip appears when the window is projected — at
+  the recent burn rate — to hit 100% *before* it resets. Red when the ETA is
+  ≤10 min, yellow otherwise. Silent when not at-risk, so the default adds no
+  clutter for healthy users. Disable with `cs config set show_forecast false`.
+  Burn-rate state is stored in `~/.cache/claude-statusbar/rate_history.json`
+  (account-global, tiny, atomic writes).
 - **Local worktree detection** — the identity line shows a bare `[worktree]`
   marker when the checkout is a linked git worktree (detected from `.git`
   pointing under `worktrees/`), independent of whether Claude Code passes the
