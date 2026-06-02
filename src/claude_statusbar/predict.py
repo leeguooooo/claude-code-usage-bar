@@ -14,6 +14,11 @@ Sample = Tuple[float, float]  # (unix_ts, used_pct)
 
 # Provisional, tune empirically (sensitivity only, not correctness):
 LOOKBACK_S = {"five_hour": 30 * 60, "seven_day": 2 * 3600}
+# Minimum observation span before a rate is trusted. A burst measured over a few
+# seconds must NOT be extrapolated to a multi-hour/day horizon — that's what made
+# a 60s 6%→7% tick on the 7d window forecast "~20m to limit". Require samples to
+# span at least this long; until then, stay silent (fail-safe direction).
+MIN_OBS_SPAN_S = {"five_hour": 5 * 60, "seven_day": 30 * 60}
 _MAX_SAMPLES = 200          # hard cap per series so the file stays tiny
 
 
@@ -27,10 +32,12 @@ def format_eta(seconds: float) -> str:
     return f"~{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
-def burn_rate(samples: List[Sample], now: float, lookback_s: float) -> Optional[float]:
+def burn_rate(samples: List[Sample], now: float, lookback_s: float,
+              min_span_s: float = 0) -> Optional[float]:
     """Recent burn in percent/second over samples within `lookback_s` of `now`.
-    None when <2 in-window samples, Δt ≤ 0, or the rate is ≤ 0 (plateau/dip —
-    e.g. rolling-window ageing-out: fail safe, show nothing)."""
+    None when <2 in-window samples, Δt ≤ 0, the rate is ≤ 0 (plateau/dip —
+    e.g. rolling-window ageing-out: fail safe, show nothing), or the samples
+    span less than `min_span_s` (too little observation to extrapolate)."""
     # Tolerate a hand-corrupted store: keep only well-formed [ts, pct] pairs
     # so a malformed element never raises (fail-safe contract → None, not crash).
     recent = [
@@ -43,7 +50,7 @@ def burn_rate(samples: List[Sample], now: float, lookback_s: float) -> Optional[
     (t0, p0), (t1, p1) = recent[0], recent[-1]
     dt = t1 - t0
     dp = p1 - p0
-    if dt <= 0 or dp <= 0:
+    if dt <= 0 or dp <= 0 or dt < min_span_s:
         return None
     return dp / dt
 
@@ -118,7 +125,8 @@ def forecast_chip(history: dict, window: str, used_pct, resets_at,
         return None
     if time_to_reset <= 0:
         return None
-    rate = burn_rate(history.get(window, []), now, LOOKBACK_S.get(window, 1800))
+    rate = burn_rate(history.get(window, []), now, LOOKBACK_S.get(window, 1800),
+                     MIN_OBS_SPAN_S.get(window, 0))
     ttl = time_to_limit(used, rate)
     if ttl is None or ttl >= time_to_reset:
         return None

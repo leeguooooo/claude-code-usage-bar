@@ -123,6 +123,37 @@ def test_forecast_records_and_returns_both(tmp_path, monkeypatch):
     assert (tmp_path / "h.json").exists()
 
 
+# --- Minimum observation span: don't extrapolate a startup/transient burst ---
+# Regression for the dogfood bug: 7d at 7% with a 6-day reset showed "~20m"
+# because a ~60s burst (6%→7%) was extrapolated linearly to the 100% cap.
+def test_burn_rate_rejects_short_observation_span():
+    # 1% over 60s is a real slope, but 60s of data must not feed a multi-hour
+    # forecast. With a 300s floor it's rejected; with no floor it still computes
+    # (anchors that the ONLY change is the new guard).
+    samples = [[1000.0, 6.0], [1060.0, 7.0]]
+    assert burn_rate(samples, now=1060.0, lookback_s=1800, min_span_s=300) is None
+    assert burn_rate(samples, now=1060.0, lookback_s=1800, min_span_s=0) is not None
+
+def test_burn_rate_accepts_sufficient_span():
+    # 2% over 600s clears a 300s floor → 2/600 %/s.
+    samples = [[1000.0, 6.0], [1600.0, 8.0]]
+    r = burn_rate(samples, now=1600.0, lookback_s=1800, min_span_s=300)
+    assert r is not None and abs(r - (2.0 / 600.0)) < 1e-9
+
+def test_forecast_chip_suppresses_startup_transient():
+    # The exact reported scenario: 7d at 7%, resets in 6 days, only a 60s burst.
+    now = 1_000_000.0
+    hist = _hist("seven_day", [(now - 60, 6.0), (now, 7.0)])
+    assert forecast_chip(hist, "seven_day", 7.0, resets_at=now + 6 * 86400, now=now) is None
+
+def test_forecast_chip_fires_on_sustained_7d_burn():
+    # A genuine sustained 7d burn over a real span still warns.
+    now = 1_000_000.0
+    hist = _hist("seven_day", [(now - 1800, 10.0), (now, 40.0)])  # 30% / 30min
+    chip = forecast_chip(hist, "seven_day", 40.0, resets_at=now + 6 * 86400, now=now)
+    assert chip is not None and chip.startswith("~")
+
+
 # --- Fail-safe on a hand-corrupted (structurally-valid-JSON) history series ---
 # A malformed element (wrong arity / non-list) must never raise: the contract is
 # "odd input → None/skip", enforced at the helper level, not just the orchestrator.
