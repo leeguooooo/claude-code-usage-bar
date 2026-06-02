@@ -1,5 +1,6 @@
 # tests/test_predict.py
 from claude_statusbar.predict import format_eta, burn_rate, time_to_limit
+from claude_statusbar.predict import _MAX_SAMPLES
 
 
 def test_format_eta_seconds():
@@ -41,3 +42,42 @@ def test_time_to_limit_none_rate():
 
 def test_time_to_limit_already_full():
     assert time_to_limit(100.0, 0.1) is None
+
+
+# append to tests/test_predict.py
+from claude_statusbar.predict import (
+    load_history, save_history, record_sample, _HISTORY_PATH,
+)
+
+
+def test_record_appends_on_pct_change():
+    hist = {}
+    hist = record_sample(hist, "five_hour", 20.0, now=1000.0)
+    hist = record_sample(hist, "five_hour", 30.0, now=1100.0)
+    assert hist["five_hour"] == [[1000.0, 20.0], [1100.0, 30.0]]
+
+def test_record_dedups_unchanged_pct():
+    hist = record_sample({}, "five_hour", 20.0, now=1000.0)
+    hist = record_sample(hist, "five_hour", 20.0, now=1100.0)  # same pct → skip
+    assert hist["five_hour"] == [[1000.0, 20.0]]
+
+def test_record_prunes_to_max_samples():
+    hist = {}
+    for i in range(_MAX_SAMPLES + 50):
+        hist = record_sample(hist, "five_hour", float(i), now=float(i))  # each pct differs
+    assert len(hist["five_hour"]) == _MAX_SAMPLES
+    assert hist["five_hour"][-1] == [float(_MAX_SAMPLES + 49), float(_MAX_SAMPLES + 49)]
+
+def test_load_missing_file_is_empty(tmp_path):
+    assert load_history(tmp_path / "nope.json") == {}
+
+def test_load_corrupt_file_is_empty(tmp_path):
+    p = tmp_path / "h.json"
+    p.write_text("not json{", encoding="utf-8")
+    assert load_history(p) == {}
+
+def test_save_then_load_roundtrip(tmp_path):
+    p = tmp_path / "h.json"
+    hist = {"five_hour": [[1.0, 2.0]], "seven_day": []}
+    save_history(hist, p)
+    assert load_history(p) == hist

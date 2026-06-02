@@ -49,3 +49,49 @@ def time_to_limit(used_pct: float, rate: Optional[float]) -> Optional[float]:
     if rate is None or rate <= 0 or used_pct >= 100:
         return None
     return (100.0 - used_pct) / rate
+
+
+_HISTORY_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "rate_history.json"
+
+
+def load_history(path: Optional[Path] = None) -> dict:
+    """Read the global sample store; {} on missing/corrupt/unreadable.
+    Resolve the default at CALL time (not a def-time default) so tests can
+    monkeypatch `predict._HISTORY_PATH`."""
+    path = Path(path) if path is not None else _HISTORY_PATH
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def record_sample(history: dict, window: str, pct: float, now: float) -> dict:
+    """Append (now, pct) for `window` ONLY when pct changed from the last sample
+    (used_pct is a step function), then prune to _MAX_SAMPLES. Returns history
+    (mutated in place + returned for chaining). Caller persists via save_history."""
+    try:
+        pct = float(pct)
+    except (TypeError, ValueError):
+        return history
+    series = history.get(window)
+    if not isinstance(series, list):
+        series = []
+        history[window] = series
+    if series and series[-1][1] == pct:
+        return history  # dedup unchanged pct
+    series.append([float(now), pct])
+    if len(series) > _MAX_SAMPLES:
+        del series[: len(series) - _MAX_SAMPLES]
+    return history
+
+
+def save_history(history: dict, path: Optional[Path] = None) -> None:
+    """Atomic write (tmp + os.replace) — concurrent windows can't corrupt it.
+    Default resolved at call time (see load_history) so it's monkeypatchable."""
+    path = Path(path) if path is not None else _HISTORY_PATH
+    from .cache import atomic_write_text
+    try:
+        atomic_write_text(path, json.dumps(history))
+    except OSError:
+        pass
