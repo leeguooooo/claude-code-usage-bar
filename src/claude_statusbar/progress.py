@@ -296,6 +296,15 @@ def _forecast_color(chip: str, theme):
     return _fg(theme.s_warn)
 
 
+def _render_forecast(chip: str, theme, use_color: bool) -> str:
+    """Style a forecast chip. `~<eta>` (at-risk, projected to exhaust before
+    reset) → a ⚠ + urgency-colored token. `→NN%` / `→--` (debug projected
+    end-of-window %) → muted and glyph-free: it's information, not a warning."""
+    if chip.startswith("~"):
+        return colorize(f"⚠{chip}", _forecast_color(chip, theme), use_color)
+    return colorize(chip, _fg(theme.mute), use_color)
+
+
 def get_countdown_emoji(minutes_to_reset):
     if minutes_to_reset is None:
         return ""
@@ -376,7 +385,7 @@ def format_status_line(
                               shimmer_phase=shimmer_phase)
     dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", color_5h, use_color)
     if forecast_5h:
-        dim_5h += " " + colorize(f"⚠{forecast_5h}", _forecast_color(forecast_5h, theme), use_color)
+        dim_5h += " " + _render_forecast(forecast_5h, theme, use_color)
     parts = [dim_5h]
 
     dim_7d = _build_dimension("7d", weekly_pct, color_7d, use_color,
@@ -385,7 +394,7 @@ def format_status_line(
     if reset_time_7d:
         dim_7d += colorize(f"⏰{reset_time_7d}", color_7d, use_color)
     if forecast_7d:
-        dim_7d += " " + colorize(f"⚠{forecast_7d}", _forecast_color(forecast_7d, theme), use_color)
+        dim_7d += " " + _render_forecast(forecast_7d, theme, use_color)
     parts.append(dim_7d)
 
     if ctx_pct is None:
