@@ -848,11 +848,12 @@ def check_for_updates(session_id: str = ''):
         except OSError:
             return  # if we can't even touch the marker, don't try the upgrade
 
-        from .updater import check_and_upgrade
-        success, message = check_and_upgrade()
-
-        if success:
-            print(f"🔄 {message}", file=sys.stderr)
+        # Spawn the check+upgrade in a DETACHED subprocess — never run it
+        # synchronously here. A `uv tool install --upgrade` can take tens of
+        # seconds; doing it inline would freeze this render. The marker is
+        # already touched above, so we won't re-trigger before the interval.
+        from .updater import spawn_background_upgrade_check
+        spawn_background_upgrade_check()
 
     except Exception:
         # Silently fail - don't interrupt main functionality
