@@ -24,6 +24,9 @@ Fails safe: odd/insufficient input → None, never raises.
 See docs/superpowers/specs/2026-06-02-rate-limit-forecast-design.md."""
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import Optional, Tuple
 
 # Fixed nominal window lengths (seconds). The 5h and 7d limits are plan-level
@@ -37,6 +40,16 @@ MIN_ELAPSED_S = {"five_hour": 10 * 60, "seven_day": 60 * 60}
 
 # Debug-mode placeholder shown when the projection can't be computed yet.
 DEBUG_PLACEHOLDER = "→--"   # "→--"
+
+# Shared "latest account reading" store. The 5h/7d quota is account-global, but
+# each Claude Code window only sees the used_pct that Claude last pushed into ITS
+# stdin (Claude refreshes that field per-session on its own cadence, not every
+# second), so different windows hold different used_pct and disagree. Every
+# window re-renders ~1×/s, so a single tiny shared record that each render
+# reconciles against makes all windows converge to the freshest reading within a
+# tick. ONE record per window, overwrite-on-newer (not an append log) → trivial
+# last-writer-wins concurrency, no write storm.
+_LATEST_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "rate_latest.json"
 
 
 def format_eta(seconds: float) -> str:
@@ -105,13 +118,73 @@ def forecast_chip(window: str, used_pct, resets_at, now: float,
     return None
 
 
+def _coerce(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_newer(cur_used, cur_reset, prev_used, prev_reset) -> bool:
+    """Is (cur_used, cur_reset) a fresher account reading than (prev_used,
+    prev_reset)? Within a window used_pct only grows, and a new window has a
+    later resets_at — so 'newer' = later reset, or same reset with ≥ used."""
+    if prev_used is None or prev_reset is None:
+        return True
+    if cur_reset > prev_reset:
+        return True
+    return cur_reset == prev_reset and cur_used >= prev_used
+
+
+def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None):
+    """Merge this window's per-session reading into the shared account-global
+    store and return the freshest (u5, r5, u7, r7). Makes every window converge
+    to the same numbers within one render tick. Never raises — on any I/O error
+    it just returns the inputs (degrades to per-session behaviour)."""
+    p = Path(path) if path is not None else _LATEST_PATH
+    try:
+        try:
+            store = json.loads(p.read_text(encoding="utf-8"))
+            if not isinstance(store, dict):
+                store = {}
+        except (OSError, json.JSONDecodeError, ValueError):
+            store = {}
+
+        out = {}
+        changed = False
+        for win, used, reset in (("five_hour", used_5h, resets_5h),
+                                 ("seven_day", used_7d, resets_7d)):
+            prev = store.get(win) if isinstance(store.get(win), dict) else {}
+            pu, pr = _coerce(prev.get("used")), _coerce(prev.get("resets_at"))
+            cu, cr = _coerce(used), _coerce(reset)
+            if cu is not None and cr is not None and _is_newer(cu, cr, pu, pr):
+                store[win] = {"used": cu, "resets_at": cr}
+                out[win] = (cu, cr)
+                changed = True
+            else:
+                out[win] = (pu if pu is not None else cu,
+                            pr if pr is not None else cr)
+
+        if changed:
+            from .cache import atomic_write_text
+            try:
+                atomic_write_text(p, json.dumps(store))
+            except OSError:
+                pass
+        return out["five_hour"][0], out["five_hour"][1], out["seven_day"][0], out["seven_day"][1]
+    except Exception:
+        return used_5h, resets_5h, used_7d, resets_7d
+
+
 def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float,
              debug: bool = False):
-    """Compute (chip_5h, chip_7d). Pure given its args (no I/O). Never raises.
+    """Compute (chip_5h, chip_7d). Reconciles against the shared account-global
+    latest reading first (so all windows agree), then projects. Never raises.
     `debug` forwards to forecast_chip (projected-% always-show validation mode)."""
     try:
-        c5 = forecast_chip("five_hour", used_5h, resets_5h, now, debug)
-        c7 = forecast_chip("seven_day", used_7d, resets_7d, now, debug)
+        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d)
+        c5 = forecast_chip("five_hour", u5, r5, now, debug)
+        c7 = forecast_chip("seven_day", u7, r7, now, debug)
         return c5, c7
     except Exception:
         return None, None

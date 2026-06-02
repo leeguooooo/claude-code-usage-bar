@@ -1,6 +1,6 @@
 # tests/test_predict.py
 from claude_statusbar.predict import (
-    format_eta, project_window, forecast_chip, forecast,
+    format_eta, project_window, forecast_chip, forecast, reconcile_account,
     WINDOW_LEN_S, MIN_ELAPSED_S, DEBUG_PLACEHOLDER,
 )
 
@@ -124,3 +124,42 @@ def test_forecast_never_raises_on_garbage():
     assert forecast(None, None, None, None, now=1000.0) == (None, None)
     c5, c7 = forecast("x", "y", object(), [], now=1000.0, debug=True)
     assert c5 == DEBUG_PLACEHOLDER and c7 == DEBUG_PLACEHOLDER
+
+
+# --- reconcile_account: all windows converge to the freshest account reading ---
+def test_reconcile_keeps_higher_used_within_window(tmp_path):
+    p = tmp_path / "latest.json"
+    # Window A reports used=10 first.
+    reconcile_account(10.0, 5000, 8.0, 9000, path=p)
+    # Window B's stale stdin says used=5 (same reset) → must read back the 10.
+    u5, r5, u7, r7 = reconcile_account(5.0, 5000, 3.0, 9000, path=p)
+    assert (u5, r5, u7, r7) == (10.0, 5000.0, 8.0, 9000.0)
+
+def test_reconcile_takes_higher_used_when_fresher(tmp_path):
+    p = tmp_path / "latest.json"
+    reconcile_account(10.0, 5000, 8.0, 9000, path=p)
+    # A newer reading with higher used wins and is persisted for the next reader.
+    reconcile_account(12.0, 5000, 9.0, 9000, path=p)
+    u5, r5, _, _ = reconcile_account(11.0, 5000, 8.5, 9000, path=p)
+    assert u5 == 12.0
+
+def test_reconcile_new_window_resets(tmp_path):
+    p = tmp_path / "latest.json"
+    reconcile_account(90.0, 5000, 50.0, 9000, path=p)
+    # 5h reset moved later (new window) with low used → adopt the new window.
+    u5, r5, _, _ = reconcile_account(3.0, 5000 + WINDOW_LEN_S["five_hour"], 50.0, 9000, path=p)
+    assert u5 == 3.0 and r5 == 5000 + WINDOW_LEN_S["five_hour"]
+
+def test_reconcile_missing_file_returns_inputs(tmp_path):
+    p = tmp_path / "nope.json"
+    assert reconcile_account(7.0, 5000, 4.0, 9000, path=p) == (7.0, 5000.0, 4.0, 9000.0)
+
+def test_forecast_uses_reconciled_reading(tmp_path, monkeypatch):
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    now = 1000.0
+    # Active window seeds used=90 (5h, 1h to reset → at-risk).
+    forecast(90.0, now + 3600, 8.0, now + 536400, now)
+    # A stale window with used=5 must still see the at-risk ETA (reconciled to 90).
+    c5, _ = forecast(5.0, now + 3600, 8.0, now + 536400, now)
+    assert c5 == "~26m"
