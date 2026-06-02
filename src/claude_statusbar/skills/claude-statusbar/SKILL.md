@@ -42,7 +42,7 @@ give a short confirmation (one line, no lecture).
 | Toggle lines added/removed `+/-` (on identity line) | `cs config set show_lines true\|false` |
 | Toggle git ahead/behind `↑↓` (on identity line) | `cs config set show_ahead_behind true\|false` |
 | Toggle the `bar_shimmer` twinkling starfield (experimental, classic only) | `cs config set bar_shimmer true\|false` (default off) |
-| Toggle the at-risk forecast chip | `cs config set show_forecast true\|false` (default on) |
+| Toggle the rate-limit forecast (→NN% projected use / ⚠eta warning) | `cs config set show_forecast true\|false` (default on) |
 | Hide weekly bar | `cs config set show_weekly false` |
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |

@@ -38,7 +38,13 @@ WINDOW_LEN_S = {"five_hour": 5 * 3600, "seven_day": 7 * 86400}
 # correctness): too-early just defers the chip. Tune empirically.
 MIN_ELAPSED_S = {"five_hour": 10 * 60, "seven_day": 60 * 60}
 
-# Debug-mode placeholder shown when the projection can't be computed yet.
+# A countdown only helps when the wall is genuinely near. Beyond this, a
+# projected `~137h` ETA is noise — show the projected % instead (colour carries
+# the urgency). So `⚠<eta>` appears only when ≤ this many seconds to the cap.
+IMMINENT_ETA_S = 60 * 60
+
+# Placeholder shown when the projection can't be computed yet (too early / no
+# usage / odd input).
 DEBUG_PLACEHOLDER = "→--"   # "→--"
 
 # Shared "latest account reading" store. The 5h/7d quota is account-global, but
@@ -111,9 +117,9 @@ def forecast_chip(window: str, used_pct, resets_at, now: float) -> Optional[str]
     if projected is None:
         return miss
     projected_final, ttl = projected
-    if projected_final >= 100:             # on track to exhaust before reset
-        return format_eta(ttl)             # ⚠ ETA — the actionable warning
-    return f"→{projected_final:.0f}%"       # normal: projected end-of-window %
+    if projected_final >= 100 and ttl <= IMMINENT_ETA_S:
+        return format_eta(ttl)             # ⚠ imminent — show the countdown
+    return f"→{projected_final:.0f}%"       # projected end-of-window % (coloured)
 
 
 def _coerce(x):

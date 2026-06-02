@@ -69,9 +69,16 @@ def test_forecast_chip_unknown_window_is_placeholder():
 def test_forecast_chip_seven_day_uses_week_length():
     now = 1000.0
     assert forecast_chip("seven_day", 8.0, resets_at=now + 536400, now=now) == "→71%"
-    # Heavy 7d pace (90% with 1 day left → projected ~105%) → at-risk ETA.
-    chip = forecast_chip("seven_day", 90.0, resets_at=now + 86400, now=now)
-    assert chip is not None and chip.startswith("~")
+    # Heavy 7d pace (90%, 1 day left → projected ~105%, but the cap is ~16h away)
+    # → show the projection, NOT a multi-day ⚠ETA.
+    assert forecast_chip("seven_day", 90.0, resets_at=now + 86400, now=now) == "→105%"
+
+def test_forecast_chip_eta_only_when_imminent():
+    now = 1000.0
+    # 5h projected ~108% but the cap is ~3.2h away (ttl > 1h) → projection.
+    assert forecast_chip("five_hour", 30.0, resets_at=now + 13000, now=now) == "→108%"
+    # 5h projected 112% with the cap ~26 min away (ttl ≤ 1h) → the countdown.
+    assert forecast_chip("five_hour", 90.0, resets_at=now + 3600, now=now) == "~26m"
 
 
 # --- forecast orchestrator (reconcile isolated to tmp by conftest autouse) ---

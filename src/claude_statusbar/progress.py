@@ -296,13 +296,29 @@ def _forecast_color(chip: str, theme):
     return _fg(theme.s_warn)
 
 
+def _projection_color(chip: str, theme):
+    """`→NN%` end-of-window projection: hot ≥100%, warn ≥80%, else muted.
+    `→--` (not computable yet) is muted."""
+    body = chip.lstrip("→").rstrip("%")
+    try:
+        v = int(body)
+    except ValueError:
+        return _fg(theme.mute)
+    if v >= 100:
+        return _fg(theme.s_hot)
+    if v >= 80:
+        return _fg(theme.s_warn)
+    return _fg(theme.mute)
+
+
 def _render_forecast(chip: str, theme, use_color: bool) -> str:
-    """Style a forecast chip. `~<eta>` (at-risk, projected to exhaust before
-    reset) → a ⚠ + urgency-colored token. `→NN%` / `→--` (debug projected
-    end-of-window %) → muted and glyph-free: it's information, not a warning."""
+    """Style a forecast chip. `~<eta>` (imminent, ≤1h to the cap) → a ⚠ +
+    urgency-colored countdown. `→NN%` (projected end-of-window usage) → colored
+    by how close to the cap it projects (muted / warn / hot), glyph-free: it's a
+    projection, not an alarm."""
     if chip.startswith("~"):
         return colorize(f"⚠{chip}", _forecast_color(chip, theme), use_color)
-    return colorize(chip, _fg(theme.mute), use_color)
+    return colorize(chip, _projection_color(chip, theme), use_color)
 
 
 def get_countdown_emoji(minutes_to_reset):

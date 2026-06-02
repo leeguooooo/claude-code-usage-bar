@@ -9,6 +9,49 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.11.0 — 2026-06-02
+
+### Added
+- **Rate-limit forecast (`show_forecast`, default on).** After each window's
+  `⏰<reset>` timer, the bar shows where you're headed:
+  - `→NN%` — the **projected end-of-window usage** at your *average pace so far
+    this window* (`used% × window_len / elapsed`). Colored by how close to the
+    cap it projects: muted < 80%, yellow ≥ 80%, red ≥ 100% (`→106%` = on track
+    to exceed). Updates live.
+  - upgrades to a `⚠<eta>` countdown **only when the cap is imminent** (≤ 1 h
+    away) — a far-off overage stays a colored `→NN%` rather than an absurd
+    multi-day ETA.
+  - `→--` while it's too early in the window to project (5h: first 10 min, 7d:
+    first hour).
+
+  It uses the **average pace over the elapsed window**, not a recent burst rate
+  — bursty usage and the coarse integer `used%` made an instantaneous rate
+  whipsaw into absurd ETAs, so that approach was dropped. The forecast needs
+  only the current stdin (no history file). Disable with
+  `cs config set show_forecast false`.
+- **Cross-window consistency.** The 5h/7d quota is account-global, but each
+  Claude window only sees the `used%` Claude last pushed into *its* stdin (per
+  session, not every second), so windows could disagree. A tiny shared
+  latest-reading store (`~/.cache/claude-statusbar/rate_latest.json`,
+  single-record, monotonic merge, atomic) reconciles every render so all open
+  windows converge to the same forecast within a tick.
+
+### Fixed
+- **`context_window.used_percentage = null` handled as unknown.** Claude
+  sometimes sends `null`; rendering now treats it as unknown (context tokens
+  fall back to input+output token totals) instead of dropping into the
+  expensive claude-monitor reset-time fallback path.
+
+### Changed
+- **Daemon renders only active windows.** `_active_sessions()` now uses a 10s
+  freshness window (sorted freshest-first) rather than the 24h GC threshold, so
+  stopped Claude windows keep their dirs for GC but leave the 1Hz work set. The
+  thin client only signals an "outdated daemon" when the daemon genuinely
+  predates the installed package code — not on ordinary age-stale output (which
+  was letting a slow shared daemon get killed by sessions it hadn't reached).
+
+---
+
 ## v3.10.0 — 2026-06-02
 
 ### Added
@@ -47,13 +90,6 @@ For a quick overview of the latest release, see the
   high/mid/low dot field with bright stars (`✦`/`✧`) winking in and out. The
   fill color is never changed. Capped at the statusLine's ~1Hz refresh, so it's
   a gentle twinkle, not a smooth animation. `cs config set bar_shimmer true`.
-- **At-risk forecast chip (`show_forecast`, default on).** After each window's
-  `⏰<reset>` timer, a `⚠~<eta>` chip appears when the window is projected — at
-  the recent burn rate — to hit 100% *before* it resets. Red when the ETA is
-  ≤10 min, yellow otherwise. Silent when not at-risk, so the default adds no
-  clutter for healthy users. Disable with `cs config set show_forecast false`.
-  Burn-rate state is stored in `~/.cache/claude-statusbar/rate_history.json`
-  (account-global, tiny, atomic writes).
 - **Local worktree detection** — the identity line shows a bare `[worktree]`
   marker when the checkout is a linked git worktree (detected from `.git`
   pointing under `worktrees/`), independent of whether Claude Code passes the

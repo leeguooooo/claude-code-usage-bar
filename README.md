@@ -38,7 +38,9 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 
 ## Latest release
 
-**v3.10.0** (2026-06-02) — **live-activity line** (in-progress todo, active tool, completed-tool rollup), **git ahead/behind + session duration/lines** on the project line, **running-subagent** lines, an opt-in **`bar_shimmer`** starfield on the battery bars, a **self-hosted plugin marketplace**, and a **`show_forecast` at-risk chip** (`⚠~8m` after the reset timer, red when ≤10 min away from exhaustion, silent when healthy). Plus: auto-update now actually runs in daemon mode (detached, non-blocking), and the cache countdown is per-session-correct. All new segments are opt-in except the todo line; `show_forecast` is on by default but adds no clutter when usage is healthy.
+**v3.11.0** (2026-06-02) — **rate-limit forecast** (`show_forecast`, default on): after each `⏰<reset>` timer the bar shows `→NN%`, your **projected end-of-window usage** at your average pace so far, upgrading to a `⚠<eta>` warning (red ≤10 min) when you're on track to hit the cap before it resets. Uses the average pace over the elapsed window (not a jumpy burst rate), and reconciles a tiny shared store so **all open windows show the same forecast**. Plus: `context_window.used_percentage = null` handled gracefully, and the daemon only renders windows active in the last 10s.
+
+**v3.10.0** (2026-06-02) — **live-activity line** (in-progress todo, active tool, completed-tool rollup), **git ahead/behind + session duration/lines** on the project line, **running-subagent** lines, an opt-in **`bar_shimmer`** starfield on the battery bars, and a **self-hosted plugin marketplace**. Plus: auto-update now actually runs in daemon mode (detached, non-blocking), and the cache countdown is per-session-correct. All new segments are opt-in except the todo line.
 
 **v3.6.0** (2026-05-08) — **`cs --setup` now defaults to daemon (fast) mode**: under 1% CPU continuously instead of ~3% inline. Pass `--inline` to opt back. Also: py3.9 compat fixes, GitHub Actions CI, animated hero GIF.
 
@@ -242,7 +244,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_tools` | bool, default `false` | Activity line: the **active tool** (`◐ Edit auth.py` — the newest tool_use with no result yet). MCP names are shortened (`mcp__figma__get_screenshot` → `get_screenshot`). Opt-in. |
 | `show_tool_rollup` | bool, default `false` | Activity line: a frequency rollup of recently-completed tools (`✓ Edit×14 Bash×6 Read×4`). A volume tally rather than a live signal — separate from `show_tools` and off by default. Opt-in. |
 | `bar_shimmer` | bool, default `false` | **Experimental, classic style only.** A faint twinkling starfield in the *empty* part of the 5h/7d battery bars (static high/mid/low dot field + bright `✦`/`✧` stars winking in/out). The fill color is never changed. Capped at the statusLine's ~1Hz refresh, so it's a gentle twinkle, not a smooth animation. Off by default. |
-| `show_forecast` | bool, default `true` | Appends a `⚠~40m`-style at-risk chip right after each window's `⏰<reset>` timer — but **only** when the window is projected (at the recent burn rate) to exhaust before it resets. Red when the ETA is ≤10 min, yellow otherwise. Silent when not at-risk, so the default adds no clutter. Disable with `cs config set show_forecast false`. |
+| `show_forecast` | bool, default `true` | After each window's `⏰<reset>` timer, shows `→NN%` — the **projected end-of-window usage** at your average pace so far this window — upgrading to a `⚠<eta>` warning (yellow, red when ≤10 min) when you're projected to hit 100% before it resets. `→--` while too early to project. Uses the average pace over the elapsed window (not a burst rate) and reconciles a shared store so all open windows agree. Disable with `cs config set show_forecast false`. |
 | `show_agents` | bool, default `false` | One **bottom line per running subagent**, e.g. `◐ explore[haiku] 探索 RsaKeyPairPool 2m15s` (multiple agents → multiple lines). Inline agents finish via their tool_result; background (`run_in_background`) agents finish via the queue-operation that carries their tool-use-id. **Off by default because Claude Code already shows background agents in its own native panel** — enabling this largely duplicates that. |
 | `show_duration` | bool, default `false` | **Identity line:** session wall-clock duration as Claude Code reports it (`⏱ 12m`). Already on stdin — no transcript scan. Shows next to the project (needs `show_project_branch` on). Opt-in. |
 | `show_lines` | bool, default `false` | **Identity line:** session lines added/removed as Claude Code reports it (`+182 -47`, +green/−red). This is Claude Code's own cumulative session tally (every Write/Edit), **not a git diff** — it can exceed the net working-tree change. Needs `show_project_branch` on. Opt-in. |
@@ -328,7 +330,7 @@ cs config set show_duration true # identity line: ⏱ session duration
 cs config set show_lines true   # identity line: +added -removed
 cs config set show_ahead_behind true  # ↑2↓1 on the project/branch line
 cs config set bar_shimmer true  # experimental: twinkling starfield on the battery bars
-cs config set show_forecast false  # hide the at-risk forecast chip
+cs config set show_forecast false  # hide the rate-limit forecast (→NN% / ⚠eta)
 cs config set show_todos false  # hide the todo-progress segment (on by default)
 cs config reset                 # wipe config back to defaults
 
