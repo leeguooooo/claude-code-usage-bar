@@ -64,6 +64,8 @@ MAX_PROJECTION_SAMPLES = 5000
 MAX_PROJECTION_SNAPSHOTS = 1000
 MAX_CLOSED_WINDOWS = 100
 _PROJECTION_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "rate_projection.json"
+PROJECTION_RESULT_TTL_S = 1.0
+_PROJECTION_RESULT_CACHE: Optional[Dict[str, Any]] = None
 
 DEFAULT_BUCKET_PRIORS = {
     "night": 0.02,
@@ -146,12 +148,12 @@ def _coerce(x):
 def _is_newer(cur_used, cur_reset, prev_used, prev_reset) -> bool:
     """Is (cur_used, cur_reset) a fresher account reading than (prev_used,
     prev_reset)? Within a window used_pct only grows, and a new window has a
-    later resets_at — so 'newer' = later reset, or same reset with ≥ used."""
+    later resets_at — so 'newer' = later reset, or same reset with higher used."""
     if prev_used is None or prev_reset is None:
         return True
     if cur_reset > prev_reset:
         return True
-    return cur_reset == prev_reset and cur_used >= prev_used
+    return cur_reset == prev_reset and cur_used > prev_used
 
 
 def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None):
@@ -234,6 +236,10 @@ def load_projection_store(path=None) -> Dict[str, Any]:
             store[key] = []
     if not isinstance(store.get("display"), dict):
         store["display"] = {}
+    for window in ("five_hour", "seven_day"):
+        store[window] = _compressed_samples(store[window], window)[-MAX_PROJECTION_SAMPLES:]
+    store["snapshots"] = store["snapshots"][-MAX_PROJECTION_SNAPSHOTS:]
+    store["closed_windows"] = store["closed_windows"][-MAX_CLOSED_WINDOWS:]
     store["version"] = 1
     return store
 
@@ -559,6 +565,20 @@ def _format_projection_pct(value: float) -> str:
     return f"→{max(0.0, min(100.0, float(value))):.0f}%"
 
 
+def _projection_result_key(u5, r5, u7, r7) -> Optional[Tuple[str, str, float, float, float, float]]:
+    try:
+        return (
+            str(_PROJECTION_PATH),
+            str(_LATEST_PATH),
+            float(u5),
+            float(r5),
+            float(u7),
+            float(r7),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_at,
                            now: float, session_id: str) -> str:
     try:
@@ -588,11 +608,31 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
 
 def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):
     try:
-        store = load_projection_store()
         u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d)
+        ts = float(now)
+        key = _projection_result_key(u5, r5, u7, r7)
+        global _PROJECTION_RESULT_CACHE
+        if key is not None and isinstance(_PROJECTION_RESULT_CACHE, dict):
+            cached_at = _coerce(_PROJECTION_RESULT_CACHE.get("observed_at"))
+            if (
+                _PROJECTION_RESULT_CACHE.get("key") == key
+                and cached_at is not None
+                and 0.0 <= ts - cached_at <= PROJECTION_RESULT_TTL_S
+            ):
+                result = _PROJECTION_RESULT_CACHE.get("result")
+                if isinstance(result, tuple) and len(result) == 2:
+                    return result
+        store = load_projection_store()
         p5 = _projection_for_window(store, "five_hour", u5, r5, now, session_id)
         p7 = _projection_for_window(store, "seven_day", u7, r7, now, session_id)
         save_projection_store(store)
-        return p5, p7
+        result = (p5, p7)
+        if key is not None:
+            _PROJECTION_RESULT_CACHE = {
+                "key": key,
+                "observed_at": ts,
+                "result": result,
+            }
+        return result
     except Exception:
         return "", ""

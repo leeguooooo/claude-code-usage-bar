@@ -41,6 +41,27 @@ def test_load_projection_store_missing_is_empty(tmp_path):
     assert store["closed_windows"] == []
 
 
+def test_load_projection_store_compacts_legacy_duplicate_samples(tmp_path):
+    p = tmp_path / "projection.json"
+    p.write_text(json.dumps({
+        "version": 1,
+        "five_hour": [
+            {"observed_at": 1000.0, "used_pct": 10.0, "resets_at": 5000.0, "session_id": "a"},
+            {"observed_at": 1001.0, "used_pct": 10.0, "resets_at": 5000.0, "session_id": "b"},
+            {"observed_at": 1002.0, "used_pct": 9.0, "resets_at": 5000.0, "session_id": "stale"},
+            {"observed_at": 2000.0, "used_pct": 11.0, "resets_at": 5000.0, "session_id": "a"},
+        ],
+        "seven_day": [],
+        "display": {},
+        "snapshots": [],
+        "closed_windows": [],
+    }), encoding="utf-8")
+
+    store = predict.load_projection_store(p)
+
+    assert [s["used_pct"] for s in store["five_hour"]] == [10.0, 11.0]
+
+
 def test_record_projection_sample_keeps_one_monotonic_reading_per_pct_step(tmp_path):
     p = tmp_path / "projection.json"
     store = predict.load_projection_store(p)
@@ -262,3 +283,74 @@ def test_projection_reconciles_stale_session_readings_before_recording(tmp_path,
     store = predict.load_projection_store()
     assert [s["used_pct"] for s in store["five_hour"]] == [20.0]
     assert int(p5.lstrip("→").rstrip("%")) >= 20
+
+
+def test_projection_reuses_recent_account_result_without_store_churn(tmp_path, monkeypatch):
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "projection.json")
+    now = _ts(2026, 6, 1, 1)
+    reset_5h = now + 4 * 3600
+    reset_7d = now + 4 * 86400
+
+    saves = []
+    real_save = predict.save_projection_store
+
+    def counting_save(store, path=None):
+        saves.append(1)
+        real_save(store, path)
+
+    monkeypatch.setattr(predict, "save_projection_store", counting_save)
+
+    first = predict.projection(20.0, reset_5h, 18.0, reset_7d, now, session_id="a")
+    second = predict.projection(20.0, reset_5h, 18.0, reset_7d, now + 0.25, session_id="b")
+    third = predict.projection(20.0, reset_5h, 18.0, reset_7d, now + 0.50, session_id="c")
+
+    assert second == first
+    assert third == first
+    assert len(saves) == 1
+    store = predict.load_projection_store()
+    assert len(store["snapshots"]) == 2
+
+
+def test_projection_recomputes_after_result_cache_ttl(tmp_path, monkeypatch):
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "projection.json")
+    now = _ts(2026, 6, 1, 1)
+    reset_5h = now + 4 * 3600
+    reset_7d = now + 4 * 86400
+
+    saves = []
+    real_save = predict.save_projection_store
+
+    def counting_save(store, path=None):
+        saves.append(1)
+        real_save(store, path)
+
+    monkeypatch.setattr(predict, "save_projection_store", counting_save)
+
+    predict.projection(20.0, reset_5h, 18.0, reset_7d, now, session_id="a")
+    predict.projection(20.0, reset_5h, 18.0, reset_7d, now + 2.0, session_id="b")
+
+    assert len(saves) == 2
+
+
+def test_projection_recomputes_when_account_reading_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "projection.json")
+    now = _ts(2026, 6, 1, 1)
+    reset_5h = now + 4 * 3600
+    reset_7d = now + 4 * 86400
+
+    saves = []
+    real_save = predict.save_projection_store
+
+    def counting_save(store, path=None):
+        saves.append(1)
+        real_save(store, path)
+
+    monkeypatch.setattr(predict, "save_projection_store", counting_save)
+
+    predict.projection(20.0, reset_5h, 18.0, reset_7d, now, session_id="a")
+    predict.projection(21.0, reset_5h, 18.0, reset_7d, now + 0.25, session_id="b")
+
+    assert len(saves) == 2
