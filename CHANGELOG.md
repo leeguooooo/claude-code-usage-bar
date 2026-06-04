@@ -9,6 +9,30 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.11.1 — 2026-06-04
+
+### Fixed
+- **Projection learning data is now kept clean.** The `→NN%` learner could be
+  polluted by stale/odd samples; hardened so it learns only trustworthy slopes:
+  - projections now reconcile against the account-global latest reading first,
+    so an old Claude window can't write an expired low percentage into history;
+  - within a reset window only increasing usage change-points are kept (no
+    per-render duplicates), and bucket-rate learning ignores duplicate,
+    decreasing, and cross-reset samples — killing the false high slopes that the
+    coarse integer `used_pct` steps used to create;
+  - a window is only recorded as "closed" when its reset time moves *forward*, so
+    an old session bouncing backwards no longer looks like a new window.
+- **The bar itself now reconciles too.** The `5h/7d` percentage and reset timers
+  use the same account-global reconciled reading as the projection/forecast, so
+  all open windows show consistent numbers (previously only the projection did).
+
+### Changed
+- **Per-tick projection cache.** Projection results are memoized for ~1s keyed on
+  the reconciled reading, and history is compressed + bounded on load, so the
+  render path doesn't recompute the learned model every tick.
+
+---
+
 ## v3.11.0 — 2026-06-02
 
 ### Added
