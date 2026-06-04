@@ -15,6 +15,18 @@ def _payload():
     })
 
 
+def _payload_with_limits(session_id, used_5h, reset_5h, used_7d, reset_7d):
+    return json.dumps({
+        "session_id": session_id,
+        "transcript_path": "/n.jsonl",
+        "model": {"id": "o", "display_name": "Opus 4.8"},
+        "rate_limits": {
+            "five_hour": {"used_percentage": used_5h, "resets_at": reset_5h},
+            "seven_day": {"used_percentage": used_7d, "resets_at": reset_7d},
+        },
+    })
+
+
 def _write_config(tmp_path, **values):
     (tmp_path / ".claude").mkdir(parents=True)
     base = {
@@ -64,3 +76,33 @@ def test_core_hides_projection_when_disabled(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "→50%" not in out
     assert "→90%" not in out
+
+
+def test_core_renders_reconciled_account_rate_limits(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_path = _write_config(tmp_path, show_projection=False, show_forecast=False)
+    import claude_statusbar.config as config
+    monkeypatch.setattr(config, "CONFIG_PATH", config_path)
+
+    from claude_statusbar.core import main
+    reset_5h = 9999999999
+    reset_7d = reset_5h + 7 * 86400
+
+    monkeypatch.setattr(
+        sys, "stdin",
+        io.StringIO(_payload_with_limits("fresh", 20, reset_5h, 30, reset_7d)),
+    )
+    main(use_color=False, _suppress_side_effects=True)
+    capsys.readouterr()
+
+    monkeypatch.setattr(
+        sys, "stdin",
+        io.StringIO(_payload_with_limits("stale", 10, reset_5h, 25, reset_7d)),
+    )
+    main(use_color=False, _suppress_side_effects=True)
+
+    out = capsys.readouterr().out
+    assert "20%" in out
+    assert "30%" in out
+    assert "10%" not in out
+    assert "25%" not in out

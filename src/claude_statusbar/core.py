@@ -1273,8 +1273,17 @@ def main(json_output: bool = False,
             # ✅ Official data from Anthropic API headers (Claude Code ≥ v2.1.80)
             msgs_pct = stdin_data.get('rate_limit_pct')
             weekly_pct = stdin_data.get('rate_limit_7d_pct')
-
             resets_at = stdin_data.get('rate_limit_resets_at')
+            resets_at_7d = stdin_data.get('rate_limit_7d_resets_at')
+
+            try:
+                from .predict import reconcile_account
+                msgs_pct, resets_at, weekly_pct, resets_at_7d = reconcile_account(
+                    msgs_pct, resets_at, weekly_pct, resets_at_7d,
+                )
+            except Exception:
+                pass
+
             if resets_at:
                 diff = datetime.fromtimestamp(resets_at, tz=timezone.utc) - datetime.now(timezone.utc)
                 total_min = max(0, int(diff.total_seconds() / 60))
@@ -1288,7 +1297,6 @@ def main(json_output: bool = False,
                 reset_time = "--"
                 minutes_to_reset = None
 
-            resets_at_7d = stdin_data.get('rate_limit_7d_resets_at')
             if resets_at_7d:
                 diff_7d = datetime.fromtimestamp(resets_at_7d, tz=timezone.utc) - datetime.now(timezone.utc)
                 total_sec_7d = max(0, int(diff_7d.total_seconds()))
@@ -1334,10 +1342,10 @@ def main(json_output: bool = False,
                         import time as _t
                         from .predict import projection
                         p5, p7 = projection(
-                            used_5h=stdin_data.get("rate_limit_pct"),
-                            resets_5h=stdin_data.get("rate_limit_resets_at"),
-                            used_7d=stdin_data.get("rate_limit_7d_pct"),
-                            resets_7d=stdin_data.get("rate_limit_7d_resets_at"),
+                            used_5h=msgs_pct,
+                            resets_5h=resets_at,
+                            used_7d=weekly_pct,
+                            resets_7d=resets_at_7d,
                             now=_t.time(),
                             session_id=stdin_data.get("session_id", ""),
                         )
@@ -1351,10 +1359,10 @@ def main(json_output: bool = False,
                         import time as _t
                         from .predict import forecast
                         f5, f7 = forecast(
-                            used_5h=stdin_data.get("rate_limit_pct"),
-                            resets_5h=stdin_data.get("rate_limit_resets_at"),
-                            used_7d=stdin_data.get("rate_limit_7d_pct"),
-                            resets_7d=stdin_data.get("rate_limit_7d_resets_at"),
+                            used_5h=msgs_pct,
+                            resets_5h=resets_at,
+                            used_7d=weekly_pct,
+                            resets_7d=resets_at_7d,
                             now=_t.time(),
                         )
                         forecast_kwargs = {"forecast_5h": f5 or "", "forecast_7d": f7 or ""}
