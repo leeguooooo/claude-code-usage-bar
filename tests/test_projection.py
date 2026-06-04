@@ -41,7 +41,7 @@ def test_load_projection_store_missing_is_empty(tmp_path):
     assert store["closed_windows"] == []
 
 
-def test_record_projection_sample_accepts_lower_newer_same_reset(tmp_path):
+def test_record_projection_sample_keeps_one_monotonic_reading_per_pct_step(tmp_path):
     p = tmp_path / "projection.json"
     store = predict.load_projection_store(p)
     store = predict.record_projection_sample(
@@ -49,10 +49,18 @@ def test_record_projection_sample_accepts_lower_newer_same_reset(tmp_path):
         observed_at=1000.0, session_id="a"
     )
     store = predict.record_projection_sample(
+        store, "five_hour", used_pct=20.0, resets_at=5000.0,
+        observed_at=1001.0, session_id="b"
+    )
+    store = predict.record_projection_sample(
         store, "five_hour", used_pct=18.0, resets_at=5000.0,
         observed_at=1010.0, session_id="b"
     )
-    assert [s["used_pct"] for s in store["five_hour"]] == [20.0, 18.0]
+    store = predict.record_projection_sample(
+        store, "five_hour", used_pct=21.0, resets_at=5000.0,
+        observed_at=2000.0, session_id="a"
+    )
+    assert [s["used_pct"] for s in store["five_hour"]] == [20.0, 21.0]
 
 
 def test_record_projection_sample_prunes_bounded_history(monkeypatch):
@@ -103,6 +111,32 @@ def test_learned_bucket_rates_from_positive_deltas(use_tz):
     rates = predict.learn_bucket_rates(samples)
     assert rates["weekday_work_hours"]["samples"] == 1
     assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 2.0) < 1e-9
+
+
+def test_learned_bucket_rates_compress_duplicate_plateaus(use_tz):
+    use_tz("Asia/Tokyo")
+    reset = 1780927200.0
+    samples = [
+        {"observed_at": _ts(2026, 6, 1, 1, 0), "used_pct": 10.0, "resets_at": reset, "session_id": "a"},
+        {"observed_at": _ts(2026, 6, 1, 1, 10), "used_pct": 10.0, "resets_at": reset, "session_id": "b"},
+        {"observed_at": _ts(2026, 6, 1, 1, 20), "used_pct": 11.0, "resets_at": reset, "session_id": "a"},
+    ]
+    rates = predict.learn_bucket_rates(samples)
+    assert rates["weekday_work_hours"]["samples"] == 1
+    assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 3.0) < 1e-9
+
+
+def test_learned_bucket_rates_ignore_stale_lower_session_readings(use_tz):
+    use_tz("Asia/Tokyo")
+    reset = 1780927200.0
+    samples = [
+        {"observed_at": _ts(2026, 6, 1, 1, 0), "used_pct": 15.0, "resets_at": reset, "session_id": "fresh"},
+        {"observed_at": _ts(2026, 6, 1, 1, 10), "used_pct": 14.0, "resets_at": reset, "session_id": "stale"},
+        {"observed_at": _ts(2026, 6, 1, 1, 20), "used_pct": 16.0, "resets_at": reset, "session_id": "fresh"},
+    ]
+    rates = predict.learn_bucket_rates(samples)
+    assert rates["weekday_work_hours"]["samples"] == 1
+    assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 3.0) < 1e-9
 
 
 def test_expected_bucket_rate_blends_prior_and_learned_by_coverage():
@@ -164,6 +198,20 @@ def test_close_window_records_actual_final_pct():
     assert store["closed_windows"][0]["actual_final_pct"] == 20.0
 
 
+def test_close_window_ignores_reset_bouncing_backwards():
+    store = predict.empty_projection_store()
+    store["five_hour"] = [
+        {"observed_at": 1000.0, "used_pct": 20.0, "resets_at": 5000.0, "session_id": "fresh"},
+        {"observed_at": 2000.0, "used_pct": 1.0, "resets_at": 6000.0, "session_id": "fresh"},
+        {"observed_at": 2010.0, "used_pct": 20.0, "resets_at": 5000.0, "session_id": "stale"},
+    ]
+    predict.close_changed_windows(store, "five_hour")
+    assert [
+        (w["previous_resets_at"], w["actual_final_pct"])
+        for w in store["closed_windows"]
+    ] == [(5000.0, 20.0)]
+
+
 def test_projection_returns_arrow_strings_and_persists_store(tmp_path, monkeypatch):
     monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "projection.json")
     now = 1000.0
@@ -200,3 +248,17 @@ def test_projection_does_not_smooth_across_reset_boundaries(tmp_path, monkeypatc
     )
 
     assert int(p5.lstrip("→").rstrip("%")) > 10
+
+
+def test_projection_reconciles_stale_session_readings_before_recording(tmp_path, monkeypatch):
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "projection.json")
+    now = _ts(2026, 6, 1, 1)
+    reset = now + 4 * 3600
+
+    predict.projection(20.0, reset, 15.0, now + 6 * 86400, now, session_id="fresh")
+    p5, _ = predict.projection(10.0, reset, 15.0, now + 6 * 86400, now + 10, session_id="stale")
+
+    store = predict.load_projection_store()
+    assert [s["used_pct"] for s in store["five_hour"]] == [20.0]
+    assert int(p5.lstrip("→").rstrip("%")) >= 20

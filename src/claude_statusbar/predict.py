@@ -1,5 +1,5 @@
 # src/claude_statusbar/predict.py
-"""Rate-limit forecast — pure and history-free.
+"""Rate-limit forecast and end-of-window projection.
 
 Projects each window's end-of-window usage from the AVERAGE pace *so far this
 window*, not a noisy recent burst. A burst-rate extrapolation gets whipsawed by
@@ -18,9 +18,10 @@ going this window, where will you end up — and will you hit the cap first?"
     ttl       = (100 - used_pct) / avg_rate         # secs to 100% at that pace
 
 Show an at-risk `~ETA` chip when `projected >= 100` (on track to exhaust before
-reset). Needs only the current stdin (used_pct + resets_at) — no sample store,
-no concurrency, no warm-up. Stdlib only; lazy-imported on the render path.
-Fails safe: odd/insufficient input → None, never raises.
+reset). The separate always-visible `→NN%` projection keeps a small bounded
+history to learn local work/off-hour bucket rates over time. Stdlib only;
+lazy-imported on the render path. Fails safe: odd/insufficient input → None,
+never raises.
 See docs/superpowers/specs/2026-06-02-rate-limit-forecast-design.md."""
 from __future__ import annotations
 
@@ -247,6 +248,52 @@ def _valid_window(window: str) -> bool:
     return window in WINDOW_LEN_S
 
 
+def _sample_numbers(sample: Dict[str, Any]) -> Optional[Tuple[float, float, float]]:
+    try:
+        ts = float(sample["observed_at"])
+        used = float(sample["used_pct"])
+        reset = float(sample["resets_at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if ts <= 0 or reset <= 0 or used < 0:
+        return None
+    return ts, max(0.0, min(100.0, used)), reset
+
+
+def _plausible_reset(window: str, observed_at: float, resets_at: float) -> bool:
+    length = WINDOW_LEN_S.get(window)
+    if length is None:
+        return False
+    # Claude can refresh slightly late, and tests use simple synthetic epochs.
+    # Anything much farther than the nominal window is stale/polluted history.
+    return resets_at >= observed_at - 60.0 and resets_at <= observed_at + length + 86400.0
+
+
+def _compressed_samples(samples: List[Dict[str, Any]], window: Optional[str] = None) -> List[Dict[str, float]]:
+    grouped: Dict[float, List[Tuple[float, float, float]]] = {}
+    for sample in samples:
+        if not isinstance(sample, dict):
+            continue
+        vals = _sample_numbers(sample)
+        if vals is None:
+            continue
+        ts, used, reset = vals
+        if window is not None and not _plausible_reset(window, ts, reset):
+            continue
+        grouped.setdefault(reset, []).append((ts, used, reset))
+
+    out: List[Dict[str, float]] = []
+    for reset, rows in grouped.items():
+        last_used: Optional[float] = None
+        for ts, used, _reset in sorted(rows, key=lambda r: r[0]):
+            if last_used is not None and used <= last_used:
+                continue
+            out.append({"observed_at": ts, "used_pct": used, "resets_at": reset})
+            last_used = used
+    out.sort(key=lambda s: s["observed_at"])
+    return out
+
+
 def record_projection_sample(store: Dict[str, Any], window: str, used_pct, resets_at,
                              observed_at: float, session_id: str = "") -> Dict[str, Any]:
     if not _valid_window(window):
@@ -259,6 +306,8 @@ def record_projection_sample(store: Dict[str, Any], window: str, used_pct, reset
         return store
     if ts <= 0 or reset <= 0 or used < 0:
         return store
+    if not _plausible_reset(window, ts, reset):
+        return store
     sample = {
         "observed_at": ts,
         "used_pct": max(0.0, min(100.0, used)),
@@ -269,6 +318,15 @@ def record_projection_sample(store: Dict[str, Any], window: str, used_pct, reset
     if not isinstance(series, list):
         series = []
         store[window] = series
+    valid_existing = _compressed_samples(series, window)
+    if valid_existing:
+        latest_reset = max(float(s["resets_at"]) for s in valid_existing)
+        if reset < latest_reset:
+            return store
+        if reset == latest_reset:
+            max_used = max(float(s["used_pct"]) for s in valid_existing if float(s["resets_at"]) == reset)
+            if sample["used_pct"] <= max_used:
+                return store
     if series and series[-1] == sample:
         return store
     series.append(sample)
@@ -295,12 +353,16 @@ def bucket_for_time(ts: float) -> str:
 
 def learn_bucket_rates(samples: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
     out: Dict[str, Dict[str, float]] = {}
-    ordered = sorted(samples, key=lambda s: float(s.get("observed_at", 0.0)))
+    ordered = _compressed_samples(samples)
     for prev, cur in zip(ordered, ordered[1:]):
         try:
             dt = float(cur["observed_at"]) - float(prev["observed_at"])
             du = float(cur["used_pct"]) - float(prev["used_pct"])
+            prev_reset = float(prev["resets_at"])
+            cur_reset = float(cur["resets_at"])
         except (KeyError, TypeError, ValueError):
+            continue
+        if cur_reset != prev_reset:
             continue
         if dt < 300 or du <= 0:
             continue
@@ -356,8 +418,9 @@ def _samples_for_reset(samples: List[Dict[str, Any]], resets_at: float) -> List[
 
 def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: float) -> Optional[float]:
     cutoff = now - lookback_s
+    ordered = _compressed_samples(samples)
     in_window = [
-        s for s in samples
+        s for s in ordered
         if float(s.get("observed_at", 0.0)) >= cutoff
         and float(s.get("observed_at", 0.0)) <= now
     ]
@@ -469,15 +532,23 @@ def close_changed_windows(store: Dict[str, Any], window: str) -> Dict[str, Any]:
         (c.get("window"), c.get("previous_resets_at"))
         for c in closed if isinstance(c, dict)
     }
-    for prev, cur in zip(series, series[1:]):
-        prev_reset = prev.get("resets_at")
-        cur_reset = cur.get("resets_at")
-        if prev_reset != cur_reset and (window, prev_reset) not in seen:
+    ordered = sorted(
+        (s for s in series if isinstance(s, dict)),
+        key=lambda s: float(s.get("observed_at", 0.0)),
+    )
+    for prev, cur in zip(ordered, ordered[1:]):
+        prev_vals = _sample_numbers(prev)
+        cur_vals = _sample_numbers(cur)
+        if prev_vals is None or cur_vals is None:
+            continue
+        _prev_ts, prev_used, prev_reset = prev_vals
+        cur_ts, _cur_used, cur_reset = cur_vals
+        if cur_reset > prev_reset and (window, prev_reset) not in seen:
             closed.append({
                 "window": window,
                 "previous_resets_at": prev_reset,
-                "actual_final_pct": prev.get("used_pct"),
-                "closed_at": cur.get("observed_at"),
+                "actual_final_pct": prev_used,
+                "closed_at": cur_ts,
             })
             seen.add((window, prev_reset))
     del closed[:-MAX_CLOSED_WINDOWS]
@@ -518,8 +589,9 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
 def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):
     try:
         store = load_projection_store()
-        p5 = _projection_for_window(store, "five_hour", used_5h, resets_5h, now, session_id)
-        p7 = _projection_for_window(store, "seven_day", used_7d, resets_7d, now, session_id)
+        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d)
+        p5 = _projection_for_window(store, "five_hour", u5, r5, now, session_id)
+        p7 = _projection_for_window(store, "seven_day", u7, r7, now, session_id)
         save_projection_store(store)
         return p5, p7
     except Exception:
