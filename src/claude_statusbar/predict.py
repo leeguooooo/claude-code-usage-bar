@@ -507,7 +507,10 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
     )
     display = store.setdefault("display", {})
     previous = display.get(window) if isinstance(display.get(window), dict) else None
+    if previous is not None and _coerce(previous.get("resets_at")) != reset:
+        previous = None
     display[window] = smooth_projection(window, raw, used, now, previous)
+    display[window]["resets_at"] = reset
     record_projection_snapshot(store, window, now, used, reset, display[window]["projected_pct"])
     return _format_projection_pct(display[window]["projected_pct"])
 

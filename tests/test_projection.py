@@ -176,3 +176,27 @@ def test_projection_returns_arrow_strings_and_persists_store(tmp_path, monkeypat
     assert p5.endswith("%")
     assert p7.startswith("→")
     assert (tmp_path / "projection.json").exists()
+
+
+def test_projection_does_not_smooth_across_reset_boundaries(tmp_path, monkeypatch):
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "projection.json")
+    now = _ts(2026, 6, 1, 1)
+    old_reset = now + 60
+    new_reset = now + 4 * 3600 + 48 * 60
+    store = predict.empty_projection_store()
+    store["display"] = {
+        "five_hour": {
+            "projected_pct": 3.0,
+            "updated_at": now - 30,
+            "resets_at": old_reset,
+        }
+    }
+    predict.save_projection_store(store)
+
+    p5, _ = predict.projection(
+        used_5h=1.0, resets_5h=new_reset,
+        used_7d=15.0, resets_7d=now + 4 * 86400,
+        now=now, session_id="s",
+    )
+
+    assert int(p5.lstrip("→").rstrip("%")) > 10
