@@ -39,15 +39,15 @@ class StatusbarConfig:
     show_cost: bool = False
     show_cache_age: bool = True
     show_project_branch: bool = True
-    # Live-activity / session-stats segments (3rd "activity" line). Only
-    # show_todos defaults on — the rest are opt-in so the curated identity
-    # line isn't crowded for users who didn't ask.
+    # Live-activity / session-stats segments. show_todos (activity line) and
+    # show_lines (+added -removed on the identity line) default on; the rest are
+    # opt-in so the line isn't crowded for users who didn't ask.
     show_todos: bool = True
     show_tools: bool = False
     show_tool_rollup: bool = False
     show_agents: bool = False
     show_duration: bool = False
-    show_lines: bool = False
+    show_lines: bool = True
     show_ahead_behind: bool = False
     # Experimental: a lightened cell sweeping the battery bar's filled portion,
     # advancing one cell per render. Capped at the statusLine's ~1Hz refresh,
@@ -102,7 +102,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         show_tool_rollup=_to_bool(raw.get("show_tool_rollup", False)),
         show_agents=_to_bool(raw.get("show_agents", False)),
         show_duration=_to_bool(raw.get("show_duration", False)),
-        show_lines=_to_bool(raw.get("show_lines", False)),
+        show_lines=_to_bool(raw.get("show_lines", True)),
         show_ahead_behind=_to_bool(raw.get("show_ahead_behind", False)),
         bar_shimmer=_to_bool(raw.get("bar_shimmer", False)),
         show_forecast=_to_bool(raw.get("show_forecast", True)),

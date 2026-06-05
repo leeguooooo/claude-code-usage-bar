@@ -10,7 +10,7 @@ def test_defaults():
     assert cfg.show_tool_rollup is False
     assert cfg.show_agents is False
     assert cfg.show_duration is False
-    assert cfg.show_lines is False
+    assert cfg.show_lines is True          # +added -removed, on by default
     assert cfg.show_ahead_behind is False
 
 
