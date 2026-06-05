@@ -15,6 +15,22 @@ from .themes import Theme, get_theme
 RESET = "\033[0m"
 BOLD  = "\033[1m"
 ITAL  = "\033[3m"
+FAINT = "\033[2m"   # dim/faint attribute — makes a grey recede even further
+
+# Installed version, resolved once and cached. importlib.metadata is ~20ms and
+# banned on the per-render import graph, but a lazy call here (only when the
+# version segment is on) is fine: it's not an import-time edge, and the daemon
+# pays it once per process. Empty string if it can't be determined.
+_VERSION_CACHE = None
+def _statusbar_version() -> str:
+    global _VERSION_CACHE
+    if _VERSION_CACHE is None:
+        try:
+            import importlib.metadata as _m
+            _VERSION_CACHE = _m.version("claude-statusbar")
+        except Exception:
+            _VERSION_CACHE = ""
+    return _VERSION_CACHE
 
 def _fg(rgb): return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 def _bg(rgb): return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
@@ -303,6 +319,7 @@ def _stats_segment(duration_text: str, lines_text: str, *, theme: Theme,
 def render_identity_line(info, *, theme: Theme, dirty,
                          ahead=None, behind=None,
                          duration_text: str = "", lines_text: str = "",
+                         version_text: str = "",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
 
@@ -332,7 +349,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
                 tail += f" {ab}"
         if info.is_worktree:
             tail += " [worktree]"
-        return head + tail + stats
+        ver = f" · v{version_text}" if version_text else ""
+        return head + tail + stats + ver
 
     MUTE = _fg(theme.mute)
     EDGE = _fg(theme.edge)
@@ -355,7 +373,10 @@ def render_identity_line(info, *, theme: Theme, dirty,
             body += f" {_fg(theme.s_ok)}{ab}{RESET}"
     if info.is_worktree:
         body += f" {MUTE}[worktree]{RESET}"
-    return head + body + stats
+    # Version: the faintest thing on the line — edge (darkest grey) + dim
+    # attribute, so it's there if you look for it but never competes for attention.
+    ver = f" {FAINT}{EDGE}· v{version_text}{RESET}" if version_text else ""
+    return head + body + stats + ver
 
 
 def render_activity_line(activity, *, theme: Theme, use_color: bool = True,
@@ -467,6 +488,7 @@ def render(style: str, **kwargs) -> str:
     behind = kwargs.pop("identity_behind", None)
     duration_text = kwargs.pop("identity_duration", "")
     lines_text = kwargs.pop("identity_lines", "")
+    show_version = kwargs.pop("identity_show_version", False)
     activity = kwargs.pop("activity", None)
     activity_opts = kwargs.pop("activity_opts", None)
     theme = kwargs.get("theme") or get_theme("graphite")
@@ -476,9 +498,11 @@ def render(style: str, **kwargs) -> str:
     out = fn(**kwargs)
 
     if show_pb and info is not None:
+        version_text = _statusbar_version() if show_version else ""
         out = out + "\n" + render_identity_line(
             info, theme=theme, dirty=dirty, ahead=ahead, behind=behind,
             duration_text=duration_text, lines_text=lines_text,
+            version_text=version_text,
             use_color=use_color,
         )
 

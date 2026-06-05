@@ -1231,6 +1231,7 @@ def main(json_output: bool = False,
             identity_dirty=dirty,
             identity_duration=duration_text,
             identity_lines=lines_text,
+            identity_show_version=cfg.show_version,
         )
         # git ahead/behind reuses the same cached `git status --branch` the
         # dirty refresh just triggered — only meaningful on the identity line.
