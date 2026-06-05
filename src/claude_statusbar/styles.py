@@ -32,6 +32,43 @@ def _statusbar_version() -> str:
             _VERSION_CACHE = ""
     return _VERSION_CACHE
 
+
+def _version_gt(a: str, b: str) -> bool:
+    """True if dotted version `a` is newer than `b`. Fail-safe (bad parts → 0)."""
+    def parts(v):
+        out = []
+        for x in str(v).split("."):
+            try:
+                out.append(int(x))
+            except ValueError:
+                out.append(0)
+        return out
+    pa, pb = parts(a), parts(b)
+    n = max(len(pa), len(pb))
+    pa += [0] * (n - len(pa))
+    pb += [0] * (n - len(pb))
+    return pa > pb
+
+
+def _update_hint(path=None) -> str:
+    """The newer version string if the cached PyPI check says one is available
+    (and the check is recent), else ''. Cheap file read — no network, no
+    importlib on the hot path. Written by updater.get_latest_version."""
+    try:
+        import json as _json
+        import time as _t
+        from pathlib import Path as _Path
+        p = _Path(path) if path is not None else (
+            _Path.home() / ".cache" / "claude-statusbar" / "latest_version.json")
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        latest = str(data.get("version", ""))
+        checked_at = float(data.get("checked_at", 0))
+        if not latest or _t.time() - checked_at > 7 * 86400:  # stale → no arrow
+            return ""
+        return latest if _version_gt(latest, _statusbar_version()) else ""
+    except Exception:
+        return ""
+
 def _fg(rgb): return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 def _bg(rgb): return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 
@@ -319,7 +356,7 @@ def _stats_segment(duration_text: str, lines_text: str, *, theme: Theme,
 def render_identity_line(info, *, theme: Theme, dirty,
                          ahead=None, behind=None,
                          duration_text: str = "", lines_text: str = "",
-                         version_text: str = "",
+                         version_text: str = "", update_text: str = "",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
 
@@ -350,6 +387,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
         if info.is_worktree:
             tail += " [worktree]"
         ver = f" · v{version_text}" if version_text else ""
+        if version_text and update_text:
+            ver += f" ↑{update_text}"
         return head + tail + stats + ver
 
     MUTE = _fg(theme.mute)
@@ -375,7 +414,13 @@ def render_identity_line(info, *, theme: Theme, dirty,
         body += f" {MUTE}[worktree]{RESET}"
     # Version: the faintest thing on the line — edge (darkest grey) + dim
     # attribute, so it's there if you look for it but never competes for attention.
-    ver = f" {FAINT}{EDGE}· v{version_text}{RESET}" if version_text else ""
+    ver = ""
+    if version_text:
+        ver = f" {FAINT}{EDGE}· v{version_text}{RESET}"
+        # Update available → a soft amber `↑<newver>` nudge (a bit more visible
+        # than the version, so you notice there's something to update to).
+        if update_text:
+            ver += f"{_fg(theme.s_warn)} ↑{update_text}{RESET}"
     return head + body + stats + ver
 
 
@@ -499,10 +544,11 @@ def render(style: str, **kwargs) -> str:
 
     if show_pb and info is not None:
         version_text = _statusbar_version() if show_version else ""
+        update_text = _update_hint() if show_version else ""
         out = out + "\n" + render_identity_line(
             info, theme=theme, dirty=dirty, ahead=ahead, behind=behind,
             duration_text=duration_text, lines_text=lines_text,
-            version_text=version_text,
+            version_text=version_text, update_text=update_text,
             use_color=use_color,
         )
 

@@ -196,3 +196,37 @@ def test_version_is_faint_and_dim_grey_in_color():
 def test_show_version_config_default_on():
     from claude_statusbar.config import StatusbarConfig
     assert StatusbarConfig().show_version is True
+
+
+def test_update_hint_appended_when_newer(tmp_path):
+    from claude_statusbar.styles import render_identity_line, _update_hint, _statusbar_version
+    import json, time
+    p = tmp_path / "latest.json"
+    cur = _statusbar_version() or "0.0.0"
+    newer = ".".join(str(int(x) + (1 if i == 0 else 0)) for i, x in enumerate((cur.split(".") + ["0", "0"])[:3]))
+    p.write_text(json.dumps({"version": newer, "checked_at": time.time()}))
+    assert _update_hint(path=p) == newer
+    s = render_identity_line(_info(), theme=THEME, dirty=False,
+                             version_text=cur, update_text=newer, use_color=False)
+    assert s.endswith(f"↑{newer}")
+
+
+def test_update_hint_blank_when_uptodate(tmp_path):
+    from claude_statusbar.styles import _update_hint, _statusbar_version
+    import json, time
+    p = tmp_path / "latest.json"
+    p.write_text(json.dumps({"version": _statusbar_version() or "0.0.0", "checked_at": time.time()}))
+    assert _update_hint(path=p) == ""
+
+
+def test_update_hint_blank_when_stale(tmp_path):
+    from claude_statusbar.styles import _update_hint
+    import json
+    p = tmp_path / "latest.json"
+    p.write_text(json.dumps({"version": "999.0.0", "checked_at": 0}))  # ancient check
+    assert _update_hint(path=p) == ""
+
+
+def test_update_hint_blank_when_missing(tmp_path):
+    from claude_statusbar.styles import _update_hint
+    assert _update_hint(path=tmp_path / "nope.json") == ""

@@ -19,6 +19,23 @@ import importlib.metadata as metadata
 # Distribution name on PyPI (used for local version lookup)
 DIST_NAME = "claude-statusbar"
 PYPI_URL = "https://pypi.org/pypi/claude-statusbar/json"
+# The background check writes the latest PyPI version here; the render path
+# reads it (cheap, no network) to show a `↑<newver>` update hint on the bar.
+LATEST_VERSION_CACHE = Path.home() / ".cache" / "claude-statusbar" / "latest_version.json"
+
+
+def _cache_latest_version(version: str) -> None:
+    """Persist the latest-known PyPI version for the render path to read."""
+    try:
+        import time
+        from .cache import atomic_write_text
+        LATEST_VERSION_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(
+            LATEST_VERSION_CACHE,
+            json.dumps({"version": str(version), "checked_at": time.time()}),
+        )
+    except Exception:
+        pass
 
 
 def get_current_version() -> str:
@@ -35,7 +52,9 @@ def get_latest_version() -> Optional[str]:
     try:
         with urllib.request.urlopen(PYPI_URL, timeout=5) as response:
             data = json.loads(response.read().decode())
-            return data["info"]["version"]
+            latest = data["info"]["version"]
+            _cache_latest_version(latest)
+            return latest
     except (urllib.error.URLError, json.JSONDecodeError, KeyError):
         return None
 
