@@ -9,6 +9,22 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.12.0 — 2026-06-05
+
+### Added
+- **Version on the bar (`show_version`, default on).** A faint `· vX.Y.Z` at the
+  very end of the identity line — rendered in the darkest grey + a dim attribute
+  so it's there when you look but never competes for attention. (Terminals can't
+  shrink the font, so "faint" is how it stays unobtrusive.) Disable with
+  `cs config set show_version false`.
+- **Update hint.** When a newer version is on PyPI, an amber `↑<newver>` appears
+  right after the version (e.g. `· v3.11.2 ↑3.12.0`). The background update check
+  caches the latest version locally; the render path only reads that cache (no
+  network, no per-second cost) and shows the arrow when newer — and stays silent
+  if the cached check is stale.
+
+---
+
 ## v3.11.2 — 2026-06-05
 
 ### Changed

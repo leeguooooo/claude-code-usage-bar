@@ -58,7 +58,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 
 ```
 5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s | $ 1.42
-⤷ claude-code-usage-bar ⎇ main●
+⤷ claude-code-usage-bar ⎇ main● · +182 -47 · ⏱ 12m · v3.12.0
 ```
 
 | Segment | Meaning |
@@ -251,6 +251,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_agents` | bool, default `false` | One **bottom line per running subagent**, e.g. `◐ explore[haiku] 探索 RsaKeyPairPool 2m15s` (multiple agents → multiple lines). Inline agents finish via their tool_result; background (`run_in_background`) agents finish via the queue-operation that carries their tool-use-id. **Off by default because Claude Code already shows background agents in its own native panel** — enabling this largely duplicates that. |
 | `show_duration` | bool, default `false` | **Identity line:** session wall-clock duration as Claude Code reports it (`⏱ 12m`). Already on stdin — no transcript scan. Shows next to the project (needs `show_project_branch` on). Opt-in. |
 | `show_lines` | bool, default `true` | **Identity line:** session lines added/removed as Claude Code reports it (`+182 -47`, +green/−red). This is Claude Code's own cumulative session tally (every Write/Edit), **not a git diff** — it can exceed the net working-tree change. Needs `show_project_branch` on. On by default; disable with `cs config set show_lines false`. |
+| `show_version` | bool, default `true` | **Identity line:** a faint `· vX.Y.Z` at the very end (darkest grey + dim attribute, so it recedes). When a newer version is on PyPI, an amber `↑<newver>` is appended (`· v3.11.2 ↑3.12.0`) — read from a local cache the background update check writes, so the render path never hits the network. Disable with `cs config set show_version false`. |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
 
@@ -331,6 +332,7 @@ cs config set show_tools true   # activity line: active tool + completed rollup
 cs config set show_agents true  # bottom line(s): running subagents + elapsed
 cs config set show_duration true # identity line: ⏱ session duration
 cs config set show_lines false  # hide identity-line +added -removed (on by default)
+cs config set show_version false  # hide the faint · vX.Y.Z (+ ↑update hint) at line end
 cs config set show_ahead_behind true  # ↑2↓1 on the project/branch line
 cs config set bar_shimmer true  # experimental: twinkling starfield on the battery bars
 cs config set show_projection false  # hide the →NN% end-of-window projection
