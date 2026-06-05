@@ -52,7 +52,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 
 **v3.2** — daemon fast-mode (now the default in v3.6.0) for ~5× lower CPU at `refreshInterval=1`.
 
-Full release notes in [CHANGELOG.md](CHANGELOG.md).
+📋 **Full changelog:** [CHANGELOG.md](CHANGELOG.md) · [GitHub Releases](https://github.com/leeguooooo/claude-code-usage-bar/releases) — every version's changes, also linked from the [PyPI page](https://pypi.org/project/claude-statusbar/).
 
 ## What it shows
 

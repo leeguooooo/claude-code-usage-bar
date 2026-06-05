@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-statusbar"
-version = "3.11.1"
+version = "3.11.2"
 authors = [
     {name = "leeguooooo", email = "leeguooooo@gmail.com"}
 ]
@@ -38,6 +38,8 @@ full = [
 Homepage = "https://github.com/leeguooooo/claude-code-usage-bar"
 Repository = "https://github.com/leeguooooo/claude-code-usage-bar"
 Issues = "https://github.com/leeguooooo/claude-code-usage-bar/issues"
+Changelog = "https://github.com/leeguooooo/claude-code-usage-bar/blob/main/CHANGELOG.md"
+Releases = "https://github.com/leeguooooo/claude-code-usage-bar/releases"
 
 [project.scripts]
 claude-statusbar = "claude_statusbar.cli:main"

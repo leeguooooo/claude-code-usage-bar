@@ -9,6 +9,18 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.11.2 — 2026-06-05
+
+### Changed
+- **`show_lines` is now on by default.** The identity line shows Claude Code's
+  session lines-changed tally (`+182 -47`, +green/−red) out of the box. Disable
+  with `cs config set show_lines false`.
+- **Changelog is easier to find.** The PyPI project page now links the changelog
+  and releases directly (project URLs), so you can see what changed without
+  digging through the repo.
+
+---
+
 ## v3.11.1 — 2026-06-04
 
 ### Fixed
