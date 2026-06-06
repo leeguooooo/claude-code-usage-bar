@@ -9,6 +9,20 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.12.1 — 2026-06-07
+
+### Fixed
+- **Projection no longer echoes the current usage.** The `→NN%` projection is
+  floored at current usage, so when it predicted no visible growth it would
+  render right next to an identical number (`1% … →1%`) and read as a broken
+  chip. It's now shown only when it forecasts a higher whole percentage;
+  otherwise it's hidden (e.g. near a reset, or while usage is flat).
+- Release guard: `pyproject.toml`, `.claude-plugin/marketplace.json`, and
+  `.claude-plugin/plugin.json` versions are now kept in lock-step (a test fails
+  the build if they drift) — the marketplace had silently lagged at 3.10.0.
+
+---
+
 ## v3.12.0 — 2026-06-05
 
 ### Added
