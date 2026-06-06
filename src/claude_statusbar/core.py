@@ -1267,7 +1267,6 @@ def main(json_output: bool = False,
             mode_fast=stdin_data.get('fast_mode'),
             mode_style=stdin_data.get('output_style', ''),
             mode_gradient=cfg.mode_gradient,
-            mode_phase=__import__('time').time(),  # seconds → ~1 char/s scroll
         )
 
     # Optional live-activity line (3rd line): todos / active tool + rollup.

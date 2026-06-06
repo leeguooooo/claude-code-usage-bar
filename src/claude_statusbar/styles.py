@@ -525,43 +525,28 @@ def _lerp_rgb(a, b, f):
     return tuple(int(round(a[i] + (b[i] - a[i]) * f)) for i in range(3))
 
 
-def _cyclic_rgb(stops, t):
-    """Sample a CYCLIC gradient at t∈[0,1) across `stops` (wraps last→first)."""
-    m = len(stops)
-    x = (t % 1.0) * m
-    i = int(x) % m
-    return _lerp_rgb(stops[i], stops[(i + 1) % m], x - int(x))
+def _grad_sample(stops, f):
+    """Sample a NON-cyclic gradient at f∈[0,1] across `stops` (clamped ends)."""
+    if f <= 0:
+        return stops[0]
+    if f >= 1:
+        return stops[-1]
+    x = f * (len(stops) - 1)
+    i = int(x)
+    return _lerp_rgb(stops[i], stops[i + 1], x - i)
 
 
-_SHINE_SPEED = 10.0    # highlight chars/sec — a quick flash-by (1 Hz refresh caps the smoothness)
-_SHINE_HALF = 4.0      # highlight half-width in chars
-_SHINE_MAX = 0.9       # peak brighten-toward-white at the highlight centre
-_SHINE_GAP = 24        # off-screen chars between passes → flash, pause, flash again
-
-
-def _shine(rgb, amt):
-    """Blend `rgb` toward white by `amt`∈[0,1] (the moving highlight)."""
-    return tuple(int(round(rgb[c] + (255 - rgb[c]) * amt)) for c in range(3))
-
-
-def _gradient_text(text: str, phase: float = 0.0, stops=None) -> str:
-    """A gradient (palette `stops`) spanning `text` that drifts left→right, with
-    a brighter highlight band sweeping across it (a "shine"). `phase` is seconds:
-    the gradient creeps ~1 char/s and the highlight races ~`_SHINE_SPEED` char/s,
-    going off-screen for `_SHINE_GAP` between passes so it reads as a flash-by.
-    (statusLine refreshes at ≤1 Hz, so both step rather than glide.)"""
+def _gradient_text(text: str, stops=None) -> str:
+    """A single STATIC gradient (palette `stops`) swept once across `text`, left
+    to right. Not animated: the statusLine refreshes at ≤1 Hz (and event-driven
+    in some builds), so any motion can only step ~1/s and reads as a flicker —
+    a clean stable sweep is the right call. The per-effort palette tells the tier."""
     stops = stops or _MODE_GRADIENT_STOPS
     n = len(text)
-    period = max(1, n)
-    centre = (phase * _SHINE_SPEED) % (n + _SHINE_GAP)   # sweep position (may be off-screen)
-    out = []
-    for i, ch in enumerate(text):
-        t = ((i - phase) % period) / period              # base gradient (drifts right)
-        rgb = _cyclic_rgb(stops, t)
-        d = abs(i - centre)
-        if d < _SHINE_HALF:
-            rgb = _shine(rgb, (1 - d / _SHINE_HALF) * _SHINE_MAX)
-        out.append(_fg(rgb) + ch)
+    out = [
+        _fg(_grad_sample(stops, i / max(1, n - 1))) + ch
+        for i, ch in enumerate(text)
+    ]
     return "".join(out) + RESET
 
 
@@ -579,16 +564,17 @@ def _effort_color(level, theme):
 
 def render_mode_line(*, effort: str = "", thinking=None, fast=None,
                      style: str = "", theme: Theme, use_color: bool = True,
-                     gradient: bool = True, phase: float = 0.0) -> str:
+                     gradient: bool = True) -> str:
     """Session-mode readout: `⚙ effort:high · think:on · fast:on · style:default`.
 
     Each field is dropped when absent, so an older Claude Code that omits one
     just shows fewer segments; returns '' when nothing is known. The effort value
     is shown verbatim (handles any of low/medium/high/xhigh/max/ultracode/auto and
     future values) and tinted by intensity. When `gradient` is on (default), the
-    WHOLE line gets a flowing pink→purple gradient regardless of effort — applying
-    it only to the top tier made the switch back to plain colours look jarring, so
-    it's consistent. (Advances ~1 char/s — a slow step, not smooth.)"""
+    WHOLE line gets a static gradient whose palette depends on the effort tier
+    (cool→hot: slate/blue/cyan/amber/coral/pink-purple), so the tier is obvious at
+    a glance. Static, not animated — the statusLine can't repaint faster than ~1 Hz,
+    so motion only flickers; a stable per-tier sweep is the clean result."""
     segs = []  # (label, value, value_color)
     if effort:
         segs.append(("effort:", str(effort), _effort_color(effort, theme)))
@@ -604,7 +590,7 @@ def render_mode_line(*, effort: str = "", thinking=None, fast=None,
     if not use_color:
         return plain
     if gradient:
-        return _gradient_text(plain, phase, _effort_gradient_stops(effort))
+        return _gradient_text(plain, _effort_gradient_stops(effort))
     MUTE = _fg(theme.mute)
     body = f"{MUTE} · {RESET}".join(
         f"{MUTE}{l}{RESET}{c}{v}{RESET}" for l, v, c in segs)
@@ -649,7 +635,7 @@ def render(style: str, **kwargs) -> str:
     mode_fast = kwargs.pop("mode_fast", None)
     mode_style = kwargs.pop("mode_style", "")
     mode_gradient = kwargs.pop("mode_gradient", True)
-    mode_phase = kwargs.pop("mode_phase", 0.0)
+    kwargs.pop("mode_phase", None)   # accepted for back-compat; gradient is static
     activity = kwargs.pop("activity", None)
     activity_opts = kwargs.pop("activity_opts", None)
     theme = kwargs.get("theme") or get_theme("graphite")
@@ -672,7 +658,7 @@ def render(style: str, **kwargs) -> str:
         mode_line = render_mode_line(
             effort=mode_effort, thinking=mode_thinking, fast=mode_fast,
             style=mode_style, theme=theme, use_color=use_color,
-            gradient=mode_gradient, phase=mode_phase)
+            gradient=mode_gradient)
         if mode_line:
             out = out + "\n" + mode_line
 

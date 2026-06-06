@@ -76,14 +76,13 @@ def test_gradient_can_be_disabled():
     assert len(_distinct_fg(s)) <= 3
 
 
-def test_gradient_scrolls_with_phase():
-    # Animated: advancing phase shifts the band (left→right crawl), so the ANSI
-    # differs while the visible text stays the same.
-    from claude_statusbar.styles import _strip
-    a = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True, phase=0)
-    b = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True, phase=4)
-    assert a != b
-    assert _strip(a) == _strip(b)
+def test_gradient_is_static_and_deterministic():
+    # Static (not animated): identical output across calls, a single left→right
+    # sweep that starts at the palette's first stop (pink for ultracode).
+    a = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
+    b = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
+    assert a == b
+    assert a.startswith("\033[38;2;236;114;179m")   # first char = pink stop
     assert len(_distinct_fg(a)) > 5
 
 
@@ -100,7 +99,7 @@ def test_effort_tiers_have_distinct_gradients():
     # high vs the top tiers must look clearly different (the whole point).
     first = {}
     for lv in ("low", "medium", "high", "xhigh", "max", "ultracode"):
-        s = render_mode_line(effort=lv, thinking=True, theme=THEME, use_color=True, phase=0)
+        s = render_mode_line(effort=lv, thinking=True, theme=THEME, use_color=True)
         import re
         first[lv] = re.findall(r"38;2;\d+;\d+;\d+", s)[0]
     assert first["high"] != first["ultracode"]
