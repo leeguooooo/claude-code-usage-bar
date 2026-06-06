@@ -73,13 +73,15 @@ def test_gradient_can_be_disabled():
     assert len(_distinct_fg(s)) <= 3
 
 
-def test_gradient_is_static_single_sweep():
-    # Static (not animated): identical output across calls, starting at the pink
-    # stop — a moving gradient only flickers at the ≤1 Hz statusLine refresh.
-    a = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
-    b = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
-    assert a == b
-    assert a.startswith("\033[38;2;236;114;179m")   # first char = pink stop
+def test_gradient_scrolls_with_phase():
+    # Animated: advancing phase shifts the band (left→right crawl), so the ANSI
+    # differs while the visible text stays the same.
+    from claude_statusbar.styles import _strip
+    a = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True, phase=0)
+    b = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True, phase=4)
+    assert a != b
+    assert _strip(a) == _strip(b)
+    assert len(_distinct_fg(a)) > 5
 
 
 def test_gradient_no_color_is_plain():

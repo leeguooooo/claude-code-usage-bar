@@ -510,31 +510,29 @@ def _lerp_rgb(a, b, f):
     return tuple(int(round(a[i] + (b[i] - a[i]) * f)) for i in range(3))
 
 
-def _grad_sample(stops, f):
-    """Sample a NON-cyclic gradient at f∈[0,1] across `stops` (clamped)."""
-    if f <= 0:
-        return stops[0]
-    if f >= 1:
-        return stops[-1]
-    x = f * (len(stops) - 1)
-    i = int(x)
-    return _lerp_rgb(stops[i], stops[i + 1], x - i)
+def _cyclic_rgb(stops, t):
+    """Sample a CYCLIC gradient at t∈[0,1) across `stops` (wraps last→first)."""
+    m = len(stops)
+    x = (t % 1.0) * m
+    i = int(x) % m
+    return _lerp_rgb(stops[i], stops[(i + 1) % m], x - int(x))
 
 
 def _effort_is_top(effort) -> bool:
     return str(effort).strip().lower() in ("xhigh", "max", "ultracode")
 
 
-def _gradient_text(text: str) -> str:
-    """A single static pink→purple sweep across `text` (one full gradient, left
-    to right). Not animated: the statusLine refreshes at ≤1 Hz, so a moving
-    gradient can only step ~1 char/s — which reads as a flicker, not a smooth
-    scroll — so we keep it a clean, stable sweep instead."""
+def _gradient_text(text: str, phase: float = 0.0) -> str:
+    """One pink→purple gradient spanning `text`, scrolling left→right as `phase`
+    grows. The caller sets phase = seconds, so the band creeps ~1 char/s — a slow
+    directional crawl. (statusLine refreshes at ≤1 Hz, so it steps rather than
+    glides, but a single slow-moving band reads far better than fast tiled bands.)"""
     n = len(text)
-    out = [
-        _fg(_grad_sample(_MODE_GRADIENT_STOPS, i / max(1, n - 1))) + ch
-        for i, ch in enumerate(text)
-    ]
+    period = max(1, n)
+    out = []
+    for i, ch in enumerate(text):
+        t = ((i - phase) % period) / period   # phase↑ → pattern moves right
+        out.append(_fg(_cyclic_rgb(_MODE_GRADIENT_STOPS, t)) + ch)
     return "".join(out) + RESET
 
 
@@ -552,7 +550,7 @@ def _effort_color(level, theme):
 
 def render_mode_line(*, effort: str = "", thinking=None, fast=None,
                      style: str = "", theme: Theme, use_color: bool = True,
-                     gradient: bool = True) -> str:
+                     gradient: bool = True, phase: float = 0.0) -> str:
     """Session-mode readout: `⚙ effort:high · think:on · fast:on · style:default`.
 
     Each field is dropped when absent, so an older Claude Code that omits one
@@ -576,7 +574,7 @@ def render_mode_line(*, effort: str = "", thinking=None, fast=None,
     if not use_color:
         return plain
     if gradient and _effort_is_top(effort):
-        return _gradient_text(plain)
+        return _gradient_text(plain, phase)
     MUTE = _fg(theme.mute)
     body = f"{MUTE} · {RESET}".join(
         f"{MUTE}{l}{RESET}{c}{v}{RESET}" for l, v, c in segs)
@@ -621,7 +619,7 @@ def render(style: str, **kwargs) -> str:
     mode_fast = kwargs.pop("mode_fast", None)
     mode_style = kwargs.pop("mode_style", "")
     mode_gradient = kwargs.pop("mode_gradient", True)
-    kwargs.pop("mode_phase", None)   # accepted for back-compat; gradient is static now
+    mode_phase = kwargs.pop("mode_phase", 0.0)
     activity = kwargs.pop("activity", None)
     activity_opts = kwargs.pop("activity_opts", None)
     theme = kwargs.get("theme") or get_theme("graphite")
@@ -644,7 +642,7 @@ def render(style: str, **kwargs) -> str:
         mode_line = render_mode_line(
             effort=mode_effort, thinking=mode_thinking, fast=mode_fast,
             style=mode_style, theme=theme, use_color=use_color,
-            gradient=mode_gradient)
+            gradient=mode_gradient, phase=mode_phase)
         if mode_line:
             out = out + "\n" + mode_line
 
