@@ -502,8 +502,23 @@ def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:
     return lines
 
 
-# Pink → purple → periwinkle — the "ultracode" gradient palette.
-_MODE_GRADIENT_STOPS = [(236, 114, 179), (190, 147, 249), (130, 170, 255)]
+# Per-effort gradient palettes — a cool→hot ladder so the level is obvious at a
+# glance (the whole line is always a gradient, but its hue tells you the tier).
+_EFFORT_GRADIENTS = {
+    "low":       [(110, 120, 140), (160, 168, 186)],              # dim slate
+    "auto":      [(110, 120, 140), (160, 168, 186)],
+    "medium":    [(88, 150, 225), (150, 195, 240)],               # blue
+    "high":      [(70, 195, 200), (130, 222, 200)],               # cyan / teal
+    "xhigh":     [(240, 185, 95), (245, 150, 80)],                # amber
+    "max":       [(245, 130, 150), (235, 95, 110)],               # coral / pink-red
+    "ultracode": [(236, 114, 179), (190, 147, 249), (130, 170, 255)],  # pink→purple→peri
+}
+# Fallback for unknown/future levels — the showcase pink→purple.
+_MODE_GRADIENT_STOPS = _EFFORT_GRADIENTS["ultracode"]
+
+
+def _effort_gradient_stops(level):
+    return _EFFORT_GRADIENTS.get(str(level).strip().lower(), _MODE_GRADIENT_STOPS)
 
 
 def _lerp_rgb(a, b, f):
@@ -518,17 +533,18 @@ def _cyclic_rgb(stops, t):
     return _lerp_rgb(stops[i], stops[(i + 1) % m], x - int(x))
 
 
-def _gradient_text(text: str, phase: float = 0.0) -> str:
-    """One pink→purple gradient spanning `text`, scrolling left→right as `phase`
-    grows. The caller sets phase = seconds, so the band creeps ~1 char/s — a slow
-    directional crawl. (statusLine refreshes at ≤1 Hz, so it steps rather than
-    glides, but a single slow-moving band reads far better than fast tiled bands.)"""
+def _gradient_text(text: str, phase: float = 0.0, stops=None) -> str:
+    """One gradient (palette `stops`) spanning `text`, scrolling left→right as
+    `phase` grows. The caller sets phase = seconds, so the band creeps ~1 char/s —
+    a slow directional crawl. (statusLine refreshes at ≤1 Hz, so it steps rather
+    than glides, but a single slow-moving band reads far better than tiled bands.)"""
+    stops = stops or _MODE_GRADIENT_STOPS
     n = len(text)
     period = max(1, n)
     out = []
     for i, ch in enumerate(text):
         t = ((i - phase) % period) / period   # phase↑ → pattern moves right
-        out.append(_fg(_cyclic_rgb(_MODE_GRADIENT_STOPS, t)) + ch)
+        out.append(_fg(_cyclic_rgb(stops, t)) + ch)
     return "".join(out) + RESET
 
 
@@ -571,7 +587,7 @@ def render_mode_line(*, effort: str = "", thinking=None, fast=None,
     if not use_color:
         return plain
     if gradient:
-        return _gradient_text(plain, phase)
+        return _gradient_text(plain, phase, _effort_gradient_stops(effort))
     MUTE = _fg(theme.mute)
     body = f"{MUTE} · {RESET}".join(
         f"{MUTE}{l}{RESET}{c}{v}{RESET}" for l, v, c in segs)

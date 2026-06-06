@@ -94,3 +94,14 @@ def test_gradient_no_color_is_plain():
 
 def test_mode_gradient_config_default_on():
     assert StatusbarConfig().mode_gradient is True
+
+
+def test_effort_tiers_have_distinct_gradients():
+    # high vs the top tiers must look clearly different (the whole point).
+    first = {}
+    for lv in ("low", "medium", "high", "xhigh", "max", "ultracode"):
+        s = render_mode_line(effort=lv, thinking=True, theme=THEME, use_color=True, phase=0)
+        import re
+        first[lv] = re.findall(r"38;2;\d+;\d+;\d+", s)[0]
+    assert first["high"] != first["ultracode"]
+    assert len(set(first.values())) == len(first)   # all six tiers distinct
