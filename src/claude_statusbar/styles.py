@@ -502,29 +502,42 @@ def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:
     return lines
 
 
+def _effort_color(level, theme):
+    """Colour the effort value by intensity tier (not severity): top tiers get a
+    soft amber 'cranked up' nudge, low/auto recede, the rest stay neutral. Values
+    are Claude Code's: low / medium / high / xhigh / max / ultracode / auto."""
+    lv = str(level).strip().lower()
+    if lv in ("xhigh", "max", "ultracode"):
+        return _fg(theme.s_warn)
+    if lv in ("low", "auto", ""):
+        return _fg(theme.mute)
+    return _fg(theme.ink)   # medium / high / unknown future values
+
+
 def render_mode_line(*, effort: str = "", thinking=None, fast=None,
                      style: str = "", theme: Theme, use_color: bool = True) -> str:
     """Session-mode readout: `⚙ effort:high · think:on · fast:on · style:default`.
 
     Each field is dropped when absent, so an older Claude Code that omits one
-    just shows fewer segments; returns '' when nothing is known."""
-    segs = []  # (label, value)
+    just shows fewer segments; returns '' when nothing is known. The effort value
+    is shown verbatim (handles any of low/medium/high/xhigh/max/ultracode/auto and
+    future values) and tinted by intensity."""
+    segs = []  # (label, value, value_color)
     if effort:
-        segs.append(("effort:", str(effort)))
+        segs.append(("effort:", str(effort), _effort_color(effort, theme)))
     if thinking is not None:
-        segs.append(("think:", "on" if thinking else "off"))
+        segs.append(("think:", "on" if thinking else "off", _fg(theme.ink)))
     if fast is not None:
-        segs.append(("fast:", "on" if fast else "off"))
+        segs.append(("fast:", "on" if fast else "off", _fg(theme.ink)))
     if style:
-        segs.append(("style:", str(style)))
+        segs.append(("style:", str(style), _fg(theme.ink)))
     if not segs:
         return ""
     if not use_color:
-        return "⚙ " + " · ".join(f"{l}{v}" for l, v in segs)
+        return "⚙ " + " · ".join(f"{l}{v}" for l, v, _ in segs)
     MUTE = _fg(theme.mute)
-    INK = _fg(theme.ink)
     body = f"{MUTE} · {RESET}".join(
-        f"{MUTE}{l}{RESET}{INK}{v}{RESET}" for l, v in segs)
+        f"{MUTE}{l}{RESET}{c}{v}{RESET}" for l, v, c in segs)
     return f"{MUTE}⚙{RESET} " + body
 
 

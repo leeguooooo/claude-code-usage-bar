@@ -34,3 +34,16 @@ def test_color_output_is_ansi_clean_when_off():
 
 def test_show_mode_default_on():
     assert StatusbarConfig().show_mode is True
+
+
+def test_effort_color_tiers():
+    from claude_statusbar.styles import _effort_color, _fg
+    warn = _fg(THEME.s_warn); mute = _fg(THEME.mute); ink = _fg(THEME.ink)
+    assert _effort_color("xhigh", THEME) == warn
+    assert _effort_color("max", THEME) == warn
+    assert _effort_color("ultracode", THEME) == warn
+    assert _effort_color("low", THEME) == mute
+    assert _effort_color("auto", THEME) == mute
+    assert _effort_color("medium", THEME) == ink
+    assert _effort_color("high", THEME) == ink
+    assert _effort_color("brand-new-level", THEME) == ink   # unknown → neutral
