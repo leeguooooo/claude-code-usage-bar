@@ -602,8 +602,14 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
         previous = None
     display[window] = smooth_projection(window, raw, used, now, previous)
     display[window]["resets_at"] = reset
-    record_projection_snapshot(store, window, now, used, reset, display[window]["projected_pct"])
-    return _format_projection_pct(display[window]["projected_pct"])
+    proj = display[window]["projected_pct"]
+    record_projection_snapshot(store, window, now, used, reset, proj)
+    # The projection is floored at current usage, so when it predicts no visible
+    # growth it would just echo the current % (`1% → →1%`), which reads as a
+    # broken/redundant chip. Show it only when it forecasts a higher whole %.
+    if round(proj) <= round(used):
+        return ""
+    return _format_projection_pct(proj)
 
 
 def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):

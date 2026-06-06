@@ -354,3 +354,27 @@ def test_projection_recomputes_when_account_reading_changes(tmp_path, monkeypatc
     predict.projection(21.0, reset_5h, 18.0, reset_7d, now + 0.25, session_id="b")
 
     assert len(saves) == 2
+
+
+def test_projection_hidden_when_rounds_to_current(tmp_path, monkeypatch):
+    """When the projection predicts no visible growth it must NOT echo the
+    current % (`1% → →1%` reads as a broken chip) — return ''."""
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "proj.json")
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    now = 1_000_000.0
+    # used 5% with 10 min to reset → window-avg projects ~5% → rounds equal → hidden.
+    store = predict.empty_projection_store()
+    chip = predict._projection_for_window(store, "five_hour", 5.0, now + 600, now, "s")
+    assert chip == ""
+
+
+def test_projection_shown_when_growth_predicted(tmp_path, monkeypatch):
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "proj.json")
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    now = 1_000_000.0
+    # used 10% with 2 h to reset (early-ish 5h window) → projects well above 10%.
+    store = predict.empty_projection_store()
+    chip = predict._projection_for_window(store, "five_hour", 10.0, now + 7200, now, "s")
+    assert chip.startswith("→") and chip != "→10%"
