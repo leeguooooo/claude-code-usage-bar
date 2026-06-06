@@ -533,10 +533,10 @@ def _cyclic_rgb(stops, t):
     return _lerp_rgb(stops[i], stops[(i + 1) % m], x - int(x))
 
 
-_SHINE_SPEED = 4.0     # highlight chars/sec (faster than the base drift)
-_SHINE_HALF = 3.5      # highlight half-width in chars
-_SHINE_MAX = 0.85      # peak brighten-toward-white at the highlight centre
-_SHINE_GAP = 14        # off-screen chars between passes → a periodic flash, not a steady glow
+_SHINE_SPEED = 10.0    # highlight chars/sec — a quick flash-by (1 Hz refresh caps the smoothness)
+_SHINE_HALF = 4.0      # highlight half-width in chars
+_SHINE_MAX = 0.9       # peak brighten-toward-white at the highlight centre
+_SHINE_GAP = 24        # off-screen chars between passes → flash, pause, flash again
 
 
 def _shine(rgb, amt):
