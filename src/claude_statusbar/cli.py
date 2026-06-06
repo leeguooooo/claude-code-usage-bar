@@ -39,6 +39,7 @@ def _run_config_subcommand(rest):
         print(f"show_duration       = {cfg.show_duration}")
         print(f"show_lines          = {cfg.show_lines}")
         print(f"show_version        = {cfg.show_version}")
+        print(f"show_mode           = {cfg.show_mode}")
         print(f"bar_shimmer         = {cfg.bar_shimmer}")
         print(f"show_forecast       = {cfg.show_forecast}")
         print(f"show_projection     = {cfg.show_projection}")

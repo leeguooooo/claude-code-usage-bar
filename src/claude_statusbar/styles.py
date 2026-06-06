@@ -502,6 +502,32 @@ def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:
     return lines
 
 
+def render_mode_line(*, effort: str = "", thinking=None, fast=None,
+                     style: str = "", theme: Theme, use_color: bool = True) -> str:
+    """Session-mode readout: `⚙ effort:high · think:on · fast:on · style:default`.
+
+    Each field is dropped when absent, so an older Claude Code that omits one
+    just shows fewer segments; returns '' when nothing is known."""
+    segs = []  # (label, value)
+    if effort:
+        segs.append(("effort:", str(effort)))
+    if thinking is not None:
+        segs.append(("think:", "on" if thinking else "off"))
+    if fast is not None:
+        segs.append(("fast:", "on" if fast else "off"))
+    if style:
+        segs.append(("style:", str(style)))
+    if not segs:
+        return ""
+    if not use_color:
+        return "⚙ " + " · ".join(f"{l}{v}" for l, v in segs)
+    MUTE = _fg(theme.mute)
+    INK = _fg(theme.ink)
+    body = f"{MUTE} · {RESET}".join(
+        f"{MUTE}{l}{RESET}{INK}{v}{RESET}" for l, v in segs)
+    return f"{MUTE}⚙{RESET} " + body
+
+
 RENDERERS = {
     "classic":  render_classic,
     "capsule":  render_capsule,
@@ -534,6 +560,11 @@ def render(style: str, **kwargs) -> str:
     duration_text = kwargs.pop("identity_duration", "")
     lines_text = kwargs.pop("identity_lines", "")
     show_version = kwargs.pop("identity_show_version", False)
+    show_mode = kwargs.pop("mode_show", False)
+    mode_effort = kwargs.pop("mode_effort", "")
+    mode_thinking = kwargs.pop("mode_thinking", None)
+    mode_fast = kwargs.pop("mode_fast", None)
+    mode_style = kwargs.pop("mode_style", "")
     activity = kwargs.pop("activity", None)
     activity_opts = kwargs.pop("activity_opts", None)
     theme = kwargs.get("theme") or get_theme("graphite")
@@ -551,6 +582,13 @@ def render(style: str, **kwargs) -> str:
             version_text=version_text, update_text=update_text,
             use_color=use_color,
         )
+
+    if show_mode:
+        mode_line = render_mode_line(
+            effort=mode_effort, thinking=mode_thinking, fast=mode_fast,
+            style=mode_style, theme=theme, use_color=use_color)
+        if mode_line:
+            out = out + "\n" + mode_line
 
     if activity_opts:
         opts = dict(activity_opts)

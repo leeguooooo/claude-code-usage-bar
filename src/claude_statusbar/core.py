@@ -485,6 +485,21 @@ def parse_stdin_data() -> Dict[str, Any]:
             result['model_id'] = model_obj.get('id', '')
             result['display_name'] = model_obj.get('display_name', '')
 
+        # Session-mode readout (the ⚙ line): effort level, thinking on/off,
+        # fast mode, output style — all from Claude Code's stdin. Each guarded so
+        # an older Claude Code that omits a field just drops that segment.
+        effort_obj = data.get('effort', {})
+        if isinstance(effort_obj, dict):
+            result['effort_level'] = str(effort_obj.get('level', '') or '')
+        thinking_obj = data.get('thinking', {})
+        if isinstance(thinking_obj, dict) and 'enabled' in thinking_obj:
+            result['thinking_enabled'] = bool(thinking_obj.get('enabled'))
+        if 'fast_mode' in data:
+            result['fast_mode'] = bool(data.get('fast_mode'))
+        style_obj = data.get('output_style', {})
+        if isinstance(style_obj, dict):
+            result['output_style'] = str(style_obj.get('name', '') or '')
+
         # Rate limits (Claude.ai Pro/Max only)
         # Coerce percentages to int and clamp to [0, ∞):
         # - Anthropic occasionally returns floats like 56.00000000000001
@@ -1241,6 +1256,18 @@ def main(json_output: bool = False,
             identity_kwargs["identity_ahead"] = ahead
             identity_kwargs["identity_behind"] = behind
 
+    # Optional session-mode line (⚙): effort / thinking / fast / output-style,
+    # straight from stdin. Each field is omitted by the renderer when absent.
+    mode_kwargs = {}
+    if cfg.show_mode:
+        mode_kwargs = dict(
+            mode_show=True,
+            mode_effort=stdin_data.get('effort_level', ''),
+            mode_thinking=stdin_data.get('thinking_enabled'),
+            mode_fast=stdin_data.get('fast_mode'),
+            mode_style=stdin_data.get('output_style', ''),
+        )
+
     # Optional live-activity line (3rd line): todos / active tool + rollup.
     # Subagents (show_agents) render on their own bottom line(s). Reuses the
     # single `activity` scan done above.
@@ -1385,7 +1412,7 @@ def main(json_output: bool = False,
                     shimmer_phase=shimmer_phase,
                     **projection_kwargs,
                     **forecast_kwargs,
-                    **identity_kwargs,
+                    **identity_kwargs, **mode_kwargs,
                     **activity_kwargs,
                 ))
         else:
@@ -1420,7 +1447,7 @@ def main(json_output: bool = False,
                         density=cfg.density, show_weekly=cfg.show_weekly,
                         ctx_pct=ctx_pct,
                         shimmer_phase=shimmer_phase,
-                        **identity_kwargs,
+                        **identity_kwargs, **mode_kwargs,
                         **activity_kwargs,
                     ))
             else:
@@ -1452,7 +1479,7 @@ def main(json_output: bool = False,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
                 density=cfg.density, show_weekly=cfg.show_weekly,
-                **identity_kwargs,
+                **identity_kwargs, **mode_kwargs,
             ))
 
 if __name__ == '__main__':
