@@ -533,18 +533,35 @@ def _cyclic_rgb(stops, t):
     return _lerp_rgb(stops[i], stops[(i + 1) % m], x - int(x))
 
 
+_SHINE_SPEED = 4.0     # highlight chars/sec (faster than the base drift)
+_SHINE_HALF = 3.5      # highlight half-width in chars
+_SHINE_MAX = 0.85      # peak brighten-toward-white at the highlight centre
+_SHINE_GAP = 14        # off-screen chars between passes → a periodic flash, not a steady glow
+
+
+def _shine(rgb, amt):
+    """Blend `rgb` toward white by `amt`∈[0,1] (the moving highlight)."""
+    return tuple(int(round(rgb[c] + (255 - rgb[c]) * amt)) for c in range(3))
+
+
 def _gradient_text(text: str, phase: float = 0.0, stops=None) -> str:
-    """One gradient (palette `stops`) spanning `text`, scrolling left→right as
-    `phase` grows. The caller sets phase = seconds, so the band creeps ~1 char/s —
-    a slow directional crawl. (statusLine refreshes at ≤1 Hz, so it steps rather
-    than glides, but a single slow-moving band reads far better than tiled bands.)"""
+    """A gradient (palette `stops`) spanning `text` that drifts left→right, with
+    a brighter highlight band sweeping across it (a "shine"). `phase` is seconds:
+    the gradient creeps ~1 char/s and the highlight races ~`_SHINE_SPEED` char/s,
+    going off-screen for `_SHINE_GAP` between passes so it reads as a flash-by.
+    (statusLine refreshes at ≤1 Hz, so both step rather than glide.)"""
     stops = stops or _MODE_GRADIENT_STOPS
     n = len(text)
     period = max(1, n)
+    centre = (phase * _SHINE_SPEED) % (n + _SHINE_GAP)   # sweep position (may be off-screen)
     out = []
     for i, ch in enumerate(text):
-        t = ((i - phase) % period) / period   # phase↑ → pattern moves right
-        out.append(_fg(_cyclic_rgb(stops, t)) + ch)
+        t = ((i - phase) % period) / period              # base gradient (drifts right)
+        rgb = _cyclic_rgb(stops, t)
+        d = abs(i - centre)
+        if d < _SHINE_HALF:
+            rgb = _shine(rgb, (1 - d / _SHINE_HALF) * _SHINE_MAX)
+        out.append(_fg(rgb) + ch)
     return "".join(out) + RESET
 
 
