@@ -47,3 +47,44 @@ def test_effort_color_tiers():
     assert _effort_color("medium", THEME) == ink
     assert _effort_color("high", THEME) == ink
     assert _effort_color("brand-new-level", THEME) == ink   # unknown → neutral
+
+
+def _distinct_fg(s):
+    import re
+    return set(re.findall(r"38;2;\d+;\d+;\d+", s))
+
+
+def test_top_tier_effort_gets_gradient():
+    for lv in ("xhigh", "max", "ultracode"):
+        s = render_mode_line(effort=lv, thinking=True, fast=False,
+                             style="default", theme=THEME, use_color=True)
+        assert len(_distinct_fg(s)) > 5, f"{lv} should flow a multi-colour gradient"
+
+
+def test_non_top_tier_no_gradient():
+    s = render_mode_line(effort="high", thinking=True, fast=False,
+                         style="default", theme=THEME, use_color=True)
+    assert len(_distinct_fg(s)) <= 3   # just mute + ink-ish
+
+
+def test_gradient_can_be_disabled():
+    s = render_mode_line(effort="ultracode", thinking=True, theme=THEME,
+                         use_color=True, gradient=False)
+    assert len(_distinct_fg(s)) <= 3
+
+
+def test_gradient_phase_shifts_colors():
+    a = render_mode_line(effort="ultracode", thinking=True, theme=THEME,
+                         use_color=True, phase=0)
+    b = render_mode_line(effort="ultracode", thinking=True, theme=THEME,
+                         use_color=True, phase=7)
+    assert a != b   # same text, shifted gradient → different ANSI
+
+
+def test_gradient_no_color_is_plain():
+    s = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=False)
+    assert "\033[" not in s and s == "⚙ effort:ultracode · think:on"
+
+
+def test_mode_gradient_config_default_on():
+    assert StatusbarConfig().mode_gradient is True
