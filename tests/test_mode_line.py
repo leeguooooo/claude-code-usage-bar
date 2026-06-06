@@ -61,10 +61,13 @@ def test_top_tier_effort_gets_gradient():
         assert len(_distinct_fg(s)) > 5, f"{lv} should flow a multi-colour gradient"
 
 
-def test_non_top_tier_no_gradient():
-    s = render_mode_line(effort="high", thinking=True, fast=False,
-                         style="default", theme=THEME, use_color=True)
-    assert len(_distinct_fg(s)) <= 3   # just mute + ink-ish
+def test_gradient_applies_to_any_effort():
+    # Consistent: gradient is on for every effort tier (not just top), so the
+    # line never jarringly switches between gradient and plain.
+    for lv in ("low", "medium", "high", "auto"):
+        s = render_mode_line(effort=lv, thinking=True, fast=False,
+                             style="default", theme=THEME, use_color=True)
+        assert len(_distinct_fg(s)) > 5, f"{lv} should also get the gradient"
 
 
 def test_gradient_can_be_disabled():

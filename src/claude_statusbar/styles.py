@@ -518,10 +518,6 @@ def _cyclic_rgb(stops, t):
     return _lerp_rgb(stops[i], stops[(i + 1) % m], x - int(x))
 
 
-def _effort_is_top(effort) -> bool:
-    return str(effort).strip().lower() in ("xhigh", "max", "ultracode")
-
-
 def _gradient_text(text: str, phase: float = 0.0) -> str:
     """One pink→purple gradient spanning `text`, scrolling left→right as `phase`
     grows. The caller sets phase = seconds, so the band creeps ~1 char/s — a slow
@@ -556,9 +552,10 @@ def render_mode_line(*, effort: str = "", thinking=None, fast=None,
     Each field is dropped when absent, so an older Claude Code that omits one
     just shows fewer segments; returns '' when nothing is known. The effort value
     is shown verbatim (handles any of low/medium/high/xhigh/max/ultracode/auto and
-    future values) and tinted by intensity. When effort is top-tier
-    (xhigh/max/ultracode) and `gradient` is on, the WHOLE line gets a flowing
-    pink→purple gradient (advances ~1 char/s — a slow step, not smooth)."""
+    future values) and tinted by intensity. When `gradient` is on (default), the
+    WHOLE line gets a flowing pink→purple gradient regardless of effort — applying
+    it only to the top tier made the switch back to plain colours look jarring, so
+    it's consistent. (Advances ~1 char/s — a slow step, not smooth.)"""
     segs = []  # (label, value, value_color)
     if effort:
         segs.append(("effort:", str(effort), _effort_color(effort, theme)))
@@ -573,7 +570,7 @@ def render_mode_line(*, effort: str = "", thinking=None, fast=None,
     plain = "⚙ " + " · ".join(f"{l}{v}" for l, v, _ in segs)
     if not use_color:
         return plain
-    if gradient and _effort_is_top(effort):
+    if gradient:
         return _gradient_text(plain, phase)
     MUTE = _fg(theme.mute)
     body = f"{MUTE} · {RESET}".join(
