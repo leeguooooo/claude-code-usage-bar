@@ -156,13 +156,27 @@ def _is_newer(cur_used, cur_reset, prev_used, prev_reset) -> bool:
     return cur_reset == prev_reset and cur_used > prev_used
 
 
-def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None):
+def _reset_plausible(window: str, reset, now: float) -> bool:
+    """A real reset is within [now-60s, now + window_len + 1 day]. Rejecting
+    anything else stops a bogus far-future resets_at from permanently poisoning
+    the monotonic merge (a later reset always 'wins', so a 1e10 value would never
+    be replaced by the real, smaller one)."""
+    if reset is None:
+        return False
+    length = WINDOW_LEN_S.get(window, 5 * 3600)
+    return (now - 60.0) <= reset <= (now + length + 86400.0)
+
+
+def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=None):
     """Merge this window's per-session reading into the shared account-global
     store and return the freshest (u5, r5, u7, r7). Makes every window converge
     to the same numbers within one render tick. Never raises — on any I/O error
     it just returns the inputs (degrades to per-session behaviour)."""
     p = Path(path) if path is not None else _LATEST_PATH
     try:
+        if now is None:
+            import time as _t
+            now = _t.time()
         try:
             store = json.loads(p.read_text(encoding="utf-8"))
             if not isinstance(store, dict):
@@ -177,13 +191,20 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None):
             prev = store.get(win) if isinstance(store.get(win), dict) else {}
             pu, pr = _coerce(prev.get("used")), _coerce(prev.get("resets_at"))
             cu, cr = _coerce(used), _coerce(reset)
-            if cu is not None and cr is not None and _is_newer(cu, cr, pu, pr):
+            cur_ok = cu is not None and _reset_plausible(win, cr, now)
+            prev_ok = pu is not None and _reset_plausible(win, pr, now)
+            if cur_ok and (not prev_ok or _is_newer(cu, cr, pu, pr)):
+                # store a plausible reading when it's newer, or when the stored
+                # one is missing/implausible (e.g. previously poisoned).
                 store[win] = {"used": cu, "resets_at": cr}
                 out[win] = (cu, cr)
                 changed = True
+            elif prev_ok:
+                out[win] = (pu, pr)
             else:
-                out[win] = (pu if pu is not None else cu,
-                            pr if pr is not None else cr)
+                # neither stored nor current is trustworthy — pass input through
+                out[win] = (cu if cu is not None else pu,
+                            cr if cr is not None else pr)
 
         if changed:
             from .cache import atomic_write_text
@@ -200,7 +221,7 @@ def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
     """Compute (chip_5h, chip_7d). Reconciles against the shared account-global
     latest reading first (so all windows agree), then projects. Never raises."""
     try:
-        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d)
+        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d, now=now)
         c5 = forecast_chip("five_hour", u5, r5, now)
         c7 = forecast_chip("seven_day", u7, r7, now)
         return c5, c7
@@ -614,7 +635,7 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
 
 def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):
     try:
-        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d)
+        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d, now=now)
         ts = float(now)
         key = _projection_result_key(u5, r5, u7, r7)
         global _PROJECTION_RESULT_CACHE

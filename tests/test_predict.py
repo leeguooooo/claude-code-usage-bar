@@ -100,26 +100,26 @@ def test_forecast_never_raises_on_garbage():
 # --- reconcile_account: all windows converge to the freshest account reading ---
 def test_reconcile_keeps_higher_used_within_window(tmp_path):
     p = tmp_path / "latest.json"
-    reconcile_account(10.0, 5000, 8.0, 9000, path=p)
-    u5, r5, u7, r7 = reconcile_account(5.0, 5000, 3.0, 9000, path=p)
+    reconcile_account(10.0, 5000, 8.0, 9000, path=p, now=0.0)
+    u5, r5, u7, r7 = reconcile_account(5.0, 5000, 3.0, 9000, path=p, now=0.0)
     assert (u5, r5, u7, r7) == (10.0, 5000.0, 8.0, 9000.0)
 
 def test_reconcile_takes_higher_used_when_fresher(tmp_path):
     p = tmp_path / "latest.json"
-    reconcile_account(10.0, 5000, 8.0, 9000, path=p)
-    reconcile_account(12.0, 5000, 9.0, 9000, path=p)
-    u5, _, _, _ = reconcile_account(11.0, 5000, 8.5, 9000, path=p)
+    reconcile_account(10.0, 5000, 8.0, 9000, path=p, now=0.0)
+    reconcile_account(12.0, 5000, 9.0, 9000, path=p, now=0.0)
+    u5, _, _, _ = reconcile_account(11.0, 5000, 8.5, 9000, path=p, now=0.0)
     assert u5 == 12.0
 
 def test_reconcile_new_window_resets(tmp_path):
     p = tmp_path / "latest.json"
-    reconcile_account(90.0, 5000, 50.0, 9000, path=p)
-    u5, r5, _, _ = reconcile_account(3.0, 5000 + W5, 50.0, 9000, path=p)
+    reconcile_account(90.0, 5000, 50.0, 9000, path=p, now=0.0)
+    u5, r5, _, _ = reconcile_account(3.0, 5000 + W5, 50.0, 9000, path=p, now=0.0)
     assert u5 == 3.0 and r5 == 5000 + W5
 
 def test_reconcile_missing_file_returns_inputs(tmp_path):
     p = tmp_path / "nope.json"
-    assert reconcile_account(7.0, 5000, 4.0, 9000, path=p) == (7.0, 5000.0, 4.0, 9000.0)
+    assert reconcile_account(7.0, 5000, 4.0, 9000, path=p, now=0.0) == (7.0, 5000.0, 4.0, 9000.0)
 
 def test_forecast_uses_reconciled_reading(tmp_path, monkeypatch):
     import claude_statusbar.predict as predict
@@ -130,3 +130,25 @@ def test_forecast_uses_reconciled_reading(tmp_path, monkeypatch):
     # A stale window with used=5 must still see the at-risk ETA (reconciled to 90).
     c5, _ = forecast(5.0, now + 3600, 8.0, now + 536400, now)
     assert c5 == "~26m"
+
+
+def test_reconcile_rejects_far_future_reset(tmp_path):
+    # A bogus far-future resets_at must NOT overwrite a plausible stored reading
+    # (regression: a 1e10 value used to poison the monotonic merge forever).
+    p = tmp_path / "latest.json"
+    now = 1000.0
+    reconcile_account(10.0, now + 3000, 8.0, now + 9000, path=p, now=now)
+    u5, r5, u7, r7 = reconcile_account(99.0, now + 10**9, 99.0, now + 10**9, path=p, now=now)
+    assert (u5, r5) == (10.0, now + 3000) and (u7, r7) == (8.0, now + 9000)
+
+
+def test_reconcile_replaces_poisoned_stored_reset(tmp_path):
+    import json
+    p = tmp_path / "latest.json"
+    now = 1000.0
+    p.write_text(json.dumps({
+        "five_hour": {"used": 12.0, "resets_at": 9999999999.0},
+        "seven_day": {"used": 30.0, "resets_at": 9999999999.0},
+    }))
+    u5, r5, u7, r7 = reconcile_account(5.0, now + 3000, 4.0, now + 9000, path=p, now=now)
+    assert (u5, r5, u7, r7) == (5.0, now + 3000, 4.0, now + 9000)

@@ -85,8 +85,11 @@ def test_core_renders_reconciled_account_rate_limits(tmp_path, monkeypatch, caps
     monkeypatch.setattr(config, "CONFIG_PATH", config_path)
 
     from claude_statusbar.core import main
-    reset_5h = 9999999999
-    reset_7d = reset_5h + 7 * 86400
+    import time
+    # Plausible near-future resets (a far-future sentinel like 9999999999 is now
+    # rejected by reconcile_account's poison guard).
+    reset_5h = time.time() + 3600
+    reset_7d = time.time() + 6 * 86400
 
     monkeypatch.setattr(
         sys, "stdin",
