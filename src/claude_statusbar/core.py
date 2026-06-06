@@ -1260,7 +1260,6 @@ def main(json_output: bool = False,
     # straight from stdin. Each field is omitted by the renderer when absent.
     mode_kwargs = {}
     if cfg.show_mode:
-        import time as _mt
         mode_kwargs = dict(
             mode_show=True,
             mode_effort=stdin_data.get('effort_level', ''),
@@ -1268,7 +1267,6 @@ def main(json_output: bool = False,
             mode_fast=stdin_data.get('fast_mode'),
             mode_style=stdin_data.get('output_style', ''),
             mode_gradient=cfg.mode_gradient,
-            mode_phase=int(_mt.time()),   # advances ~1/s → gradient crawls
         )
 
     # Optional live-activity line (3rd line): todos / active tool + rollup.

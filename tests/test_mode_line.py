@@ -73,12 +73,13 @@ def test_gradient_can_be_disabled():
     assert len(_distinct_fg(s)) <= 3
 
 
-def test_gradient_phase_shifts_colors():
-    a = render_mode_line(effort="ultracode", thinking=True, theme=THEME,
-                         use_color=True, phase=0)
-    b = render_mode_line(effort="ultracode", thinking=True, theme=THEME,
-                         use_color=True, phase=7)
-    assert a != b   # same text, shifted gradient → different ANSI
+def test_gradient_is_static_single_sweep():
+    # Static (not animated): identical output across calls, starting at the pink
+    # stop — a moving gradient only flickers at the ≤1 Hz statusLine refresh.
+    a = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
+    b = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
+    assert a == b
+    assert a.startswith("\033[38;2;236;114;179m")   # first char = pink stop
 
 
 def test_gradient_no_color_is_plain():
