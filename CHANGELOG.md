@@ -9,6 +9,17 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.13.1 — 2026-06-07
+
+### Fixed
+- **The `→NN%` projection no longer vanishes near a reset.** v3.12.1 hid the
+  projection when it rounded to the current usage (to avoid a redundant-looking
+  `→47%` next to `47%`), but that made it disappear entirely on a window that's
+  nearly reset or flat. It's now always shown — `→47%` next to `47%` is honest
+  ("you'll end about here"), not broken.
+
+---
+
 ## v3.13.0 — 2026-06-07
 
 ### Added
