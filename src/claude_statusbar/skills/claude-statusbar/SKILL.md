@@ -44,6 +44,8 @@ give a short confirmation (one line, no lecture).
 | Toggle the `bar_shimmer` twinkling starfield (experimental, classic only) | `cs config set bar_shimmer true\|false` (default off) |
 | Toggle the rate-limit forecast (→NN% projected use / ⚠eta warning) | `cs config set show_forecast true\|false` (default on) |
 | Toggle the faint version + update hint at the identity-line end (`· vX.Y.Z ↑new`) | `cs config set show_version true\|false` (default on) |
+| Toggle the ⚙ session-mode line (effort/thinking/fast/output-style) | `cs config set show_mode true\|false` (default on) |
+| Toggle the per-effort colour gradient on the mode line | `cs config set mode_gradient true\|false` (default on) |
 | Hide weekly bar | `cs config set show_weekly false` |
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |

@@ -59,6 +59,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 ```
 5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s | $ 1.42
 ⤷ claude-code-usage-bar ⎇ main● · +182 -47 · ⏱ 12m · v3.12.0
+⚙ effort:high · think:on · fast:off · style:default
 ```
 
 | Segment | Meaning |
@@ -75,6 +76,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 | `⤷ <project> ⎇ <branch>●↑2↓1 · +182 -47 · ⏱ 12m` | Second-line identity + session line. Project comes from Claude Code's `workspace.repo.name` (cwd-basename fallback); branch reads `.git/HEAD` directly; the `●` dirty marker is refreshed by a background helper, cached 5 s. Enabled by default — turn off with `cs config set show_project_branch false`. `+added -removed` session lines (`show_lines`, +green/−red) also show by default. Opt-in extras live here too: `↑2↓1` commits ahead/behind upstream (`show_ahead_behind`, reuses the dirty-state `git status` — no extra spawn) and session `⏱` duration (`show_duration`). |
 | `▸ <task> (3/7) · ◐ Edit auth.py · ✓ Read×3` | Third "activity" line — what's happening *right now*, parsed from the transcript: the in-progress **todo** + done/total (`show_todos`, on by default), the **active tool** (`◐`, `show_tools`), and an optional completed-tool rollup (`✓ name×N`, `show_tool_rollup`, default off). Omitted entirely when nothing is active. |
 | `◐ explore[haiku] <task> 2m15s` | Bottom line(s) — one per running **subagent** (`show_agents`, opt-in, default **off**). Note: Claude Code already shows background agents in its own native panel, so this largely duplicates that; off by default for that reason. |
+| `⚙ effort:high · think:on · fast:off · style:default` | **Session-mode line** (`show_mode`, on by default) — how this turn is configured, from stdin. Tinted with a per-effort static gradient (`mode_gradient`) so the level reads at a glance. |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
 Colors default to green / yellow / red at `30%` and `70%` — both thresholds configurable.
@@ -252,6 +254,8 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_duration` | bool, default `false` | **Identity line:** session wall-clock duration as Claude Code reports it (`⏱ 12m`). Already on stdin — no transcript scan. Shows next to the project (needs `show_project_branch` on). Opt-in. |
 | `show_lines` | bool, default `true` | **Identity line:** session lines added/removed as Claude Code reports it (`+182 -47`, +green/−red). This is Claude Code's own cumulative session tally (every Write/Edit), **not a git diff** — it can exceed the net working-tree change. Needs `show_project_branch` on. On by default; disable with `cs config set show_lines false`. |
 | `show_version` | bool, default `true` | **Identity line:** a faint `· vX.Y.Z` at the very end (darkest grey + dim attribute, so it recedes). When a newer version is on PyPI, an amber `↑<newver>` is appended (`· v3.11.2 ↑3.12.0`) — read from a local cache the background update check writes, so the render path never hits the network. Disable with `cs config set show_version false`. |
+| `show_mode` | bool, default `true` | A dedicated **`⚙` session-mode line**: `⚙ effort:high · think:on · fast:off · style:default`, straight from Claude Code's stdin (effort level / thinking / fast mode / output style). Each field is dropped when absent. Disable with `cs config set show_mode false`. |
+| `mode_gradient` | bool, default `true` | Tint the mode line with a **static gradient keyed to the effort tier** (cool→hot: low/auto slate, medium blue, high cyan, xhigh amber, max coral, ultracode pink→purple) — so the level reads at a glance. Static, not animated (an external statusLine refreshes at ≤1 Hz, so motion only flickers). `cs config set mode_gradient false` → plain per-tier text colours. |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
 
@@ -333,6 +337,8 @@ cs config set show_agents true  # bottom line(s): running subagents + elapsed
 cs config set show_duration true # identity line: ⏱ session duration
 cs config set show_lines false  # hide identity-line +added -removed (on by default)
 cs config set show_version false  # hide the faint · vX.Y.Z (+ ↑update hint) at line end
+cs config set show_mode false    # hide the ⚙ effort/thinking/fast/style line
+cs config set mode_gradient false # mode line: plain per-tier colours, no gradient
 cs config set show_ahead_behind true  # ↑2↓1 on the project/branch line
 cs config set bar_shimmer true  # experimental: twinkling starfield on the battery bars
 cs config set show_projection false  # hide the →NN% end-of-window projection

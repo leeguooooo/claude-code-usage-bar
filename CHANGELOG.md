@@ -9,6 +9,32 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.13.0 — 2026-06-07
+
+### Added
+- **Session-mode line (`show_mode`, default on).** A dedicated `⚙` line shows
+  how the current turn is configured — `⚙ effort:high · think:on · fast:off ·
+  style:default` — read straight from Claude Code's stdin (`effort.level`,
+  `thinking.enabled`, `fast_mode`, `output_style`). Each field is dropped when
+  absent. `cs config set show_mode false` to hide.
+- **Per-effort gradient (`mode_gradient`, default on).** The whole mode line is
+  tinted with a static gradient whose palette depends on the effort tier — a
+  cool→hot ladder so the level is obvious at a glance: low/auto slate, medium
+  blue, high cyan, xhigh amber, max coral, ultracode pink→purple. Static, not
+  animated: an external statusLine is re-invoked at ≤1 Hz, so motion can only
+  flicker — a stable per-tier sweep is the clean result. `cs config set
+  mode_gradient false` falls back to plain per-tier text colours.
+
+### Fixed
+- **Reconcile rejects implausible reset times.** A bogus far-future `resets_at`
+  (e.g. from corrupt/odd input) used to poison the account-global reconcile
+  store permanently — "later reset wins" meant the real, smaller reset could
+  never replace it, showing absurd timers like `⏰2283122h`. Reconcile now
+  ignores resets beyond a window-length-plus-slack and lets a plausible reading
+  replace a poisoned one (self-healing).
+
+---
+
 ## v3.12.1 — 2026-06-07
 
 ### Fixed
