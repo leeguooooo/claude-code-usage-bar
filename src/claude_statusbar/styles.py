@@ -508,13 +508,13 @@ def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:
 # saturated/purple than the one below, so the level reads as an ordered ladder
 # (not the old rainbow, where coral `max` looked hotter than `ultracode`).
 _EFFORT_GRADIENTS = {
-    "low":       [(128, 132, 146), (156, 160, 174)],             # dim grey (Faster end)
-    "auto":      [(128, 132, 146), (156, 160, 174)],             # neutral, like low
-    "medium":    [(112, 138, 196), (146, 168, 214)],             # muted blue
-    "high":      [(92, 132, 226), (132, 166, 240)],              # blue
-    "xhigh":     [(126, 118, 234), (160, 152, 246)],             # indigo
-    "max":       [(162, 110, 238), (196, 148, 248)],             # violet
-    "ultracode": [(200, 110, 240), (236, 130, 250)],             # vivid magenta-purple (Smarter top)
+    "low":       [(56, 190, 184), (110, 215, 205)],              # teal → aqua (coolest)
+    "auto":      [(56, 190, 184), (110, 215, 205)],              # neutral, like low
+    "medium":    [(64, 150, 236), (120, 180, 244)],              # azure → sky
+    "high":      [(92, 120, 242), (140, 160, 248)],              # blue → periwinkle
+    "xhigh":     [(140, 108, 244), (178, 150, 250)],             # indigo → lilac
+    "max":       [(186, 100, 240), (214, 148, 248)],             # violet → orchid
+    "ultracode": [(228, 108, 224), (248, 150, 238)],             # magenta → pink (vivid top)
 }
 # Fallback for unknown/future levels — the showcase vivid purple.
 _MODE_GRADIENT_STOPS = _EFFORT_GRADIENTS["ultracode"]

@@ -82,7 +82,7 @@ def test_gradient_is_static_and_deterministic():
     a = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
     b = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
     assert a == b
-    assert a.startswith("\033[38;2;200;110;240m")   # first char = ultracode's purple stop
+    assert a.startswith("\033[38;2;228;108;224m")   # first char = ultracode's purple stop
     assert len(_distinct_fg(a)) > 5
 
 
