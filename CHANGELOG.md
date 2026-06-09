@@ -9,6 +9,20 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.13.2 — 2026-06-09
+
+### Changed
+- **Effort gradient reworked to match Claude Code's own effort ladder.** A vivid
+  monotonic cool→purple spectrum — low/auto teal · medium azure · high blue ·
+  xhigh indigo · max violet · **ultracode** magenta — with each tier sweeping
+  toward the next hue so it reads as a real gradient (not a flat block) and the
+  level is obvious. (The old rainbow made coral `max` look "hotter" than
+  `ultracode`, inverting the order.)
+- **`ultracode` is shown as `ultracode(+workflows)`** to spell out what it means
+  (Claude Code: `ultracode = xhigh + workflows`).
+
+---
+
 ## v3.13.1 — 2026-06-07
 
 ### Fixed
