@@ -508,15 +508,17 @@ def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:
 # saturated/purple than the one below, so the level reads as an ordered ladder
 # (not the old rainbow, where coral `max` looked hotter than `ultracode`).
 _EFFORT_GRADIENTS = {
-    # Each tier sweeps from its own hue toward the next tier's, so the line reads
-    # as a real gradient (not a flat block) while its START colour marks the tier.
-    "low":       [(56, 190, 184), (74, 152, 236)],               # teal → azure
-    "auto":      [(56, 190, 184), (74, 152, 236)],               # neutral, like low
-    "medium":    [(66, 150, 236), (96, 124, 242)],               # azure → blue
-    "high":      [(92, 124, 242), (150, 116, 244)],              # blue → indigo
-    "xhigh":     [(140, 110, 244), (190, 104, 240)],             # indigo → violet
-    "max":       [(186, 100, 240), (226, 108, 226)],             # violet → magenta
-    "ultracode": [(228, 108, 224), (252, 152, 238)],             # magenta → pink (vivid top)
+    # DESATURATED cool→purple ladder — each tier sweeps toward the next hue so it
+    # reads as a gradient, but the colours are dusty/low-saturation so the line
+    # doesn't shout next to the rest of the (restrained) bar. ultracode is a touch
+    # brighter as the top tier.
+    "low":       [(120, 172, 168), (124, 158, 196)],             # dusty teal → blue
+    "auto":      [(120, 172, 168), (124, 158, 196)],             # neutral, like low
+    "medium":    [(122, 156, 198), (132, 146, 202)],             # dusty azure
+    "high":      [(130, 144, 204), (156, 140, 202)],             # dusty blue → indigo
+    "xhigh":     [(152, 138, 204), (176, 134, 200)],             # dusty indigo → violet
+    "max":       [(176, 134, 200), (196, 138, 196)],             # dusty violet → mauve
+    "ultracode": [(200, 138, 202), (220, 160, 208)],             # dusty magenta → pink (top)
 }
 # Fallback for unknown/future levels — the showcase vivid purple.
 _MODE_GRADIENT_STOPS = _EFFORT_GRADIENTS["ultracode"]
