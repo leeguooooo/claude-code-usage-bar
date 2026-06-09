@@ -502,18 +502,21 @@ def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:
     return lines
 
 
-# Per-effort gradient palettes — a cool→hot ladder so the level is obvious at a
-# glance (the whole line is always a gradient, but its hue tells you the tier).
+# Per-effort gradient palettes — a MONOTONIC grey→blue→purple ladder matching
+# Claude Code's own "Faster → Smarter" effort slider (low … max, then ultracode
+# = xhigh+workflows as the distinct vivid-purple top). Each tier is visibly more
+# saturated/purple than the one below, so the level reads as an ordered ladder
+# (not the old rainbow, where coral `max` looked hotter than `ultracode`).
 _EFFORT_GRADIENTS = {
-    "low":       [(110, 120, 140), (160, 168, 186)],              # dim slate
-    "auto":      [(110, 120, 140), (160, 168, 186)],
-    "medium":    [(88, 150, 225), (150, 195, 240)],               # blue
-    "high":      [(70, 195, 200), (130, 222, 200)],               # cyan / teal
-    "xhigh":     [(240, 185, 95), (245, 150, 80)],                # amber
-    "max":       [(245, 130, 150), (235, 95, 110)],               # coral / pink-red
-    "ultracode": [(236, 114, 179), (190, 147, 249), (130, 170, 255)],  # pink→purple→peri
+    "low":       [(128, 132, 146), (156, 160, 174)],             # dim grey (Faster end)
+    "auto":      [(128, 132, 146), (156, 160, 174)],             # neutral, like low
+    "medium":    [(112, 138, 196), (146, 168, 214)],             # muted blue
+    "high":      [(92, 132, 226), (132, 166, 240)],              # blue
+    "xhigh":     [(126, 118, 234), (160, 152, 246)],             # indigo
+    "max":       [(162, 110, 238), (196, 148, 248)],             # violet
+    "ultracode": [(200, 110, 240), (236, 130, 250)],             # vivid magenta-purple (Smarter top)
 }
-# Fallback for unknown/future levels — the showcase pink→purple.
+# Fallback for unknown/future levels — the showcase vivid purple.
 _MODE_GRADIENT_STOPS = _EFFORT_GRADIENTS["ultracode"]
 
 
