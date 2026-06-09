@@ -88,7 +88,7 @@ def test_gradient_is_static_and_deterministic():
 
 def test_gradient_no_color_is_plain():
     s = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=False)
-    assert "\033[" not in s and s == "⚙ effort:ultracode · think:on"
+    assert "\033[" not in s and s == "⚙ effort:ultracode(+workflows) · think:on"
 
 
 def test_mode_gradient_config_default_on():
@@ -104,3 +104,12 @@ def test_effort_tiers_have_distinct_gradients():
         first[lv] = re.findall(r"38;2;\d+;\d+;\d+", s)[0]
     assert first["high"] != first["ultracode"]
     assert len(set(first.values())) == len(first)   # all six tiers distinct
+
+
+def test_ultracode_spells_out_workflows():
+    from claude_statusbar.styles import _strip
+    s = render_mode_line(effort="ultracode", thinking=True, theme=THEME, use_color=True)
+    assert "ultracode(+workflows)" in _strip(s)
+    # other tiers are verbatim, no annotation
+    s2 = render_mode_line(effort="high", thinking=True, theme=THEME, use_color=True)
+    assert "+workflows" not in _strip(s2)

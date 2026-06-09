@@ -553,6 +553,14 @@ def _gradient_text(text: str, stops=None) -> str:
     return "".join(out) + RESET
 
 
+def _effort_display(level) -> str:
+    """Display string for the effort value. `ultracode` spells out what it means
+    (Claude Code: `ultracode = xhigh + workflows`); everything else verbatim."""
+    if str(level).strip().lower() == "ultracode":
+        return f"{level}(+workflows)"
+    return str(level)
+
+
 def _effort_color(level, theme):
     """Colour the effort value by intensity tier (not severity): top tiers get a
     soft amber 'cranked up' nudge, low/auto recede, the rest stay neutral. Values
@@ -580,7 +588,7 @@ def render_mode_line(*, effort: str = "", thinking=None, fast=None,
     so motion only flickers; a stable per-tier sweep is the clean result."""
     segs = []  # (label, value, value_color)
     if effort:
-        segs.append(("effort:", str(effort), _effort_color(effort, theme)))
+        segs.append(("effort:", _effort_display(effort), _effort_color(effort, theme)))
     if thinking is not None:
         segs.append(("think:", "on" if thinking else "off", _fg(theme.ink)))
     if fast is not None:
