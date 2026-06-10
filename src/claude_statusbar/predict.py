@@ -203,13 +203,25 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
 
         out = {}
         changed = False
+        # Both windows come from the same API response headers, so one
+        # implausible resets_at dates the WHOLE blob: a five_hour reset in the
+        # past means these headers are hours old (a fresh response always has
+        # a future 5h reset), even though the seven_day reset may still look
+        # plausible. Idle-but-open Claude Code windows replay such frozen
+        # blobs every render — they must neither write the store nor count as
+        # confirmations (or a pre-rebaseline pct never heals).
+        blob_fresh = True
+        for win, reset in (("five_hour", resets_5h), ("seven_day", resets_7d)):
+            r = _coerce(reset)
+            if r is not None and not _reset_plausible(win, r, now):
+                blob_fresh = False
         for win, used, reset in (("five_hour", used_5h, resets_5h),
                                  ("seven_day", used_7d, resets_7d)):
             prev = store.get(win) if isinstance(store.get(win), dict) else {}
             pu, pr = _coerce(prev.get("used")), _coerce(prev.get("resets_at"))
             po = _coerce(prev.get("observed_at"))
             cu, cr = _coerce(used), _coerce(reset)
-            cur_ok = cu is not None and _reset_plausible(win, cr, now)
+            cur_ok = cu is not None and blob_fresh and _reset_plausible(win, cr, now)
             prev_ok = pu is not None and _reset_plausible(win, pr, now)
             # Stored reading is "unconfirmed" when nothing has re-observed it
             # within the grace period (legacy stores without observed_at count

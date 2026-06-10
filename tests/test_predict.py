@@ -191,6 +191,46 @@ def test_reconcile_legacy_store_without_observed_at_accepts_downgrade(tmp_path):
     assert (u7, r7) == (3.0, 9000.0)
 
 
+def test_reconcile_stale_blob_cannot_confirm_or_upgrade(tmp_path):
+    # An idle-but-open Claude Code window replays its last rate_limits blob on
+    # every render. If that blob's five_hour resets_at is already in the past,
+    # the WHOLE blob is hours old — its seven_day reading (still future reset,
+    # pre-rebaseline pct) must neither overwrite the store nor count as a
+    # confirmation that restarts the downgrade grace clock. Observed live
+    # 2026-06-10: frozen sessions replaying 7d=15% kept the bar from healing
+    # to the official 3%.
+    from claude_statusbar.predict import DOWNGRADE_GRACE_S
+    p = tmp_path / "latest.json"
+    now = 100000.0
+    r5_fresh, r7 = now + 3000, now + 500000
+    reconcile_account(17.0, r5_fresh, 3.0, r7, path=p, now=now)
+    # Stale blob: expired 5h reset, higher 7d pct — must not take the store.
+    _, _, u7, _ = reconcile_account(44.0, now - 50000, 15.0, r7,
+                                    path=p, now=now + 1)
+    assert u7 == 3.0
+    # ...and replaying it for the whole grace period must not block a fresh
+    # downward reading either (it's not a confirmation).
+    for i in range(3):
+        reconcile_account(44.0, now - 50000, 15.0, r7,
+                          path=p, now=now + 10 + i)
+    _, _, u7, _ = reconcile_account(17.0, r5_fresh, 3.0, r7,
+                                    path=p, now=now + 20)
+    assert u7 == 3.0
+
+def test_reconcile_stale_blob_seeds_empty_store_as_passthrough(tmp_path):
+    # With nothing stored, a stale blob's plausible 7d value may pass through
+    # for display (best info available) but must not be persisted as a
+    # confirmed reading.
+    import json
+    p = tmp_path / "latest.json"
+    now = 100000.0
+    _, _, u7, _ = reconcile_account(44.0, now - 50000, 15.0, now + 500000,
+                                    path=p, now=now)
+    assert u7 == 15.0
+    stored = json.loads(p.read_text()) if p.exists() else {}
+    assert "seven_day" not in stored
+
+
 def test_reconcile_replaces_poisoned_stored_reset(tmp_path):
     import json
     p = tmp_path / "latest.json"

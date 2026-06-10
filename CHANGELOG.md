@@ -9,6 +9,22 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.13.4 — 2026-06-10
+
+### Fixed
+- **Idle Claude Code windows can no longer pin the 5h/7d bars to hours-old
+  readings.** An open-but-idle window replays its last `rate_limits` blob on
+  every statusline render. If that blob's `five_hour` `resets_at` is already in
+  the past, the whole blob is hours old (a fresh API response always carries a
+  future 5h reset) — yet its `seven_day` value still looked plausible and kept
+  "re-confirming" the shared store, defeating v3.13.3's 120s re-baseline grace
+  (observed live: frozen sessions replaying 7d=15% blocked the official 3%
+  indefinitely). Blob freshness is now judged as a whole: a blob with any
+  implausible window reset neither overwrites the shared reading nor restarts
+  the grace clock.
+
+---
+
 ## v3.13.3 — 2026-06-10
 
 ### Fixed
