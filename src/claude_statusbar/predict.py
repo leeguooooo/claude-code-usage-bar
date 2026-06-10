@@ -399,8 +399,23 @@ def record_projection_sample(store: Dict[str, Any], window: str, used_pct, reset
             return store
         if reset == latest_reset:
             max_used = max(float(s["used_pct"]) for s in valid_existing if float(s["resets_at"]) == reset)
-            if sample["used_pct"] <= max_used:
+            if sample["used_pct"] == max_used:
                 return store
+            if sample["used_pct"] < max_used:
+                # Inputs arrive reconciled (reconcile_account gates stale
+                # session replays since v3.13.3/4), so a converged reading
+                # below the same-reset max means the limit was re-baselined
+                # mid-window. Every stored sample for this window is in
+                # old-denominator units — incomparable — so drop them all
+                # (older resets included) and restart display smoothing,
+                # instead of refusing samples until the old max is exceeded
+                # (which froze the →NN% projection for the rest of the
+                # window).
+                series = []
+                store[window] = series
+                display = store.get("display")
+                if isinstance(display, dict):
+                    display.pop(window, None)
     if series and series[-1] == sample:
         return store
     series.append(sample)

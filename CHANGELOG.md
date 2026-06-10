@@ -9,6 +9,23 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.13.5 — 2026-06-10
+
+### Fixed
+- **The `→NN%` projection relearns after an official re-baseline instead of
+  freezing for the rest of the window.** The sample recorder refused any
+  same-window reading at or below the recorded max — meant to filter stale
+  session replays, but those are already gated upstream by the reconcile merge
+  (v3.13.3/v3.13.4). After Anthropic re-baselined the weekly limit (19% → 3%),
+  no new sample could be recorded until usage exceeded the old 19%, so the
+  projection kept showing a pre-rebaseline `→100%` for days. A converged
+  reading below the same-reset max now means the limit changed: all stored
+  samples for that window are in old-denominator units and incomparable, so
+  they're dropped, display smoothing restarts, and the projection relearns
+  from the window's bucket priors onward.
+
+---
+
 ## v3.13.4 — 2026-06-10
 
 ### Fixed

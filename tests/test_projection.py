@@ -62,7 +62,7 @@ def test_load_projection_store_compacts_legacy_duplicate_samples(tmp_path):
     assert [s["used_pct"] for s in store["five_hour"]] == [10.0, 11.0]
 
 
-def test_record_projection_sample_keeps_one_monotonic_reading_per_pct_step(tmp_path):
+def test_record_projection_sample_dedups_equal_readings(tmp_path):
     p = tmp_path / "projection.json"
     store = predict.load_projection_store(p)
     store = predict.record_projection_sample(
@@ -74,14 +74,41 @@ def test_record_projection_sample_keeps_one_monotonic_reading_per_pct_step(tmp_p
         observed_at=1001.0, session_id="b"
     )
     store = predict.record_projection_sample(
-        store, "five_hour", used_pct=18.0, resets_at=5000.0,
-        observed_at=1010.0, session_id="b"
-    )
-    store = predict.record_projection_sample(
         store, "five_hour", used_pct=21.0, resets_at=5000.0,
         observed_at=2000.0, session_id="a"
     )
     assert [s["used_pct"] for s in store["five_hour"]] == [20.0, 21.0]
+
+
+def test_record_projection_sample_rebaseline_drops_old_unit_samples(tmp_path):
+    # Inputs reach this function AFTER reconcile_account, which (since
+    # v3.13.3/4) gates stale session replays — so a converged reading BELOW
+    # the recorded same-reset max means Anthropic re-baselined the limit
+    # (observed live 2026-06-10: weekly 19% → 3%, same resets_at). Every
+    # stored sample for that window is then in old-denominator units —
+    # incomparable — so learning must restart instead of skipping new
+    # samples until the old max is exceeded (which froze the →NN%
+    # projection for the rest of the week).
+    p = tmp_path / "projection.json"
+    store = predict.load_projection_store(p)
+    for used, ts in ((10.0, 1000.0), (19.0, 2000.0)):
+        store = predict.record_projection_sample(
+            store, "seven_day", used_pct=used, resets_at=600000.0,
+            observed_at=ts, session_id="a"
+        )
+    # Seed display smoothing memory for both windows.
+    store["display"]["seven_day"] = {"projected_pct": 100.0, "resets_at": 600000.0}
+    store["display"]["five_hour"] = {"projected_pct": 40.0, "resets_at": 5000.0}
+    store = predict.record_projection_sample(
+        store, "seven_day", used_pct=3.0, resets_at=600000.0,
+        observed_at=3000.0, session_id="a"
+    )
+    # Old-unit samples gone; the re-baselined reading is the new history.
+    assert [s["used_pct"] for s in store["seven_day"]] == [3.0]
+    # Display smoothing for the re-baselined window restarts; other window
+    # untouched.
+    assert "seven_day" not in store["display"]
+    assert store["display"]["five_hour"]["projected_pct"] == 40.0
 
 
 def test_record_projection_sample_prunes_bounded_history(monkeypatch):
