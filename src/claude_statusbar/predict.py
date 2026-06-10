@@ -147,13 +147,30 @@ def _coerce(x):
 
 def _is_newer(cur_used, cur_reset, prev_used, prev_reset) -> bool:
     """Is (cur_used, cur_reset) a fresher account reading than (prev_used,
-    prev_reset)? Within a window used_pct only grows, and a new window has a
-    later resets_at — so 'newer' = later reset, or same reset with higher used."""
+    prev_reset)? Within a window used_pct normally only grows, and a new window
+    has a later resets_at — so 'newer' = later reset, or same reset with higher
+    used. Same-reset DOWNWARD revisions are handled separately in
+    reconcile_account via the observed_at grace clock (see DOWNGRADE_GRACE_S):
+    they're usually a stale session replay, but Anthropic does re-baseline
+    used_percentage down mid-window when account limits change."""
     if prev_used is None or prev_reset is None:
         return True
     if cur_reset > prev_reset:
         return True
     return cur_reset == prev_reset and cur_used > prev_used
+
+
+# How long a stored reading may go unconfirmed before a lower same-reset
+# reading is accepted as an official re-baseline (limits raised → same
+# resets_at, lower pct; observed live 2026-06-10: seven_day 19% → 3%, which
+# the pure monotonic merge would have pinned at 19% until window rollover —
+# days, for 7d). Any session still seeing the higher value re-confirms it
+# every render (~1 Hz via the daemon), so 120s of silence means no live
+# session believes the old number anymore.
+DOWNGRADE_GRACE_S = 120.0
+# Throttle for confirmation-only store writes (same value re-observed) so a
+# 1 Hz render loop doesn't rewrite the store every tick.
+CONFIRM_REFRESH_S = 15.0
 
 
 def _reset_plausible(window: str, reset, now: float) -> bool:
@@ -190,16 +207,34 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
                                  ("seven_day", used_7d, resets_7d)):
             prev = store.get(win) if isinstance(store.get(win), dict) else {}
             pu, pr = _coerce(prev.get("used")), _coerce(prev.get("resets_at"))
+            po = _coerce(prev.get("observed_at"))
             cu, cr = _coerce(used), _coerce(reset)
             cur_ok = cu is not None and _reset_plausible(win, cr, now)
             prev_ok = pu is not None and _reset_plausible(win, pr, now)
-            if cur_ok and (not prev_ok or _is_newer(cu, cr, pu, pr)):
-                # store a plausible reading when it's newer, or when the stored
-                # one is missing/implausible (e.g. previously poisoned).
-                store[win] = {"used": cu, "resets_at": cr}
+            # Stored reading is "unconfirmed" when nothing has re-observed it
+            # within the grace period (legacy stores without observed_at count
+            # as unconfirmed, so a stuck pre-upgrade value heals immediately).
+            unconfirmed = po is None or (now - po) > DOWNGRADE_GRACE_S
+            rebaseline = (cur_ok and prev_ok and cr == pr and cu < pu
+                          and unconfirmed)
+            if cur_ok and (not prev_ok or _is_newer(cu, cr, pu, pr)
+                           or rebaseline):
+                # store a plausible reading when it's newer, when the stored
+                # one is missing/implausible (e.g. previously poisoned), or
+                # when an official downward re-baseline went unchallenged for
+                # the whole grace period.
+                store[win] = {"used": cu, "resets_at": cr, "observed_at": now}
                 out[win] = (cu, cr)
                 changed = True
             elif prev_ok:
+                if (cur_ok and cr == pr and cu == pu
+                        and (po is None or now - po > CONFIRM_REFRESH_S)):
+                    # Same reading re-observed: restart the grace clock so a
+                    # value any live session still agrees with can't be
+                    # downgraded by a stale replay.
+                    store[win] = {"used": pu, "resets_at": pr,
+                                  "observed_at": now}
+                    changed = True
                 out[win] = (pu, pr)
             else:
                 # neither stored nor current is trustworthy — pass input through

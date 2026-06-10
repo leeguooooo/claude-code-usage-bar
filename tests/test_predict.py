@@ -142,6 +142,55 @@ def test_reconcile_rejects_far_future_reset(tmp_path):
     assert (u5, r5) == (10.0, now + 3000) and (u7, r7) == (8.0, now + 9000)
 
 
+def test_reconcile_accepts_official_rebaseline_after_grace(tmp_path):
+    # Anthropic can revise used_percentage DOWN mid-window (weekly limit raised
+    # → same resets_at, lower pct; observed live 2026-06-10: seven_day 19% → 3%).
+    # Once the old high reading stops being confirmed for DOWNGRADE_GRACE_S,
+    # the lower official reading must win — not stick until window rollover.
+    from claude_statusbar.predict import DOWNGRADE_GRACE_S
+    p = tmp_path / "latest.json"
+    reconcile_account(15.0, 5000, 19.0, 9000, path=p, now=0.0)
+    later = DOWNGRADE_GRACE_S + 1
+    _, _, u7, r7 = reconcile_account(15.0, 5000, 3.0, 9000, path=p, now=later)
+    assert (u7, r7) == (3.0, 9000.0)
+
+def test_reconcile_rejects_downgrade_within_grace(tmp_path):
+    # Within the grace period a lower same-reset reading is still treated as a
+    # stale session replay — the higher stored reading wins.
+    p = tmp_path / "latest.json"
+    reconcile_account(15.0, 5000, 19.0, 9000, path=p, now=0.0)
+    _, _, u7, _ = reconcile_account(15.0, 5000, 3.0, 9000, path=p, now=30.0)
+    assert u7 == 19.0
+
+def test_reconcile_confirmation_keeps_high_reading_alive(tmp_path):
+    # A session still seeing the high value re-confirms it each render, so the
+    # grace clock restarts — a stale lower replay must not take over while any
+    # live session agrees with the stored reading.
+    from claude_statusbar.predict import DOWNGRADE_GRACE_S
+    p = tmp_path / "latest.json"
+    reconcile_account(15.0, 5000, 19.0, 9000, path=p, now=0.0)
+    confirm_at = DOWNGRADE_GRACE_S - 20
+    reconcile_account(15.0, 5000, 19.0, 9000, path=p, now=confirm_at)  # confirm
+    _, _, u7, _ = reconcile_account(15.0, 5000, 3.0, 9000, path=p,
+                                    now=confirm_at + DOWNGRADE_GRACE_S - 1)
+    assert u7 == 19.0
+    _, _, u7, _ = reconcile_account(15.0, 5000, 3.0, 9000, path=p,
+                                    now=confirm_at + DOWNGRADE_GRACE_S + 1)
+    assert u7 == 3.0
+
+def test_reconcile_legacy_store_without_observed_at_accepts_downgrade(tmp_path):
+    # Pre-3.13.3 stores have no observed_at — treat them as unconfirmed so a
+    # live official reading immediately replaces a stuck pre-upgrade value.
+    import json
+    p = tmp_path / "latest.json"
+    p.write_text(json.dumps({
+        "five_hour": {"used": 15.0, "resets_at": 5000.0},
+        "seven_day": {"used": 19.0, "resets_at": 9000.0},
+    }))
+    _, _, u7, r7 = reconcile_account(15.0, 5000, 3.0, 9000, path=p, now=0.0)
+    assert (u7, r7) == (3.0, 9000.0)
+
+
 def test_reconcile_replaces_poisoned_stored_reset(tmp_path):
     import json
     p = tmp_path / "latest.json"

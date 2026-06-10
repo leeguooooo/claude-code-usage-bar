@@ -9,6 +9,24 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.13.3 — 2026-06-10
+
+### Fixed
+- **5h/7d bars no longer stick at a stale high % when Anthropic re-baselines
+  usage mid-window.** When account limits change (e.g. the weekly limit is
+  raised), the official `used_percentage` can drop within the same window —
+  observed live: `/usage` said 3% while the bar was pinned at 19% (and would
+  have stayed there until the weekly reset). The cross-session merge assumed
+  "within a window, used% only grows" absolutely; it now tracks when the stored
+  reading was last confirmed by any live session (`observed_at` in
+  `rate_latest.json`) and accepts an official downward revision once the old
+  value has gone unconfirmed for 120s. Stale idle-session replays still can't
+  drag the bar down — any session that still sees the higher value re-confirms
+  it every render and keeps the grace clock ticking. Pre-existing stores
+  without `observed_at` heal on the first render after upgrading.
+
+---
+
 ## v3.13.2 — 2026-06-09
 
 ### Changed
