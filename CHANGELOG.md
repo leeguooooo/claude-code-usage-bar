@@ -9,6 +9,24 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.13.6 — 2026-06-11
+
+### Fixed
+- **Switching Claude accounts no longer keeps showing the previous account's
+  5h/7d usage.** The shared stores (`rate_latest.json`, `rate_projection.json`)
+  were account-global with no account key, so after `/login` to a different
+  account the old account's reading stayed "plausible" for days and its later
+  `resets_at` won every reconcile merge — the bar stayed pinned to the old
+  account's percentages (and its learned `→NN%` projections) until the old
+  window expired. Both stores are now keyed by the logged-in account
+  (`oauthAccount.accountUuid` from `~/.claude.json`, memoized on file
+  mtime/size — renders normally pay only a `stat()`): each account gets its own
+  `rate_latest.<uuid>.json` / `rate_projection.<uuid>.json`, switching back
+  restores that account's own data, and when the account can't be detected
+  (API-key/headless setups) the legacy unsuffixed paths keep working unchanged.
+
+---
+
 ## v3.13.5 — 2026-06-10
 
 ### Fixed

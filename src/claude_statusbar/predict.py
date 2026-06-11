@@ -60,6 +60,61 @@ DEBUG_PLACEHOLDER = "→--"   # "→--"
 # last-writer-wins concurrency, no write storm.
 _LATEST_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "rate_latest.json"
 
+# Both shared stores hold ACCOUNT-level data, so they must be keyed by the
+# logged-in account: after `/login` to a different account the old account's
+# readings are still "plausible" (a 7d resets_at stays in-range for days) and
+# their later resets_at wins every monotonic merge — the bar would keep showing
+# the PREVIOUS account's 5h/7d for days (live incident 2026-06-11). The current
+# account uuid comes from oauthAccount.accountUuid in ~/.claude.json (~270KB;
+# a raw regex scan is ~0.6ms and is memoized on (mtime_ns, size), so renders
+# normally pay only a stat()). Unknown account (no file / API-key users) falls
+# back to the legacy unsuffixed paths — pre-switch behaviour, unchanged.
+_CLAUDE_JSON_PATH = Path(os.path.expanduser("~")) / ".claude.json"
+_ACCOUNT_CACHE: Dict[str, Any] = {"sig": None, "id": None}
+
+
+def _read_account_id() -> Optional[str]:
+    try:
+        st = _CLAUDE_JSON_PATH.stat()
+        sig = (st.st_mtime_ns, st.st_size)
+        if _ACCOUNT_CACHE["sig"] == sig:
+            return _ACCOUNT_CACHE["id"]
+        data = _CLAUDE_JSON_PATH.read_bytes()
+    except OSError:
+        return None
+    import re
+    # Anchor on the oauthAccount object so an unrelated future "accountUuid"
+    # key elsewhere in the file can't shadow the login identity.
+    anchor = data.find(b'"oauthAccount"')
+    m = re.search(rb'"accountUuid"\s*:\s*"([0-9a-fA-F-]{8,64})"',
+                  data[anchor:] if anchor >= 0 else data)
+    aid = m.group(1).decode("ascii") if m else None
+    _ACCOUNT_CACHE["sig"] = sig
+    _ACCOUNT_CACHE["id"] = aid
+    return aid
+
+
+def account_id() -> Optional[str]:
+    """Uuid of the currently logged-in Claude account, or None if undetectable."""
+    return _read_account_id()
+
+
+def _account_path(base: Path) -> Path:
+    """Per-account variant of a shared-store path (`rate_latest.<uuid12>.json`).
+    Unknown account → the legacy unsuffixed path."""
+    aid = account_id()
+    if not aid:
+        return base
+    return base.with_name(f"{base.stem}.{aid[:12]}{base.suffix}")
+
+
+def _latest_path() -> Path:
+    return _account_path(_LATEST_PATH)
+
+
+def _projection_path() -> Path:
+    return _account_path(_PROJECTION_PATH)
+
 MAX_PROJECTION_SAMPLES = 5000
 MAX_PROJECTION_SNAPSHOTS = 1000
 MAX_CLOSED_WINDOWS = 100
@@ -189,7 +244,7 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
     store and return the freshest (u5, r5, u7, r7). Makes every window converge
     to the same numbers within one render tick. Never raises — on any I/O error
     it just returns the inputs (degrades to per-session behaviour)."""
-    p = Path(path) if path is not None else _LATEST_PATH
+    p = Path(path) if path is not None else _latest_path()
     try:
         if now is None:
             import time as _t
@@ -288,7 +343,7 @@ def empty_projection_store() -> Dict[str, Any]:
 
 
 def load_projection_store(path=None) -> Dict[str, Any]:
-    p = Path(path) if path is not None else _PROJECTION_PATH
+    p = Path(path) if path is not None else _projection_path()
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -313,7 +368,7 @@ def load_projection_store(path=None) -> Dict[str, Any]:
 
 
 def save_projection_store(store: Dict[str, Any], path=None) -> None:
-    p = Path(path) if path is not None else _PROJECTION_PATH
+    p = Path(path) if path is not None else _projection_path()
     from .cache import atomic_write_text
     atomic_write_text(p, json.dumps(store, separators=(",", ":")))
 
@@ -651,8 +706,10 @@ def _format_projection_pct(value: float) -> str:
 def _projection_result_key(u5, r5, u7, r7) -> Optional[Tuple[str, str, float, float, float, float]]:
     try:
         return (
-            str(_PROJECTION_PATH),
-            str(_LATEST_PATH),
+            # account-suffixed paths, so an account switch (or a monkeypatched
+            # path in tests) invalidates the 1s result cache by key mismatch
+            str(_projection_path()),
+            str(_latest_path()),
             float(u5),
             float(r5),
             float(u7),
