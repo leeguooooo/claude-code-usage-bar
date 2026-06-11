@@ -9,7 +9,7 @@ optimized for the realities of running ~60 renders/minute inside Claude Code's
 ```bash
 git clone https://github.com/leeguooooo/claude-code-usage-bar
 cd claude-code-usage-bar
-uv sync
+uv sync --group dev
 uv run pytest tests/             # 320+ tests, ~1.5s
 ```
 

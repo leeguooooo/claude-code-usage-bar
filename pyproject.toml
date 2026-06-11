@@ -51,3 +51,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 claude_statusbar = ["*.py", "commands/*.md", "skills/**/*.md"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
