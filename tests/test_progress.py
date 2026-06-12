@@ -284,13 +284,15 @@ def test_language_logging_does_not_clobber_root(monkeypatch):
     assert level_after == level_before, "core.py reset root logger level"
 
 
-# --- battery bar fill gradient: same hue, lightness ramp dark→tip ---
+# --- battery bar fill gradient: same hue, bright left anchor → darker tip ---
 
-def test_battery_bar_fill_gradient_tip_is_exact_severity_color():
-    # The fill is a SAME-HUE lightness gradient (left end sunk toward the bar
-    # background, tip cell the exact severity colour) so the bar's identity
-    # hue and severity semantics read unchanged at a glance — the gradient
-    # only adds direction toward the progress tip.
+def test_battery_bar_fill_gradient_left_anchors_severity_color():
+    # The fill is a SAME-HUE gradient anchored at the LEFT: the first cell is
+    # the exact severity colour (identity anchor — always visible), fading
+    # darker toward the progress tip by scaling toward black (hue preserved),
+    # NEVER by blending toward the grey bar background — a grey-blended dark
+    # end reads as "empty" and muddies the hue (live feedback 2026-06-12:
+    # "渐变反了 / 配色不好看").
     import re
     from claude_statusbar.progress import build_battery_bar
     from claude_statusbar.themes import get_theme
@@ -299,10 +301,14 @@ def test_battery_bar_fill_gradient_tip_is_exact_severity_color():
                             warning_threshold=30, critical_threshold=70)
     bgs = [tuple(map(int, m)) for m in re.findall(r"48;2;(\d+);(\d+);(\d+)", bar)]
     filled = bgs[:7]                      # 66% of width 10 → 7 filled cells
-    assert filled[-1] == tuple(theme.s_warn)   # tip = exact severity colour
-    assert filled[0] != filled[-1]             # left end visibly darker
+    assert filled[0] == tuple(theme.s_warn)    # left end = exact severity colour
+    assert filled[-1] != filled[0]             # tip visibly darker
     sums = [sum(c) for c in filled]
-    assert sums == sorted(sums)                # monotonic dark → bright
+    assert sums == sorted(sums, reverse=True)  # monotonic bright → dark
+    # Hue survives the fade: the tip keeps clear channel spread (still "red",
+    # not the grey of the empty cells).
+    tip = filled[-1]
+    assert max(tip) - min(tip) >= 40
     assert bgs[7] == tuple(theme.edge)         # empty cells untouched
 
 
