@@ -122,6 +122,24 @@ _PROJECTION_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar"
 PROJECTION_RESULT_TTL_S = 1.0
 _PROJECTION_RESULT_CACHE: Optional[Dict[str, Any]] = None
 
+# Per-window plausibility cap for observed burn rates (%/h). The old flat
+# 20%/h cap silently rejected REAL heavy parallel-session usage on the 5h
+# window (observed live 2026-06-12: 54%→62% in 13 min ≈ 37%/h), so projections
+# learned nothing exactly when the user was burning fastest and flatlined at
+# "no growth". 5h usage can legitimately spike to a full window in well under
+# an hour; 7d usage physically can't move that fast, so its cap stays tight.
+RATE_CAP_PCT_PER_H = {"five_hour": 60.0, "seven_day": 10.0}
+_DEFAULT_RATE_CAP_PCT_PER_H = 20.0
+# Minimum observation span for a "recent rate": used_pct moves in integer
+# steps, so two readings seconds apart say nothing about pace. With the cap
+# raised, this span is the glitch filter.
+MIN_RECENT_RATE_SPAN_S = 300.0
+# How far the measured "recent" rate carries the 7d projection forward (also
+# its lookback). Bucket rates need ~20 learned deltas for full weight — far
+# too slow to matter mid-burst — so during active use the next few hours are
+# better predicted by the pace just observed.
+RECENT_MOMENTUM_HORIZON_S = 3 * 3600.0
+
 DEFAULT_BUCKET_PRIORS = {
     "night": 0.02,
     "weekday_work_hours": 0.45,
@@ -200,19 +218,11 @@ def _coerce(x):
         return None
 
 
-def _is_newer(cur_used, cur_reset, prev_used, prev_reset) -> bool:
-    """Is (cur_used, cur_reset) a fresher account reading than (prev_used,
-    prev_reset)? Within a window used_pct normally only grows, and a new window
-    has a later resets_at — so 'newer' = later reset, or same reset with higher
-    used. Same-reset DOWNWARD revisions are handled separately in
-    reconcile_account via the observed_at grace clock (see DOWNGRADE_GRACE_S):
-    they're usually a stale session replay, but Anthropic does re-baseline
-    used_percentage down mid-window when account limits change."""
-    if prev_used is None or prev_reset is None:
-        return True
-    if cur_reset > prev_reset:
-        return True
-    return cur_reset == prev_reset and cur_used > prev_used
+# How many per-reset buckets a window slot may hold. Plausibility bounds
+# already cap lifetime (a bucket dies ~60s after its reset passes); this is a
+# backstop against clock weirdness flooding the store. A handful of parallel
+# accounts is the realistic ceiling.
+MAX_RESET_BUCKETS = 8
 
 
 # How long a stored reading may go unconfirmed before a lower same-reset
@@ -239,11 +249,41 @@ def _reset_plausible(window: str, reset, now: float) -> bool:
     return (now - 60.0) <= reset <= (now + length + 86400.0)
 
 
+def _load_buckets(win_entry: Any) -> Dict[str, Dict[str, Any]]:
+    """Per-reset buckets for one window slot: {"<int reset>": {used, observed_at?}}.
+    A legacy v1 single entry ({used, resets_at, observed_at?}) migrates into a
+    one-bucket dict; observed_at stays absent when it was absent (= unconfirmed,
+    so a stuck pre-upgrade value heals immediately)."""
+    if not isinstance(win_entry, dict):
+        return {}
+    if "resets_at" in win_entry:
+        lr, lu = _coerce(win_entry.get("resets_at")), _coerce(win_entry.get("used"))
+        if lr is None or lu is None:
+            return {}
+        bucket: Dict[str, Any] = {"used": lu}
+        lo = _coerce(win_entry.get("observed_at"))
+        if lo is not None:
+            bucket["observed_at"] = lo
+        return {str(int(lr)): bucket}
+    return {k: v for k, v in win_entry.items()
+            if isinstance(v, dict) and _coerce(v.get("used")) is not None}
+
+
 def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=None):
-    """Merge this window's per-session reading into the shared account-global
-    store and return the freshest (u5, r5, u7, r7). Makes every window converge
-    to the same numbers within one render tick. Never raises — on any I/O error
-    it just returns the inputs (degrades to per-session behaviour)."""
+    """Merge this session's reading into the shared store and return the
+    freshest (u5, r5, u7, r7) FOR THIS SESSION'S WINDOWS.
+
+    A reading's identity is (window, resets_at). Blob origin (which logged-in
+    account produced it) is not in stdin, and with parallel sessions on
+    different accounts both accounts' readings land in the same store — so
+    readings for different resets_at coexist in per-reset buckets and each
+    render is answered from the bucket matching ITS OWN blob's resets_at.
+    "Later reset wins" across buckets is exactly what pinned the bar to the
+    other account's 7d window for days (live incident 2026-06-12: bar 14%,
+    real account 77%). Within one bucket the v3.13.3-5 healing rules apply
+    unchanged: monotonic up, equal readings refresh the grace clock, lower
+    readings accepted as an official re-baseline once unconfirmed for
+    DOWNGRADE_GRACE_S. Never raises — on any error returns the inputs."""
     p = Path(path) if path is not None else _latest_path()
     try:
         if now is None:
@@ -272,41 +312,69 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
                 blob_fresh = False
         for win, used, reset in (("five_hour", used_5h, resets_5h),
                                  ("seven_day", used_7d, resets_7d)):
-            prev = store.get(win) if isinstance(store.get(win), dict) else {}
-            pu, pr = _coerce(prev.get("used")), _coerce(prev.get("resets_at"))
-            po = _coerce(prev.get("observed_at"))
+            buckets = _load_buckets(store.get(win))
+            # GC buckets whose window expired or whose reset is implausible
+            # (poisoned far-future values die here too).
+            kept = {k: v for k, v in buckets.items()
+                    if _coerce(k) is not None
+                    and _reset_plausible(win, _coerce(k), now)}
+            if len(kept) > MAX_RESET_BUCKETS:
+                freshest = sorted(kept,
+                                  key=lambda k: _coerce(kept[k].get("observed_at")) or 0.0,
+                                  reverse=True)[:MAX_RESET_BUCKETS]
+                kept = {k: kept[k] for k in freshest}
+            if kept != buckets:
+                changed = True
+            buckets = kept
+
             cu, cr = _coerce(used), _coerce(reset)
-            cur_ok = cu is not None and blob_fresh and _reset_plausible(win, cr, now)
-            prev_ok = pu is not None and _reset_plausible(win, pr, now)
-            # Stored reading is "unconfirmed" when nothing has re-observed it
-            # within the grace period (legacy stores without observed_at count
-            # as unconfirmed, so a stuck pre-upgrade value heals immediately).
+            cr_ok = cr is not None and _reset_plausible(win, cr, now)
+            cur_ok = cu is not None and blob_fresh and cr_ok
+            key = str(int(cr)) if cr_ok else None
+            ent = buckets.get(key) if key is not None else None
+            pu = _coerce(ent.get("used")) if ent else None
+            po = _coerce(ent.get("observed_at")) if ent else None
+            # Bucket is "unconfirmed" when nothing has re-observed it within
+            # the grace period.
             unconfirmed = po is None or (now - po) > DOWNGRADE_GRACE_S
-            rebaseline = (cur_ok and prev_ok and cr == pr and cu < pu
-                          and unconfirmed)
-            if cur_ok and (not prev_ok or _is_newer(cu, cr, pu, pr)
-                           or rebaseline):
-                # store a plausible reading when it's newer, when the stored
-                # one is missing/implausible (e.g. previously poisoned), or
-                # when an official downward re-baseline went unchallenged for
-                # the whole grace period.
-                store[win] = {"used": cu, "resets_at": cr, "observed_at": now}
+
+            if cur_ok and (pu is None or cu > pu or (cu < pu and unconfirmed)):
+                # Fresh reading for its own window: first sighting, monotonic
+                # growth, or an official downward re-baseline that went
+                # unchallenged for the whole grace period.
+                buckets[key] = {"used": cu, "observed_at": now}
                 out[win] = (cu, cr)
                 changed = True
-            elif prev_ok:
-                if (cur_ok and cr == pr and cu == pu
-                        and (po is None or now - po > CONFIRM_REFRESH_S)):
+            elif cur_ok and cu == pu:
+                if po is None or now - po > CONFIRM_REFRESH_S:
                     # Same reading re-observed: restart the grace clock so a
                     # value any live session still agrees with can't be
-                    # downgraded by a stale replay.
-                    store[win] = {"used": pu, "resets_at": pr,
-                                  "observed_at": now}
+                    # downgraded by a stale replay. Throttled to avoid a 1 Hz
+                    # write storm.
+                    buckets[key] = {"used": pu, "observed_at": now}
                     changed = True
-                out[win] = (pu, pr)
+                out[win] = (pu, cr)
+            elif cur_ok:
+                # cu < pu within grace — stale same-window replay loses.
+                out[win] = (pu, cr)
+            elif pu is not None:
+                # Stale blob, but its window exists in the store (updated by
+                # sibling sessions) — display the shared reading. No write,
+                # no confirmation.
+                out[win] = (pu, cr)
+            elif cr_ok:
+                # Plausible window with nothing stored, but the blob is stale —
+                # pass through for display, never persist as confirmed.
+                out[win] = (cu, cr)
+            elif buckets:
+                # No usable own reading (missing or implausible reset) — fall
+                # back to the freshest stored bucket, best info available.
+                bk = max(buckets,
+                         key=lambda k: _coerce(buckets[k].get("observed_at")) or 0.0)
+                out[win] = (_coerce(buckets[bk].get("used")), _coerce(bk))
             else:
-                # neither stored nor current is trustworthy — pass input through
-                out[win] = (cu if cu is not None else pu,
-                            cr if cr is not None else pr)
+                out[win] = (cu, cr)
+            store[win] = buckets
 
         if changed:
             from .cache import atomic_write_text
@@ -447,29 +515,35 @@ def record_projection_sample(store: Dict[str, Any], window: str, used_pct, reset
     if not isinstance(series, list):
         series = []
         store[window] = series
-    valid_existing = _compressed_samples(series, window)
-    if valid_existing:
-        latest_reset = max(float(s["resets_at"]) for s in valid_existing)
-        if reset < latest_reset:
+    # Windows with different resets_at coexist (parallel sessions on different
+    # accounts share this store — blob origin isn't in stdin), so a sample is
+    # only compared against samples of ITS OWN reset; projection math already
+    # selects per reset (_samples_for_reset). Rejecting earlier-reset samples
+    # here starved the real window's →NN% of data whenever another account's
+    # later-reset samples were present (live incident 2026-06-12).
+    same_reset = [s for s in _compressed_samples(series, window)
+                  if float(s["resets_at"]) == reset]
+    if same_reset:
+        max_used = max(float(s["used_pct"]) for s in same_reset)
+        if sample["used_pct"] == max_used:
             return store
-        if reset == latest_reset:
-            max_used = max(float(s["used_pct"]) for s in valid_existing if float(s["resets_at"]) == reset)
-            if sample["used_pct"] == max_used:
-                return store
-            if sample["used_pct"] < max_used:
-                # Inputs arrive reconciled (reconcile_account gates stale
-                # session replays since v3.13.3/4), so a converged reading
-                # below the same-reset max means the limit was re-baselined
-                # mid-window. Every stored sample for this window is in
-                # old-denominator units — incomparable — so drop them all
-                # (older resets included) and restart display smoothing,
-                # instead of refusing samples until the old max is exceeded
-                # (which froze the →NN% projection for the rest of the
-                # window).
-                series = []
-                store[window] = series
-                display = store.get("display")
-                if isinstance(display, dict):
+        if sample["used_pct"] < max_used:
+            # Inputs arrive reconciled (reconcile_account gates stale session
+            # replays since v3.13.3/4), so a converged reading below the
+            # same-reset max means the limit was re-baselined mid-window.
+            # Every stored sample for THIS reset is in old-denominator units —
+            # incomparable — so drop them and restart this window's display
+            # smoothing. Other resets' samples belong to other windows
+            # (possibly other accounts) and stay.
+            series = [s for s in series
+                      if isinstance(s, dict)
+                      and _coerce(s.get("resets_at")) != reset]
+            store[window] = series
+            display = store.get("display")
+            if isinstance(display, dict):
+                disp = display.get(window)
+                if (isinstance(disp, dict)
+                        and _coerce(disp.get("resets_at")) in (None, reset)):
                     display.pop(window, None)
     if series and series[-1] == sample:
         return store
@@ -495,7 +569,9 @@ def bucket_for_time(ts: float) -> str:
     return "weekday_non_work_hours"
 
 
-def learn_bucket_rates(samples: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+def learn_bucket_rates(samples: List[Dict[str, Any]],
+                       window: Optional[str] = None) -> Dict[str, Dict[str, float]]:
+    cap = RATE_CAP_PCT_PER_H.get(window, _DEFAULT_RATE_CAP_PCT_PER_H)
     out: Dict[str, Dict[str, float]] = {}
     ordered = _compressed_samples(samples)
     for prev, cur in zip(ordered, ordered[1:]):
@@ -511,7 +587,7 @@ def learn_bucket_rates(samples: List[Dict[str, Any]]) -> Dict[str, Dict[str, flo
         if dt < 300 or du <= 0:
             continue
         rate_per_hour = du / (dt / 3600.0)
-        if rate_per_hour > 20.0:
+        if rate_per_hour > cap:
             continue
         bucket = bucket_for_time(float(prev["observed_at"]))
         agg = out.setdefault(bucket, {"total_rate": 0.0, "samples": 0})
@@ -560,7 +636,9 @@ def _samples_for_reset(samples: List[Dict[str, Any]], resets_at: float) -> List[
     return [s for s in samples if _coerce(s.get("resets_at")) == float(resets_at)]
 
 
-def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: float) -> Optional[float]:
+def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: float,
+                       window: Optional[str] = None) -> Optional[float]:
+    cap = RATE_CAP_PCT_PER_H.get(window, _DEFAULT_RATE_CAP_PCT_PER_H)
     cutoff = now - lookback_s
     ordered = _compressed_samples(samples)
     in_window = [
@@ -576,10 +654,10 @@ def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: fl
         du = float(last["used_pct"]) - float(first["used_pct"])
     except (KeyError, TypeError, ValueError):
         return None
-    if dt <= 0 or du <= 0:
+    if dt < MIN_RECENT_RATE_SPAN_S or du <= 0:
         return None
     rate = du / dt
-    if rate > 20.0 / 3600.0:
+    if rate > cap / 3600.0:
         return None
     return rate
 
@@ -593,8 +671,8 @@ def project_5h(current_used: float, resets_at: float, now: float,
     if window_avg is not None and ttr > 0:
         projected_final, _ttl = window_avg
         avg_rate = max(0.0, (projected_final - used) / ttr)
-    recent = _rate_from_samples(samples, float(now), 3600.0)
-    learned = learn_bucket_rates(samples)
+    recent = _rate_from_samples(samples, float(now), 3600.0, window="five_hour")
+    learned = learn_bucket_rates(samples, window="five_hour")
     bucket = bucket_for_time(now)
     bucket_rate = expected_bucket_rate(bucket, learned.get(bucket, {})) / 3600.0
     rates = []
@@ -615,8 +693,20 @@ def project_5h(current_used: float, resets_at: float, now: float,
 def project_7d(current_used: float, resets_at: float, now: float,
                samples: List[Dict[str, Any]]) -> float:
     used = float(current_used)
-    learned = learn_bucket_rates(samples)
+    learned = learn_bucket_rates(samples, window="seven_day")
     future = integrate_future_buckets(float(now), float(resets_at), learned)
+    # Active burn: the rate measured over the last few hours predicts the
+    # next few hours better than bucket rates (cold priors until ~20 learned
+    # deltas). Momentum may only RAISE the bucket estimate, never lower it —
+    # an idle stretch yields no positive recent rate and changes nothing.
+    recent = _rate_from_samples(samples, float(now), RECENT_MOMENTUM_HORIZON_S,
+                                window="seven_day")
+    if recent is not None:
+        horizon = min(RECENT_MOMENTUM_HORIZON_S,
+                      max(0.0, float(resets_at) - float(now)))
+        bucket_near = integrate_future_buckets(float(now), float(now) + horizon,
+                                               learned)
+        future += max(0.0, recent * horizon - bucket_near)
     ttr = max(0.0, float(resets_at) - float(now))
     window_avg = project_window(used, ttr, WINDOW_LEN_S["seven_day"])
     sanity = 0.0

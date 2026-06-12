@@ -90,10 +90,12 @@ def test_unknown_account_uses_legacy_path(tmp_path, monkeypatch):
     monkeypatch.setattr(predict, "_LATEST_PATH", legacy)
     monkeypatch.setattr(predict, "account_id", lambda: None)
     now = 1_781_000_000.0
-    reconcile_account(10.0, now + 3600, 8.0, now + 6 * 86400, now=now)
+    r7 = now + 6 * 86400
+    reconcile_account(10.0, now + 3600, 8.0, r7, now=now)
     assert legacy.exists()
     data = json.loads(legacy.read_text())
-    assert data["seven_day"]["used"] == 8.0
+    # per-reset bucket schema: {window: {"<int reset>": {used, observed_at}}}
+    assert data["seven_day"][str(int(r7))]["used"] == 8.0
 
 
 def test_projection_store_is_per_account(tmp_path, monkeypatch):

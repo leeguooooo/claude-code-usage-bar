@@ -231,6 +231,72 @@ def test_reconcile_stale_blob_seeds_empty_store_as_passthrough(tmp_path):
     assert "seven_day" not in stored
 
 
+# --- reconcile_account: a reading's identity is (window, resets_at) ---
+# Blob origin (which account produced it) is NOT in stdin, so with parallel
+# sessions logged into different accounts, BOTH accounts' readings land in the
+# same store. Readings must therefore coexist per resets_at, and each render
+# must display the reading matching ITS OWN blob's resets_at — never another
+# window's. Live incident 2026-06-12: the bar showed the other account's
+# 7d 14%/Jun15 while this account was at 77%/Jun14, because "later reset wins"
+# had no heal path for a correct EARLIER-reset reading.
+
+def test_reconcile_other_account_later_reset_does_not_mask_own_window(tmp_path):
+    p = tmp_path / "latest.json"
+    now = 100000.0
+    r7_other = now + 600000.0          # other account's 7d resets LATER
+    r7_own = now + 200000.0            # this account's 7d resets EARLIER
+    # Other account's session writes first (and is actively confirming).
+    reconcile_account(50.0, now + 17000, 14.0, r7_other, path=p, now=now)
+    # This session's fresh blob must come back verbatim, not masked.
+    _, _, u7, r7 = reconcile_account(55.0, now + 16000, 77.0, r7_own,
+                                     path=p, now=now + 1)
+    assert (u7, r7) == (77.0, r7_own)
+    # And the other account's sessions still see their own window.
+    _, _, u7b, r7b = reconcile_account(50.0, now + 17000, 14.0, r7_other,
+                                       path=p, now=now + 2)
+    assert (u7b, r7b) == (14.0, r7_other)
+
+
+def test_reconcile_other_account_confirmations_do_not_mask_own_window(tmp_path):
+    # The other account confirming its reading at ~1Hz must never bleed into
+    # what this account's sessions display, no matter how fresh it is.
+    p = tmp_path / "latest.json"
+    now = 100000.0
+    r7_other, r7_own = now + 600000.0, now + 200000.0
+    reconcile_account(50.0, now + 17000, 14.0, r7_other, path=p, now=now)
+    for i in range(1, 40):
+        reconcile_account(50.0, now + 17000, 14.0, r7_other, path=p, now=now + i)
+    _, _, u7, r7 = reconcile_account(55.0, now + 16000, 77.0, r7_own,
+                                     path=p, now=now + 40)
+    assert (u7, r7) == (77.0, r7_own)
+
+
+def test_reconcile_same_window_still_shared_across_sessions(tmp_path):
+    # Sessions whose blobs carry the SAME resets_at (same account window) keep
+    # converging to the highest confirmed reading — sharing must survive the
+    # per-reset split.
+    p = tmp_path / "latest.json"
+    now = 100000.0
+    r7 = now + 200000.0
+    reconcile_account(55.0, now + 16000, 77.0, r7, path=p, now=now)
+    _, _, u7, _ = reconcile_account(55.0, now + 16000, 60.0, r7, path=p, now=now + 1)
+    assert u7 == 77.0
+
+
+def test_reconcile_stale_blob_displays_its_own_windows_stored_reading(tmp_path):
+    # An idle session (stale blob: expired 5h reset) replaying window r7_own
+    # must display r7_own's stored reading — updated meanwhile by its sibling
+    # sessions — not another account's window that happens to be in the store.
+    p = tmp_path / "latest.json"
+    now = 100000.0
+    r7_other, r7_own = now + 600000.0, now + 200000.0
+    reconcile_account(50.0, now + 17000, 14.0, r7_other, path=p, now=now)
+    reconcile_account(55.0, now + 16000, 77.0, r7_own, path=p, now=now + 1)
+    _, _, u7, r7 = reconcile_account(40.0, now - 50000, 70.0, r7_own,
+                                     path=p, now=now + 2)
+    assert (u7, r7) == (77.0, r7_own)
+
+
 def test_reconcile_replaces_poisoned_stored_reset(tmp_path):
     import json
     p = tmp_path / "latest.json"

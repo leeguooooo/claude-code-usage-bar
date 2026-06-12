@@ -111,6 +111,49 @@ def test_record_projection_sample_rebaseline_drops_old_unit_samples(tmp_path):
     assert store["display"]["five_hour"]["projected_pct"] == 40.0
 
 
+def test_record_projection_sample_accepts_earlier_reset_window(tmp_path):
+    # Sessions logged into DIFFERENT accounts share the store (blob origin is
+    # not in stdin), so windows with different resets_at must coexist: a sample
+    # for an EARLIER reset (this account's real window) must still be recorded
+    # while another account's later-reset samples exist — projection math
+    # already selects samples per reset. Live incident 2026-06-12: the real
+    # window's →NN% had no samples because "later reset wins" rejected them.
+    p = tmp_path / "projection.json"
+    store = predict.load_projection_store(p)
+    store = predict.record_projection_sample(
+        store, "seven_day", used_pct=14.0, resets_at=650000.0,
+        observed_at=1000.0, session_id="other-account"
+    )
+    store = predict.record_projection_sample(
+        store, "seven_day", used_pct=77.0, resets_at=600000.0,
+        observed_at=1001.0, session_id="this-account"
+    )
+    by_reset = {s["resets_at"]: s["used_pct"] for s in store["seven_day"]}
+    assert by_reset == {650000.0: 14.0, 600000.0: 77.0}
+
+
+def test_record_projection_sample_rebaseline_scoped_to_its_reset(tmp_path):
+    # A same-reset downward re-baseline restarts learning for THAT window
+    # only — samples for a coexisting window (other account, different
+    # resets_at) must survive.
+    p = tmp_path / "projection.json"
+    store = predict.load_projection_store(p)
+    store = predict.record_projection_sample(
+        store, "seven_day", used_pct=14.0, resets_at=650000.0,
+        observed_at=1000.0, session_id="other-account"
+    )
+    store = predict.record_projection_sample(
+        store, "seven_day", used_pct=19.0, resets_at=600000.0,
+        observed_at=1001.0, session_id="this-account"
+    )
+    store = predict.record_projection_sample(
+        store, "seven_day", used_pct=3.0, resets_at=600000.0,
+        observed_at=2000.0, session_id="this-account"
+    )
+    by_reset = {s["resets_at"]: s["used_pct"] for s in store["seven_day"]}
+    assert by_reset == {650000.0: 14.0, 600000.0: 3.0}
+
+
 def test_record_projection_sample_prunes_bounded_history(monkeypatch):
     monkeypatch.setattr(predict, "MAX_PROJECTION_SAMPLES", 3)
     store = predict.empty_projection_store()
@@ -187,6 +230,75 @@ def test_learned_bucket_rates_ignore_stale_lower_session_readings(use_tz):
     assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 3.0) < 1e-9
 
 
+def test_learned_bucket_rates_accept_heavy_real_5h_burn(use_tz):
+    # Live complaint 2026-06-12: parallel sessions really do burn the 5h
+    # window at 30-40%/h (observed 54%→62% in 13 min), but the flat 20%/h
+    # plausibility cap rejected every such delta, so heavy real usage taught
+    # the model nothing and projections sat at "no growth". The cap is
+    # window-aware now: 5h readings may move much faster than 7d ones.
+    use_tz("Asia/Tokyo")
+    reset = 1780927200.0
+    samples = [
+        {"observed_at": _ts(2026, 6, 1, 1, 0), "used_pct": 54.0, "resets_at": reset, "session_id": "s"},
+        {"observed_at": _ts(2026, 6, 1, 1, 13), "used_pct": 62.0, "resets_at": reset, "session_id": "s"},
+    ]
+    rates = predict.learn_bucket_rates(samples, window="five_hour")
+    assert rates["weekday_work_hours"]["samples"] == 1
+    assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 8.0 / (13 / 60)) < 1e-6
+
+
+def test_learned_bucket_rates_keep_7d_cap_tight(use_tz):
+    # The seven_day window can't really move 30%/h — that magnitude is a
+    # glitch and must stay filtered.
+    use_tz("Asia/Tokyo")
+    reset = 1780927200.0
+    samples = [
+        {"observed_at": _ts(2026, 6, 1, 1, 0), "used_pct": 10.0, "resets_at": reset, "session_id": "s"},
+        {"observed_at": _ts(2026, 6, 1, 1, 13), "used_pct": 18.0, "resets_at": reset, "session_id": "s"},
+    ]
+    rates = predict.learn_bucket_rates(samples, window="seven_day")
+    assert rates.get("weekday_work_hours", {}).get("samples", 0) == 0
+
+
+def test_rate_from_samples_accepts_heavy_5h_burn():
+    now = 10_000.0
+    reset = now + 720.0
+    samples = [
+        {"observed_at": now - 780, "used_pct": 54.0, "resets_at": reset, "session_id": "s"},
+        {"observed_at": now, "used_pct": 62.0, "resets_at": reset, "session_id": "s"},
+    ]
+    rate = predict._rate_from_samples(samples, now, 3600.0, window="five_hour")
+    assert rate is not None
+    assert abs(rate - 8.0 / 780.0) < 1e-9
+
+
+def test_rate_from_samples_needs_minimum_baseline():
+    # Two readings seconds apart say nothing about pace (used_pct moves in
+    # integer steps) — with the cap raised, a minimum observation span is the
+    # glitch filter instead.
+    now = 10_000.0
+    reset = now + 720.0
+    samples = [
+        {"observed_at": now - 30, "used_pct": 54.0, "resets_at": reset, "session_id": "s"},
+        {"observed_at": now, "used_pct": 62.0, "resets_at": reset, "session_id": "s"},
+    ]
+    assert predict._rate_from_samples(samples, now, 3600.0, window="five_hour") is None
+
+
+def test_project_5h_reflects_heavy_burn_instead_of_flatlining():
+    # 62% with 12 min left, burning ~37%/h for the last 13 min: the projection
+    # must move meaningfully above "you stop right now".
+    now = 10_000.0
+    reset = now + 720.0
+    samples = [
+        {"observed_at": now - 780, "used_pct": 54.0, "resets_at": reset, "session_id": "s"},
+        {"observed_at": now, "used_pct": 62.0, "resets_at": reset, "session_id": "s"},
+    ]
+    projected = predict.project_5h(62.0, reset, now, samples)
+    assert projected >= 65.0
+    assert projected <= 100.0
+
+
 def test_expected_bucket_rate_blends_prior_and_learned_by_coverage():
     learned = {"rate_per_hour": 4.0, "samples": 1}
     low = predict.expected_bucket_rate("weekday_work_hours", learned)
@@ -215,6 +327,39 @@ def test_project_5h_blends_recent_window_and_bucket():
     projected = predict.project_5h(30.0, reset, now, samples)
     assert projected > 30.0
     assert projected <= 100.0
+
+
+def test_project_7d_active_burn_lifts_near_term_projection(use_tz):
+    # Live complaint 2026-06-12: 79% used, actively burning ~2%/h for hours —
+    # yet the projection barely moved because it integrated bucket rates only
+    # and ignored current momentum. Scenario pinned to a NIGHT stretch (prior
+    # ≈0, no learned samples in that bucket) so only the momentum term can
+    # lift the result: burning through the evening, 4h to reset at 03:00.
+    use_tz("Asia/Tokyo")
+    now = _ts(2026, 6, 9, 14)            # Tue 23:00 JST
+    reset = now + 4 * 3600.0             # 03:00 JST — night bucket throughout
+    samples = [
+        {"observed_at": now - 3 * 3600 + i * 1800, "used_pct": 73.0 + i,
+         "resets_at": reset, "session_id": "s"}
+        for i in range(7)                # 20:00→23:00 JST, 2%/h
+    ]
+    projected = predict.project_7d(79.0, reset, now, samples)
+    # ~2%/h carried over the next 3h ⇒ ≥ +5 over "you stop right now";
+    # bucket integration alone gives ≈ 79.1.
+    assert projected >= 84.0
+    assert projected <= 100.0
+
+
+def test_project_7d_momentum_never_lowers_bucket_estimate():
+    # An idle stretch (no positive recent rate) must leave the bucket-based
+    # projection untouched.
+    now = 1_781_000_000.0
+    reset = now + 39 * 3600.0
+    flat = [
+        {"observed_at": now - 3 * 3600, "used_pct": 79.0, "resets_at": reset, "session_id": "s"},
+        {"observed_at": now, "used_pct": 79.0, "resets_at": reset, "session_id": "s"},
+    ]
+    assert predict.project_7d(79.0, reset, now, flat) == predict.project_7d(79.0, reset, now, [])
 
 
 def test_project_7d_does_not_extrapolate_first_18h_to_full_week():
