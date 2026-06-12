@@ -57,8 +57,10 @@ _STAR_GLYPHS = ("✦", "✧")
 # grey-blended end is hard to tell from the empty cells (the bar reads
 # reversed/half-empty) and the hue goes muddy (live feedback 2026-06-12).
 # The darkened leading edge melts softly into the dark empty section while
-# staying clearly tinted. A lone filled cell stays pure colour.
-_FILL_FADE = 0.45
+# staying clearly tinted. A lone filled cell stays pure colour. 0.45 made the
+# tip's luminance land too close to the empty grey (boundary went mushy at
+# high fill in small fonts); 0.35 keeps the fade visible with a crisper edge.
+_FILL_FADE = 0.35
 
 
 def _sparkle_hash(i, phase):
