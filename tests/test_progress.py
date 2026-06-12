@@ -282,3 +282,36 @@ def test_language_logging_does_not_clobber_root(monkeypatch):
     level_after = root.level
     assert handlers_after == handlers_before, "core.py polluted root logger handlers"
     assert level_after == level_before, "core.py reset root logger level"
+
+
+# --- battery bar fill gradient: same hue, lightness ramp dark→tip ---
+
+def test_battery_bar_fill_gradient_tip_is_exact_severity_color():
+    # The fill is a SAME-HUE lightness gradient (left end sunk toward the bar
+    # background, tip cell the exact severity colour) so the bar's identity
+    # hue and severity semantics read unchanged at a glance — the gradient
+    # only adds direction toward the progress tip.
+    import re
+    from claude_statusbar.progress import build_battery_bar
+    from claude_statusbar.themes import get_theme
+    theme = get_theme("graphite")
+    bar = build_battery_bar(66.0, use_color=True, theme=theme,
+                            warning_threshold=30, critical_threshold=70)
+    bgs = [tuple(map(int, m)) for m in re.findall(r"48;2;(\d+);(\d+);(\d+)", bar)]
+    filled = bgs[:7]                      # 66% of width 10 → 7 filled cells
+    assert filled[-1] == tuple(theme.s_warn)   # tip = exact severity colour
+    assert filled[0] != filled[-1]             # left end visibly darker
+    sums = [sum(c) for c in filled]
+    assert sums == sorted(sums)                # monotonic dark → bright
+    assert bgs[7] == tuple(theme.edge)         # empty cells untouched
+
+
+def test_battery_bar_single_filled_cell_keeps_pure_severity_color():
+    import re
+    from claude_statusbar.progress import build_battery_bar
+    from claude_statusbar.themes import get_theme
+    theme = get_theme("graphite")
+    bar = build_battery_bar(5.0, use_color=True, theme=theme,
+                            warning_threshold=30, critical_threshold=70)
+    bgs = [tuple(map(int, m)) for m in re.findall(r"48;2;(\d+);(\d+);(\d+)", bar)]
+    assert bgs[0] == tuple(theme.s_ok)         # lone cell = pure colour, no sink

@@ -50,6 +50,13 @@ _DOT_SINK = 0.62            # how far the faint dot tier sinks toward background
 _DOT_GLYPHS = ("⋆",)        # faint star glyph for the resting field (star-shaped, not a period)
 _STAR_GLYPHS = ("✦", "✧")
 
+# Fill gradient: SAME-HUE lightness ramp across the filled cells — left end
+# sunk this far toward the bar background, tip cell the EXACT severity colour.
+# The bar's identity hue and the green/yellow/red severity semantics stay
+# untouched at a glance; the gradient only adds direction toward the tip
+# (brightest where the progress is). A lone filled cell stays pure colour.
+_FILL_SINK = 0.38
+
 
 def _sparkle_hash(i, phase):
     """Deterministic mixing hash of (cell index, render phase) → uint32.
@@ -153,7 +160,7 @@ def build_battery_bar(percent, width=10, use_color=True, theme=None,
     warning, critical = normalize_thresholds(warning_threshold, critical_threshold)
     fill_rgb = (theme.s_hot if percent >= critical
                 else theme.s_warn if percent >= warning else theme.s_ok)
-    bg_fill = _bg(fill_rgb)
+    fill_dark = _blend(fill_rgb, theme.edge, _FILL_SINK)
     bg_empty = _bg(theme.edge)
     fg_overlay = _fg(theme.pill_ink)
     # Optional particles (opt-in) in the EMPTY space: a static faint dot field
@@ -168,7 +175,8 @@ def build_battery_bar(percent, width=10, use_color=True, theme=None,
     result = ""
     for i, ch in enumerate(padded):
         if i < filled:
-            result += f"{bg_fill}{fg_overlay}{ch}"
+            t = i / (filled - 1) if filled > 1 else 1.0
+            result += f"{_bg(_blend(fill_dark, fill_rgb, t))}{fg_overlay}{ch}"
         elif shimmer_phase is not None and ch == " ":
             dot = _static_dot(i, seed)
             if dot is None:
