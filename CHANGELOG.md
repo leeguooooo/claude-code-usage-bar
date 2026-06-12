@@ -9,6 +9,43 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.13.7 — 2026-06-12
+
+### Fixed
+- **Parallel sessions logged into different Claude accounts no longer
+  cross-contaminate the 5h/7d display.** The statusline stdin blob does not
+  identify which account produced it, so with multiple accounts running
+  side-by-side, ALL sessions wrote into the current login's shared store — and
+  the "later resets_at wins" merge let another account's 7d window mask the
+  real one with no heal path (live incident: bar showed the other account's
+  7d 14% while `/usage` said 77%). A reading's identity is now
+  `(window, resets_at)`: the shared store keeps per-reset buckets, each render
+  is answered from the bucket matching its OWN blob's reset, and all
+  v3.13.3–v3.13.5 healing rules (monotonic merge, confirmation grace,
+  re-baseline acceptance) apply unchanged within a bucket. Legacy store
+  schemas migrate automatically.
+- **`→NN%` projections were artificially conservative during heavy use.**
+  Three stacked causes: (1) the cross-account bug above also starved the real
+  window's projection samples (samples for an earlier-reset window were
+  rejected outright — the live window had 2 samples in 28h, leaving →NN% on
+  cold priors); (2) a flat 20%/h plausibility cap silently rejected genuine
+  heavy parallel-session burn (observed 37%/h on the 5h window), so the
+  "recent rate" never existed exactly when it mattered — caps are per-window
+  now (5h 60%/h, 7d 10%/h) with a ≥300s observation-span floor as the glitch
+  filter; (3) the 7d projection ignored current momentum entirely — the rate
+  measured over the last 3h now carries the next ≤3h (it can only raise the
+  bucket estimate, never lower it).
+
+### Changed
+- **Battery bar fill is now a same-hue gradient.** The left cell anchors the
+  exact severity colour (green/yellow/red semantics unchanged), fading darker
+  toward the progress tip by scaling toward black — hue stays rich, the tip
+  melts softly into the empty section, and a lone filled cell stays pure
+  colour. Bar frame, ⏰, separators and all classic identity elements are
+  untouched.
+
+---
+
 ## v3.13.6 — 2026-06-11
 
 ### Fixed
