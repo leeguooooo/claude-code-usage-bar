@@ -14,6 +14,15 @@ RESET = "\033[0m"
 DEFAULT_WARNING_THRESHOLD = 30.0
 DEFAULT_CRITICAL_THRESHOLD = 70.0
 
+# Rate-limit windows (5h / 7d) color by where they're HEADED, not where they
+# are right now: once a `→NN%` end-of-window projection exists, the cap (100%)
+# is the red line and near-cap is the warning. These are distinct from the
+# configurable comfort thresholds above, which still drive the current-usage
+# fallback (before a projection exists) and non-projected gauges like the
+# context window.
+PROJECTION_WARNING_THRESHOLD = 80.0
+PROJECTION_CRITICAL_THRESHOLD = 100.0
+
 
 def _fg(rgb): return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 def _bg(rgb): return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
@@ -138,6 +147,52 @@ def bg_for_percent(percent, theme=None, warning_threshold=None, critical_thresho
     return _bg(theme.s_ok)
 
 
+def projection_pct(chip):
+    """Numeric percent out of a `→NN%` projection chip.
+
+    `→96%` → 96.0. Returns None when there's no usable projection: empty
+    string, the `→--` placeholder, or anything unparseable. The chip is clamped
+    to 0–100 upstream, so a projection that would blow past the cap arrives here
+    as 100.0 — exactly the red-line value.
+    """
+    if not chip:
+        return None
+    body = chip.lstrip("→").rstrip("%")
+    try:
+        return float(body)
+    except ValueError:
+        return None
+
+
+def window_severity_rgb(current_pct, projection_chip, theme=None,
+                        warning_threshold=None, critical_threshold=None):
+    """Severity RGB for a rate-limit window (5h / 7d).
+
+    The projection drives the color when one is available — measured against
+    the cap (warn 80 / crit 100) so the window reflects where usage is HEADED.
+    With no projection yet (early in the window, `→--`) it falls back to the
+    current usage on the configured comfort thresholds — `now`-semantics, the
+    unchanged legacy behavior. Returns an (r, g, b) tuple, or None when there is
+    nothing to color (no projection and no current usage).
+    """
+    theme = theme or get_theme("graphite")
+    proj = projection_pct(projection_chip)
+    if proj is not None:
+        pct, warning, critical = (proj, PROJECTION_WARNING_THRESHOLD,
+                                  PROJECTION_CRITICAL_THRESHOLD)
+    elif current_pct is not None:
+        pct = current_pct
+        warning, critical = normalize_thresholds(warning_threshold,
+                                                 critical_threshold)
+    else:
+        return None
+    if pct >= critical:
+        return theme.s_hot
+    if pct >= warning:
+        return theme.s_warn
+    return theme.s_ok
+
+
 def colorize(text, color, use_color=True):
     if not use_color:
         return text
@@ -146,7 +201,7 @@ def colorize(text, color, use_color=True):
 
 def build_battery_bar(percent, width=10, use_color=True, theme=None,
                       warning_threshold=None, critical_threshold=None,
-                      shimmer_phase=None, seed=0):
+                      shimmer_phase=None, seed=0, fill_rgb=None):
     theme = theme or get_theme("graphite")
     clamped = max(0.0, min(percent, 100.0))
     filled = int(clamped / 100 * width + 0.5)
@@ -162,9 +217,10 @@ def build_battery_bar(percent, width=10, use_color=True, theme=None,
             else:
                 result += ch
         return result
-    warning, critical = normalize_thresholds(warning_threshold, critical_threshold)
-    fill_rgb = (theme.s_hot if percent >= critical
-                else theme.s_warn if percent >= warning else theme.s_ok)
+    if fill_rgb is None:
+        warning, critical = normalize_thresholds(warning_threshold, critical_threshold)
+        fill_rgb = (theme.s_hot if percent >= critical
+                    else theme.s_warn if percent >= warning else theme.s_ok)
     fill_dark = _blend(fill_rgb, (0, 0, 0), _FILL_FADE)
     bg_empty = _bg(theme.edge)
     fg_overlay = _fg(theme.pill_ink)
@@ -205,14 +261,15 @@ def build_battery_bar(percent, width=10, use_color=True, theme=None,
 
 def _build_dimension(label, pct, severity_color, use_color,
                      warning_threshold, critical_threshold, theme,
-                     shimmer_phase=None):
+                     shimmer_phase=None, fill_rgb=None):
     mute = _fg(theme.mute)
     if pct is not None:
         bar = build_battery_bar(pct, use_color=use_color, theme=theme,
                                 warning_threshold=warning_threshold,
                                 critical_threshold=critical_threshold,
                                 shimmer_phase=shimmer_phase,
-                                seed=_field_seed(label))
+                                seed=_field_seed(label),
+                                fill_rgb=fill_rgb)
     else:
         if use_color:
             bar = f"{_bg(theme.edge)}{_fg(theme.pill_ink)}" + "--%".center(10) + RESET
@@ -402,22 +459,19 @@ def format_status_line(
     mute = _fg(theme.mute)
     ink = _fg(theme.ink)
 
-    color_5h = color_for_percent(
-        msgs_pct if msgs_pct is not None else 0,
-        theme=theme,
-        warning_threshold=warning_threshold,
-        critical_threshold=critical_threshold,
-    ) if msgs_pct is not None else mute
-    color_7d = color_for_percent(
-        weekly_pct if weekly_pct is not None else 0,
-        theme=theme,
-        warning_threshold=warning_threshold,
-        critical_threshold=critical_threshold,
-    ) if weekly_pct is not None else mute
+    # 5h/7d severity follows the projection (where usage is HEADED), falling
+    # back to current usage before a projection exists. The bar fill LENGTH and
+    # the printed % still reflect current usage — only the color is projected.
+    rgb_5h = window_severity_rgb(msgs_pct, projection_5h, theme,
+                                 warning_threshold, critical_threshold)
+    rgb_7d = window_severity_rgb(weekly_pct, projection_7d, theme,
+                                 warning_threshold, critical_threshold)
+    color_5h = _fg(rgb_5h) if rgb_5h is not None else mute
+    color_7d = _fg(rgb_7d) if rgb_7d is not None else mute
 
     dim_5h = _build_dimension("5h", msgs_pct, color_5h, use_color,
                               warning_threshold, critical_threshold, theme,
-                              shimmer_phase=shimmer_phase)
+                              shimmer_phase=shimmer_phase, fill_rgb=rgb_5h)
     dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", color_5h, use_color)
     if projection_5h:
         dim_5h += " " + _render_projection(projection_5h, theme, use_color)
@@ -427,7 +481,7 @@ def format_status_line(
 
     dim_7d = _build_dimension("7d", weekly_pct, color_7d, use_color,
                               warning_threshold, critical_threshold, theme,
-                              shimmer_phase=shimmer_phase)
+                              shimmer_phase=shimmer_phase, fill_rgb=rgb_7d)
     if reset_time_7d:
         dim_7d += colorize(f"⏰{reset_time_7d}", color_7d, use_color)
     if projection_7d:

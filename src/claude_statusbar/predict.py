@@ -820,6 +820,28 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
         return _format_projection_pct(prev_pct if prev_pct is not None else 0.0)
     store = record_projection_sample(store, window, used, reset, now, session_id)
     close_changed_windows(store, window)
+
+    # Too early in a fresh window (or no usage yet) to trust a projection: a
+    # couple of coarse integer steps over a few minutes don't pin down the
+    # window's pace, and — worse — seeding the smoother from a near-zero first
+    # tick makes the displayed projection LAG the real pace for ~15 min. Live
+    # 2026-06-16: a 5h window 6 min in (used 1%) showed →14% while the pace
+    # already implied ~50%+. Hold the `→--` placeholder until MIN_ELAPSED,
+    # exactly as forecast_chip does, so the smoother later seeds from the first
+    # trustworthy raw (no lag). The window's color falls back to current usage
+    # meanwhile — honest "not enough signal yet", not a fake-precise number.
+    # Samples are still recorded above, so history is ready when the gate opens.
+    ttr = max(0.0, reset - float(now))
+    elapsed = WINDOW_LEN_S.get(window, 0) - ttr
+    if used <= 0 or elapsed < MIN_ELAPSED_S.get(window, 0):
+        prev = store.get("display", {}).get(window)
+        if isinstance(prev, dict) and _coerce(prev.get("resets_at")) == reset:
+            # A trustworthy projection already exists for THIS window (e.g. clock
+            # jitter dipped elapsed back under the floor) — keep showing it
+            # rather than flapping back to the placeholder.
+            return _format_projection_pct(_coerce(prev.get("projected_pct")) or 0.0)
+        return DEBUG_PLACEHOLDER
+
     samples = _samples_for_reset(store.get(window, []), reset)
     raw = (
         project_5h(used, reset, now, samples)

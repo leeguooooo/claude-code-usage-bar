@@ -120,8 +120,11 @@ def render_capsule(
     density: str = "regular",
     show_weekly: bool = True,
     ctx_pct: Optional[float] = None,
+    projection_5h: str = "",
+    projection_7d: str = "",
     **_ignored,
 ) -> str:
+    from .progress import window_severity_rgb
     theme = theme or get_theme("graphite")
     INK    = _fg(theme.pill_ink)
     EDGE   = _fg(theme.edge)
@@ -132,11 +135,13 @@ def render_capsule(
     def pill(bg_rgb, body):
         return f"{_bg(bg_rgb)}{INK}{pad}{body}{pad}{RESET}"
 
-    def sev_dot(p):
-        if p is None:
+    def sev_dot(p, chip=""):
+        # 5h/7d follow the projection; ctx_pct (no chip) stays current-usage.
+        rgb = window_severity_rgb(p, chip, theme,
+                                  warning_threshold, critical_threshold)
+        if rgb is None:
             return ""
-        col = _severity_color(theme, p, warning_threshold, critical_threshold)
-        return f" {_fg(col)}●{RESET}"
+        return f" {_fg(rgb)}●{RESET}"
 
     def pct_text(p):
         return "--%" if p is None else f"{int(round(p))}%"
@@ -147,14 +152,14 @@ def render_capsule(
 
     five_body = (
         f"{BOLD}◷ 5H{RESET}{INK}{_bg(theme.pill_5h)} {pct_text(msgs_pct)} "
-        f"· {reset_5h}{sev_dot(msgs_pct)}{INK}{_bg(theme.pill_5h)}"
+        f"· {reset_5h}{sev_dot(msgs_pct, projection_5h)}{INK}{_bg(theme.pill_5h)}"
     )
     parts.append(pill(theme.pill_5h, five_body))
 
     if show_weekly:
         week_body = (
             f"{BOLD}☷ 7D{RESET}{INK}{_bg(theme.pill_7d)} {pct_text(weekly_pct)} "
-            f"· {reset_7d or '--'}{sev_dot(weekly_pct)}{INK}{_bg(theme.pill_7d)}"
+            f"· {reset_7d or '--'}{sev_dot(weekly_pct, projection_7d)}{INK}{_bg(theme.pill_7d)}"
         )
         parts.append(pill(theme.pill_7d, week_body))
 
@@ -192,14 +197,17 @@ def render_hairline(
     density: str = "regular",
     show_weekly: bool = True,
     ctx_pct: Optional[float] = None,
+    projection_5h: str = "",
+    projection_7d: str = "",
     **_ignored,
 ) -> str:
+    from .progress import window_severity_rgb
     theme = theme or get_theme("graphite")
     INK  = _fg(theme.ink)
     MUTE = _fg(theme.mute)
     EDGE = _fg(theme.edge)
 
-    def mini3(p):
+    def mini3(p, chip=""):
         if p is None:
             return f"{MUTE}···{RESET}"
         cells = []
@@ -209,7 +217,10 @@ def render_hairline(
             elif p >= slot - (100 / 3) * 0.66: cells.append("▆")
             elif p >= slot - (100 / 3):       cells.append("▃")
             else:                             cells.append("▁")
-        col = _severity_color(theme, p, warning_threshold, critical_threshold)
+        # Cells still reflect current usage; only the color follows projection.
+        rgb = window_severity_rgb(p, chip, theme,
+                                  warning_threshold, critical_threshold)
+        col = rgb if rgb is not None else theme.mute
         return f"{_fg(col)}{''.join(cells)}{RESET}"
 
     def pct_text(p):
@@ -220,12 +231,12 @@ def render_hairline(
     parts = []
 
     parts.append(
-        f"{MUTE}› 5h{RESET} {mini3(msgs_pct)} {INK}{pct_text(msgs_pct)}{RESET} "
+        f"{MUTE}› 5h{RESET} {mini3(msgs_pct, projection_5h)} {INK}{pct_text(msgs_pct)}{RESET} "
         f"{MUTE}↺ {reset_5h}{RESET}"
     )
     if show_weekly:
         parts.append(
-            f"{MUTE}› 7d{RESET} {mini3(weekly_pct)} {INK}{pct_text(weekly_pct)}{RESET} "
+            f"{MUTE}› 7d{RESET} {mini3(weekly_pct, projection_7d)} {INK}{pct_text(weekly_pct)}{RESET} "
             f"{MUTE}↺ {reset_7d or '--'}{RESET}"
         )
     # Model line — colored by ctx_pct severity, neutral ink when absent

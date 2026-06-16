@@ -9,6 +9,32 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.14.0 — 2026-06-16
+
+### Changed
+- **Rate-limit windows (5h/7d) now color by where usage is HEADED, not where it
+  is right now.** Once a `→NN%` end-of-window projection exists, the window's
+  bar fill, label, and ⏰ clock take a severity from the *projected* value
+  against the cap: green below 80%, yellow 80–99%, red at 100%. The bar's fill
+  LENGTH and printed % still track current usage — only the color is projected.
+  So a 7d window sitting at 24% but on track for →96% now reads yellow instead
+  of a falsely-healthy green. Applies to all three styles (classic bar, capsule
+  `●` dot, hairline mini-bar). Before a projection exists, the window falls back
+  to current-usage coloring on the configured thresholds (unchanged).
+
+### Fixed
+- **The `→NN%` projection no longer reads far too low for the first ~15 minutes
+  after a window resets.** The smoother was seeded from the `used=0` first
+  post-reset tick (where the raw projection collapses to the bucket prior ~2%),
+  then crawled up with an 8-minute time-constant — so a 5h window 6 minutes in
+  at 1% used showed `→14%` when the pace already implied ~50%+. The projection
+  now holds the `→--` placeholder until `MIN_ELAPSED` (5h=10m, 7d=1h) — the same
+  floor the ⚡ETA chip already uses — and then seeds from the first trustworthy
+  reading (no lag). During the hold the window colors by current usage, an
+  honest "not enough signal yet" instead of a fake-precise low number.
+
+---
+
 ## v3.13.7 — 2026-06-12
 
 ### Fixed

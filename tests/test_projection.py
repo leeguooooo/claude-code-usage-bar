@@ -550,3 +550,46 @@ def test_projection_shown_when_growth_predicted(tmp_path, monkeypatch):
     store = predict.empty_projection_store()
     chip = predict._projection_for_window(store, "five_hour", 10.0, now + 7200, now, "s")
     assert chip.startswith("→") and chip != "→10%"
+
+
+def test_projection_holds_placeholder_before_min_elapsed(tmp_path, monkeypatch):
+    """Fresh window, only a few minutes elapsed: a couple of coarse integer
+    steps say nothing about pace, so the projection holds the `→--` placeholder
+    rather than shipping a fake-precise (and badly low) number. Regression for
+    the live `→14%` at ~6 min into a 5h window (2026-06-16)."""
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "proj.json")
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    L = predict.WINDOW_LEN_S["five_hour"]
+    reset = 2_000_000.0
+    store = predict.empty_projection_store()
+    # elapsed 6 min (< MIN_ELAPSED 10 min), used 1%
+    now = reset - L + 6 * 60
+    chip = predict._projection_for_window(store, "five_hour", 1.0, reset, now, "s")
+    assert chip == predict.DEBUG_PLACEHOLDER
+    # the no-signal tick must NOT have seeded a (low) display projection
+    assert "five_hour" not in store.get("display", {})
+
+
+def test_early_zero_tick_does_not_poison_later_projection(tmp_path, monkeypatch):
+    """The used=0 first post-reset tick must not seed the smoother near zero and
+    drag the projection down for ~15 min. Once past MIN_ELAPSED the smoother
+    seeds from the first trustworthy raw, so the projection reflects the real
+    pace, not a lagged near-zero value."""
+    import claude_statusbar.predict as predict
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "proj.json")
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
+    L = predict.WINDOW_LEN_S["five_hour"]
+    reset = 2_000_000.0
+    store = predict.empty_projection_store()
+    # early ticks (all < 10 min elapsed): used climbs 0 → 1 → 2, all placeholder
+    for el_min, used in [(1, 0.0), (4, 1.0), (7, 2.0)]:
+        now = reset - L + el_min * 60
+        chip = predict._projection_for_window(store, "five_hour", used, reset, now, "s")
+        assert chip == predict.DEBUG_PLACEHOLDER
+    # first tick past MIN_ELAPSED: seeds fresh from raw, well above the bogus
+    # ~14% an EMA-from-zero would have produced.
+    now = reset - L + 12 * 60
+    chip = predict._projection_for_window(store, "five_hour", 3.0, reset, now, "s")
+    val = float(chip.lstrip("→").rstrip("%"))
+    assert val > 30.0, f"projection {chip} still lagging — EMA seeded from zero"
