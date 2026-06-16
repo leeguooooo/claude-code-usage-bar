@@ -19,9 +19,12 @@ DEFAULT_CRITICAL_THRESHOLD = 70.0
 # is the red line and near-cap is the warning. These are distinct from the
 # configurable comfort thresholds above, which still drive the current-usage
 # fallback (before a projection exists) and non-projected gauges like the
-# context window.
-PROJECTION_WARNING_THRESHOLD = 80.0
-PROJECTION_CRITICAL_THRESHOLD = 100.0
+# context window. Red starts well below the cap on purpose: a projection of
+# 85%+ means you're essentially going to run the window out (the chip clamps at
+# 100, so "→99%" sits there for ages on the slow 7d window — it should read as
+# alarming, not merely warm).
+PROJECTION_WARNING_THRESHOLD = 70.0
+PROJECTION_CRITICAL_THRESHOLD = 85.0
 
 
 def _fg(rgb): return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
@@ -367,16 +370,19 @@ def _forecast_color(chip: str, theme):
 
 
 def _projection_color(chip: str, theme):
-    """`→NN%` end-of-window projection: hot ≥100%, warn ≥80%, else muted.
+    """`→NN%` end-of-window projection chip: hot ≥85%, warn ≥70%, else muted —
+    the same red/yellow lines the window bar uses (window_severity_rgb), so the
+    chip and the bar it sits next to never disagree. Below the warn line the
+    chip stays muted (an unalarming projection), where the bar goes green.
     `→--` (not computable yet) is muted."""
     body = chip.lstrip("→").rstrip("%")
     try:
         v = int(body)
     except ValueError:
         return _fg(theme.mute)
-    if v >= 100:
+    if v >= PROJECTION_CRITICAL_THRESHOLD:
         return _fg(theme.s_hot)
-    if v >= 80:
+    if v >= PROJECTION_WARNING_THRESHOLD:
         return _fg(theme.s_warn)
     return _fg(theme.mute)
 

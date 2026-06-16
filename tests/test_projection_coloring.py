@@ -42,17 +42,25 @@ def test_projection_low_is_green_even_when_current_higher():
     assert window_severity_rgb(30, "→30%", THEME) == THEME.s_ok
 
 
-def test_projection_near_cap_is_warn():
-    # current only 24% but projected 96% → yellow.
-    assert window_severity_rgb(24, "→96%", THEME) == THEME.s_warn
+def test_projection_near_cap_is_hot():
+    # current only 24% but projected 96% (≥85) → red.
+    assert window_severity_rgb(24, "→96%", THEME) == THEME.s_hot
+
+
+def test_projection_at_crit_boundary_is_hot():
+    assert window_severity_rgb(5, "→85%", THEME) == THEME.s_hot
+
+
+def test_projection_just_below_crit_is_warn():
+    assert window_severity_rgb(5, "→84%", THEME) == THEME.s_warn
 
 
 def test_projection_at_warn_boundary_is_warn():
-    assert window_severity_rgb(5, "→80%", THEME) == THEME.s_warn
+    assert window_severity_rgb(5, "→70%", THEME) == THEME.s_warn
 
 
 def test_projection_just_below_warn_is_green():
-    assert window_severity_rgb(5, "→79%", THEME) == THEME.s_ok
+    assert window_severity_rgb(5, "→69%", THEME) == THEME.s_ok
 
 
 def test_projection_at_cap_is_hot():
@@ -60,9 +68,9 @@ def test_projection_at_cap_is_hot():
     assert window_severity_rgb(50, "→100%", THEME) == THEME.s_hot
 
 
-def test_projection_thresholds_are_80_100():
-    assert PROJECTION_WARNING_THRESHOLD == 80.0
-    assert PROJECTION_CRITICAL_THRESHOLD == 100.0
+def test_projection_thresholds_are_70_85():
+    assert PROJECTION_WARNING_THRESHOLD == 70.0
+    assert PROJECTION_CRITICAL_THRESHOLD == 85.0
 
 
 # ── fallback to current usage when no projection ────────────────────────────
@@ -104,12 +112,12 @@ def test_classic_bar_fill_length_tracks_current_not_projection():
     assert "96%░" not in line      # bar is NOT filled/labeled to the projection
 
 
-def test_classic_low_current_high_projection_uses_warn_color():
-    warn = f"\033[38;2;{THEME.s_warn[0]};{THEME.s_warn[1]};{THEME.s_warn[2]}m"
+def test_classic_low_current_high_projection_uses_hot_color():
+    hot = f"\033[38;2;{THEME.s_hot[0]};{THEME.s_hot[1]};{THEME.s_hot[2]}m"
     ok = f"\033[38;2;{THEME.s_ok[0]};{THEME.s_ok[1]};{THEME.s_ok[2]}m"
-    # current 24% → without projection it'd be green; →96% should make it warn.
+    # current 24% → without projection it'd be green; →96% (≥85) should make it red.
     line = _segments(None, projection_7d="→96%")
-    assert warn in line
+    assert hot in line
     # and a low-projection 5h stays green
     line2 = _segments(None, projection_5h="→10%", projection_7d="→10%")
     assert ok in line2
@@ -123,5 +131,5 @@ def test_all_three_styles_accept_projection_kwargs():
     )
     for style in ("classic", "capsule", "hairline"):
         out = render(style, **common)
-        warn = f"38;2;{THEME.s_warn[0]};{THEME.s_warn[1]};{THEME.s_warn[2]}m"
-        assert warn in out  # the →96% 7d window is yellow in every style
+        hot = f"38;2;{THEME.s_hot[0]};{THEME.s_hot[1]};{THEME.s_hot[2]}m"
+        assert hot in out  # the →96% 7d window is red in every style

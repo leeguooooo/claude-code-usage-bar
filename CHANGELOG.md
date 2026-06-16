@@ -9,6 +9,19 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.14.1 — 2026-06-16
+
+### Changed
+- **Projection coloring red line lowered to 85% (yellow now 70–84%, green
+  below 70%).** A 7d window projecting `→99%` was showing yellow because red
+  only started at the cap (100%) — but the `→NN%` chip is clamped to 100 and
+  the slow 7d window can sit at 99% for a long time, so "basically going to run
+  out" was reading as merely warm. Red now starts at 85%, where a projection is
+  effectively a sure exhaustion. The `→NN%` chip itself now uses the same
+  red/yellow lines as the bar so they never disagree.
+
+---
+
 ## v3.14.0 — 2026-06-16
 
 ### Changed
