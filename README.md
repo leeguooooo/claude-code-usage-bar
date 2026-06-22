@@ -12,6 +12,8 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s
 ```
 
+> 📖 **Deep dive:** [Is that `cache 4m23s` line actually accurate? — how the prompt-cache countdown is computed](https://blog.leeguoo.com/en/posts/claude-statusbar-cache-countdown/)
+
 ![claude-statusbar live demo](docs/images/hero.gif)
 
 3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. Just run `pip install claude-statusbar && cs --setup` and restart Claude Code.
