@@ -467,8 +467,11 @@ def parse_stdin_data() -> Dict[str, Any]:
         result['_has_stdin'] = True
 
         # Only cache stdin when it contains rate_limits (avoid overwriting with empty data).
-        # Atomic write — Ctrl+C must not corrupt the cache.
-        if data.get('rate_limits', {}).get('five_hour'):
+        # Skip when the environment is a relay/cloud backend: a relay that happens
+        # to forward a five_hour object would otherwise get cached as official-looking
+        # quota and later suppress no-quota detection. Atomic write — Ctrl+C must
+        # not corrupt the cache.
+        if data.get('rate_limits', {}).get('five_hour') and not is_no_quota_mode(os.environ):
             from .cache import atomic_write_text
             atomic_write_text(debug_file, raw)
 
@@ -625,6 +628,36 @@ def parse_stdin_data() -> Dict[str, Any]:
 
 
 _OFFICIAL_API_HOST = "api.anthropic.com"
+# Claude Code began emitting official rate_limits around this version. Below it,
+# an official subscription session legitimately has no rate_limits — so the
+# no-quota heuristic must NOT fire there (it would misread an old-client official
+# user as a relay). See _claude_emits_rate_limits / _no_quota_heuristic.
+_RATE_LIMITS_MIN_VERSION = (2, 1, 80)
+
+
+def _env_truthy(value) -> bool:
+    """True for the usual truthy env spellings (handles '1\\n', 'true', ' ON ')."""
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "y", "t"}
+
+
+def _leading_int(token: str) -> int:
+    digits = ""
+    for ch in str(token):
+        if ch.isdigit():
+            digits += ch
+        else:
+            break
+    return int(digits) if digits else 0
+
+
+def _claude_emits_rate_limits(version) -> bool:
+    """True when `version` (Claude Code's reported version) is new enough to emit
+    official rate_limits. Tolerates suffixes ('2.1.80-beta') and junk (→ False)."""
+    if not version:
+        return False
+    parts = tuple(_leading_int(p) for p in str(version).split(".")[:3])
+    parts = parts + (0,) * (3 - len(parts))
+    return parts >= _RATE_LIMITS_MIN_VERSION
 
 
 def is_no_quota_mode(env: Dict[str, str], *, override: str = "auto") -> bool:
@@ -649,24 +682,27 @@ def is_no_quota_mode(env: Dict[str, str], *, override: str = "auto") -> bool:
     base = (env.get("ANTHROPIC_BASE_URL") or "").strip()
     if base:
         from urllib.parse import urlparse
-        host = (urlparse(base).hostname or "").lower()
-        # No scheme → hostname parse fails; fall back to substring check so a
-        # bare "relay.example.com" still counts as a relay rather than slipping
-        # through as official.
-        is_official = host == _OFFICIAL_API_HOST if host else (_OFFICIAL_API_HOST in base)
-        if not is_official:
+        # Add a "//" authority prefix when there's no scheme, so urlparse pulls
+        # the host out instead of treating the whole value as a path. Then compare
+        # the parsed host EXACTLY (case-insensitive, trailing dot stripped) — a
+        # raw substring check misreads "API.ANTHROPIC.COM" and lets look-alikes
+        # like "notapi.anthropic.com.evil" pass as official.
+        parsed = urlparse(base if "//" in base else "//" + base)
+        host = (parsed.hostname or "").strip().rstrip(".").lower()
+        if host != _OFFICIAL_API_HOST:
             return True
 
-    if env.get("CLAUDE_CODE_USE_BEDROCK") == "1":
+    if _env_truthy(env.get("CLAUDE_CODE_USE_BEDROCK")):
         return True
-    if env.get("CLAUDE_CODE_USE_VERTEX") == "1":
+    if _env_truthy(env.get("CLAUDE_CODE_USE_VERTEX")):
         return True
 
     return False
 
 
 def _no_quota_heuristic(stdin_data: Dict[str, Any], *,
-                        transcript_has_assistant: bool) -> bool:
+                        transcript_has_assistant: bool,
+                        claude_version_ok: bool = True) -> bool:
     """Fallback no-quota detection for when the env signal is absent.
 
     Insurance for the case where ``ANTHROPIC_BASE_URL`` is set but not inherited
@@ -676,10 +712,15 @@ def _no_quota_heuristic(stdin_data: Dict[str, Any], *,
     quota (live or cached). If a response exists yet quota is still entirely
     absent, the headers are being stripped by a relay → no-quota mode.
 
-    Only fires when there's already an assistant turn, so a brand-new session
-    (no response yet, quota legitimately not pushed) is never misclassified.
-    Callers gate this on api_mode != 'off' and a prior env-detection miss.
+    ``claude_version_ok`` gates this on a Claude Code version that actually emits
+    rate_limits: on an OLD client an official subscription legitimately has no
+    rate_limits, and must NOT be misread as a relay — it keeps the existing
+    waiting/old-client layout instead. Only fires when there's also already an
+    assistant turn, so a brand-new session is never misclassified. Callers gate
+    on api_mode != 'off' and a prior env-detection miss.
     """
+    if not claude_version_ok:
+        return False
     if not stdin_data.get('_has_stdin'):
         return False
     if stdin_data.get('rate_limit_pct') is not None:
@@ -1274,6 +1315,8 @@ def main(json_output: bool = False,
             stdin_data,
             transcript_has_assistant=_transcript_has_assistant(
                 stdin_data.get('transcript_path', '')),
+            claude_version_ok=_claude_emits_rate_limits(
+                stdin_data.get('claude_version')),
         )
     if no_quota:
         stdin_data['rate_limit_pct'] = None

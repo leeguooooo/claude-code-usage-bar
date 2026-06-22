@@ -83,11 +83,15 @@ def test_cs_api_mode_off_overrides_relay_env(tmp_path, monkeypatch, capsys):
     assert "ctx[" not in out
 
 
-def _payload_no_quota_with_transcript(tp):
-    """No rate_limits at all (relay stripped them), but a real transcript path."""
+def _payload_no_quota_with_transcript(tp, version="2.1.90"):
+    """No rate_limits at all (relay stripped them), but a real transcript path.
+    `version` is Claude Code's reported version — the heuristic only fires on a
+    version new enough to emit rate_limits (so an old-client official user isn't
+    misread as a relay)."""
     return json.dumps({
         "session_id": "nqh",
         "transcript_path": tp,
+        "version": version,
         "model": {"id": "o", "display_name": "Opus 4.8"},
         "context_window": {"used_percentage": 35, "context_window_size": 1000000,
                            "total_input_tokens": 350000},
@@ -123,5 +127,22 @@ def test_heuristic_silent_with_empty_transcript(tmp_path, monkeypatch, capsys):
     tp.write_text(json.dumps({"type": "user", "timestamp": "2999-01-01T00:00:00Z"}) + "\n",
                   encoding="utf-8")
     _run(tmp_path, monkeypatch, _payload_no_quota_with_transcript(str(tp)))
+    out = capsys.readouterr().out
+    assert "ctx[" not in out
+
+
+def test_heuristic_silent_on_old_claude_version(tmp_path, monkeypatch, capsys):
+    """Old Claude Code (no rate_limits emitted) + official subscription must NOT
+    be misread as a relay by the heuristic — keep the existing layout."""
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("CS_API_MODE", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_USE_BEDROCK", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_USE_VERTEX", raising=False)
+    tp = tmp_path / "t.jsonl"
+    tp.write_text(json.dumps({
+        "type": "assistant", "timestamp": "2999-01-01T00:00:00.000Z",
+        "message": {"usage": {"input_tokens": 10, "output_tokens": 5}},
+    }) + "\n", encoding="utf-8")
+    _run(tmp_path, monkeypatch, _payload_no_quota_with_transcript(str(tp), version="2.1.50"))
     out = capsys.readouterr().out
     assert "ctx[" not in out

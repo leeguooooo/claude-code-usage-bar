@@ -80,3 +80,48 @@ def test_heuristic_silent_when_quota_present():
 def test_heuristic_silent_without_stdin():
     data = {"rate_limit_pct": None, "rate_limit_7d_pct": None}
     assert core._no_quota_heuristic(data, transcript_has_assistant=True) is False
+
+
+# --- review fixes (codex b167d4d review) ---
+
+def test_host_parse_uppercase_no_scheme_is_official():
+    """API.ANTHROPIC.COM:443 (no scheme, uppercase) is the official host."""
+    assert core.is_no_quota_mode({"ANTHROPIC_BASE_URL": "API.ANTHROPIC.COM:443"}) is False
+    assert core.is_no_quota_mode({"ANTHROPIC_BASE_URL": "api.anthropic.com:443"}) is False
+
+
+def test_host_parse_lookalike_is_relay():
+    """A look-alike host that merely contains the official string is a relay."""
+    assert core.is_no_quota_mode({"ANTHROPIC_BASE_URL": "notapi.anthropic.com.evil"}) is True
+    assert core.is_no_quota_mode({"ANTHROPIC_BASE_URL": "api.anthropic.com.evil.com"}) is True
+
+
+def test_bedrock_vertex_value_normalization():
+    """Accept the usual truthy spellings, not just exact '1'."""
+    assert core.is_no_quota_mode({"CLAUDE_CODE_USE_BEDROCK": "1\n"}) is True
+    assert core.is_no_quota_mode({"CLAUDE_CODE_USE_BEDROCK": "true"}) is True
+    assert core.is_no_quota_mode({"CLAUDE_CODE_USE_VERTEX": " ON "}) is True
+    assert core.is_no_quota_mode({"CLAUDE_CODE_USE_BEDROCK": "0"}) is False
+    assert core.is_no_quota_mode({"CLAUDE_CODE_USE_BEDROCK": "false"}) is False
+
+
+def test_claude_emits_rate_limits_version_gate():
+    assert core._claude_emits_rate_limits("2.1.80") is True
+    assert core._claude_emits_rate_limits("2.1.90") is True
+    assert core._claude_emits_rate_limits("2.2.0") is True
+    assert core._claude_emits_rate_limits("3.0.0") is True
+    assert core._claude_emits_rate_limits("2.1.79") is False
+    assert core._claude_emits_rate_limits("2.0.0") is False
+    assert core._claude_emits_rate_limits("") is False
+    assert core._claude_emits_rate_limits(None) is False
+    assert core._claude_emits_rate_limits("garbage") is False
+
+
+def test_heuristic_gated_by_version():
+    """Old Claude Code never emits rate_limits — an official user on it must NOT
+    be misread as no-quota. Heuristic only fires on a version that DOES emit."""
+    data = {"_has_stdin": True, "rate_limit_pct": None, "rate_limit_7d_pct": None}
+    assert core._no_quota_heuristic(data, transcript_has_assistant=True,
+                                    claude_version_ok=False) is False
+    assert core._no_quota_heuristic(data, transcript_has_assistant=True,
+                                    claude_version_ok=True) is True
