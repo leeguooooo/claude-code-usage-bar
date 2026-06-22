@@ -9,6 +9,27 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.15.0 — 2026-06-22
+
+### Added
+- **No-quota mode for third-party relays / Bedrock / Vertex.** When Claude Code
+  points at a relay (`ANTHROPIC_BASE_URL` ≠ `api.anthropic.com`) or a cloud
+  backend (`CLAUDE_CODE_USE_BEDROCK` / `CLAUDE_CODE_USE_VERTEX`), Anthropic's
+  official 5h/7d quota doesn't exist — so the bar now drops the two quota
+  battery bars and **promotes the context window to its own `ctx[…]` battery
+  bar** (green→yellow→red on 70/85% used), keeping the model name, prompt-cache
+  countdown, and live-activity tail. Previously the bar showed empty quota bars
+  or, worse, back-filled a previous official session's cached quota as fake
+  current numbers. Implemented for all three styles (classic / capsule /
+  hairline); inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud).
+- Detection is automatic (`api_mode = auto`, the default), with a transcript
+  heuristic (gated on a Claude Code version that emits rate_limits, so old-client
+  official users aren't misread) as a fallback when the env var doesn't reach the
+  statusLine subprocess. Force with `cs config set api_mode on` or `CS_API_MODE=on`;
+  disable with `api_mode off`. Works under both the inline and daemon render paths.
+
+---
+
 ## v3.14.1 — 2026-06-16
 
 ### Changed
