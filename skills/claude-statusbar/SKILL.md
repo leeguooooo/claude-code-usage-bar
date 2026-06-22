@@ -38,6 +38,26 @@ give a short confirmation (one line, no lecture).
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |
 | Auto-collapse to hairline below width | `cs config set auto_compact_width <px>` |
+| Force / disable no-quota (API) mode | `cs config set api_mode <auto\|on\|off>` |
+
+## No-quota mode (third-party relay / Bedrock / Vertex)
+
+When Claude Code points at a third-party relay (`ANTHROPIC_BASE_URL` ≠
+`api.anthropic.com`) or a cloud backend (`CLAUDE_CODE_USE_BEDROCK` /
+`CLAUDE_CODE_USE_VERTEX`), the official 5h/7d quota doesn't exist. cs detects
+this and switches to a **no-quota layout**: the two quota battery bars are
+dropped and the **context window is promoted to its own `ctx[…]` battery bar**
+(green→yellow→red on 70/85% used), followed by the model name + the usual
+live-activity tail. This mirrors claude-hud's behavior and is what to reach for
+when a user says "用 API 就没状态了 / 连上下文都没了".
+
+- Detection is automatic (`api_mode = auto`, the default). A transcript-based
+  heuristic also catches relays whose env var didn't reach the statusLine
+  subprocess (an assistant turn exists yet quota never arrived → no-quota).
+- Force it on a setup where auto-detect misses: `cs config set api_mode on`
+  (or per-shell `CS_API_MODE=on`). Force the official layout back with
+  `api_mode off`. `CS_API_MODE` env wins over the saved config.
+- Works under both the inline and fast-mode (daemon) render paths.
 
 ## Per-severity color overrides (v3.4.1+)
 

@@ -122,6 +122,7 @@ def render_capsule(
     ctx_pct: Optional[float] = None,
     projection_5h: str = "",
     projection_7d: str = "",
+    no_quota: bool = False,
     **_ignored,
 ) -> str:
     from .progress import window_severity_rgb
@@ -150,20 +151,36 @@ def render_capsule(
 
     parts = []
 
-    five_body = (
-        f"{BOLD}◷ 5H{RESET}{INK}{_bg(theme.pill_5h)} {pct_text(msgs_pct)} "
-        f"· {reset_5h}{sev_dot(msgs_pct, projection_5h)}{INK}{_bg(theme.pill_5h)}"
-    )
-    parts.append(pill(theme.pill_5h, five_body))
-
-    if show_weekly:
-        week_body = (
-            f"{BOLD}☷ 7D{RESET}{INK}{_bg(theme.pill_7d)} {pct_text(weekly_pct)} "
-            f"· {reset_7d or '--'}{sev_dot(weekly_pct, projection_7d)}{INK}{_bg(theme.pill_7d)}"
+    if no_quota:
+        # No official quota: a single CTX pill replaces the 5H/7D pills,
+        # colored on context thresholds (claude-hud's 70/85), not the comfort band.
+        from .progress import (CONTEXT_WARNING_THRESHOLD as _CW,
+                               CONTEXT_CRITICAL_THRESHOLD as _CC)
+        ctx_rgb = _severity_color(theme, ctx_pct, _CW, _CC)
+        ctx_dot = f" {_fg(ctx_rgb)}●{RESET}" if ctx_pct is not None else ""
+        ctx_body = (
+            f"{BOLD}⛁ CTX{RESET}{INK}{_bg(theme.pill_5h)} {pct_text(ctx_pct)}"
+            f"{ctx_dot}{INK}{_bg(theme.pill_5h)}"
         )
-        parts.append(pill(theme.pill_7d, week_body))
+        parts.append(pill(theme.pill_5h, ctx_body))
+    else:
+        five_body = (
+            f"{BOLD}◷ 5H{RESET}{INK}{_bg(theme.pill_5h)} {pct_text(msgs_pct)} "
+            f"· {reset_5h}{sev_dot(msgs_pct, projection_5h)}{INK}{_bg(theme.pill_5h)}"
+        )
+        parts.append(pill(theme.pill_5h, five_body))
 
-    model_body = f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}{sev_dot(ctx_pct)}{INK}{_bg(theme.pill_model)}"
+        if show_weekly:
+            week_body = (
+                f"{BOLD}☷ 7D{RESET}{INK}{_bg(theme.pill_7d)} {pct_text(weekly_pct)} "
+                f"· {reset_7d or '--'}{sev_dot(weekly_pct, projection_7d)}{INK}{_bg(theme.pill_7d)}"
+            )
+            parts.append(pill(theme.pill_7d, week_body))
+
+    # In no_quota mode the CTX pill already carries the context severity, so the
+    # model pill stays neutral (no second ctx dot).
+    model_sev = "" if no_quota else sev_dot(ctx_pct)
+    model_body = f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}{model_sev}{INK}{_bg(theme.pill_model)}"
     parts.append(pill(theme.pill_model, model_body))
 
     if cost_text:
@@ -199,6 +216,7 @@ def render_hairline(
     ctx_pct: Optional[float] = None,
     projection_5h: str = "",
     projection_7d: str = "",
+    no_quota: bool = False,
     **_ignored,
 ) -> str:
     from .progress import window_severity_rgb
@@ -207,7 +225,7 @@ def render_hairline(
     MUTE = _fg(theme.mute)
     EDGE = _fg(theme.edge)
 
-    def mini3(p, chip=""):
+    def mini3(p, chip="", warn=None, crit=None):
         if p is None:
             return f"{MUTE}···{RESET}"
         cells = []
@@ -219,7 +237,8 @@ def render_hairline(
             else:                             cells.append("▁")
         # Cells still reflect current usage; only the color follows projection.
         rgb = window_severity_rgb(p, chip, theme,
-                                  warning_threshold, critical_threshold)
+                                  warn if warn is not None else warning_threshold,
+                                  crit if crit is not None else critical_threshold)
         col = rgb if rgb is not None else theme.mute
         return f"{_fg(col)}{''.join(cells)}{RESET}"
 
@@ -230,17 +249,28 @@ def render_hairline(
     sep = f"{sep_pad}{EDGE}┊{RESET}{sep_pad}"
     parts = []
 
-    parts.append(
-        f"{MUTE}› 5h{RESET} {mini3(msgs_pct, projection_5h)} {INK}{pct_text(msgs_pct)}{RESET} "
-        f"{MUTE}↺ {reset_5h}{RESET}"
-    )
-    if show_weekly:
+    if no_quota:
+        # No official quota: a single ctx mini-bar replaces the 5h/7d segments,
+        # colored on context thresholds (claude-hud's 70/85).
+        from .progress import (CONTEXT_WARNING_THRESHOLD as _CW,
+                               CONTEXT_CRITICAL_THRESHOLD as _CC)
         parts.append(
-            f"{MUTE}› 7d{RESET} {mini3(weekly_pct, projection_7d)} {INK}{pct_text(weekly_pct)}{RESET} "
-            f"{MUTE}↺ {reset_7d or '--'}{RESET}"
+            f"{MUTE}› ctx{RESET} {mini3(ctx_pct, warn=_CW, crit=_CC)} "
+            f"{INK}{pct_text(ctx_pct)}{RESET}"
         )
-    # Model line — colored by ctx_pct severity, neutral ink when absent
-    if ctx_pct is None:
+    else:
+        parts.append(
+            f"{MUTE}› 5h{RESET} {mini3(msgs_pct, projection_5h)} {INK}{pct_text(msgs_pct)}{RESET} "
+            f"{MUTE}↺ {reset_5h}{RESET}"
+        )
+        if show_weekly:
+            parts.append(
+                f"{MUTE}› 7d{RESET} {mini3(weekly_pct, projection_7d)} {INK}{pct_text(weekly_pct)}{RESET} "
+                f"{MUTE}↺ {reset_7d or '--'}{RESET}"
+            )
+    # Model line — colored by ctx_pct severity, neutral ink when absent. In
+    # no_quota mode the ctx mini-bar already carries severity, so stay neutral.
+    if ctx_pct is None or no_quota:
         model_color = INK
     else:
         col = _severity_color(theme, ctx_pct, warning_threshold, critical_threshold)
@@ -281,6 +311,7 @@ def render_classic(
     projection_7d: str = "",
     forecast_5h: str = "",
     forecast_7d: str = "",
+    no_quota: bool = False,
     **_ignored,
 ) -> str:
     from .progress import format_status_line, _fg, colorize, RESET
@@ -306,6 +337,7 @@ def render_classic(
         projection_7d=projection_7d,
         forecast_5h=forecast_5h,
         forecast_7d=forecast_7d,
+        no_quota=no_quota,
     )
     if cache_age_text:
         # Three-level severity: COLD red, <1m yellow, otherwise green.

@@ -26,6 +26,13 @@ DEFAULT_CRITICAL_THRESHOLD = 70.0
 PROJECTION_WARNING_THRESHOLD = 70.0
 PROJECTION_CRITICAL_THRESHOLD = 85.0
 
+# Context-window bar (no-quota mode) uses claude-hud's thresholds — warn 70 /
+# crit 85 on used% — NOT the 5h/7d comfort band. Context filling toward
+# auto-compact is only concerning near the top, so 30% used must read calm
+# (green), not warning. Borrowed verbatim from claude-hud's getContextColor.
+CONTEXT_WARNING_THRESHOLD = 70.0
+CONTEXT_CRITICAL_THRESHOLD = 85.0
+
 
 def _fg(rgb): return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 def _bg(rgb): return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
@@ -451,12 +458,18 @@ def format_status_line(
     projection_7d: str = "",
     forecast_5h: str = "",
     forecast_7d: str = "",
+    no_quota: bool = False,
 ):
     """Build the complete classic-style status line.
 
     Each numeric segment colors itself: 5h by msgs_pct, 7d by weekly_pct,
     model by ctx_pct (None => neutral theme.ink). Separator and brackets
     use theme.mute. (used/size) parens muted, numbers stay severity.
+
+    When ``no_quota`` is True (third-party relay / Bedrock / Vertex — no official
+    5h/7d quota), the two quota bars are dropped and the context window is
+    promoted to its own ``ctx[…]`` battery bar instead (claude-hud-style),
+    followed by the model name. The activity tail is appended by styles.render.
     """
     theme = theme or get_theme("graphite")
     warning_threshold, critical_threshold = normalize_thresholds(
@@ -464,6 +477,35 @@ def format_status_line(
     )
     mute = _fg(theme.mute)
     ink = _fg(theme.ink)
+
+    if no_quota:
+        if ctx_pct is None:
+            ctx_fill_rgb = None
+            ctx_color = mute
+        else:
+            ctx_fill_rgb = (
+                theme.s_hot if ctx_pct >= CONTEXT_CRITICAL_THRESHOLD
+                else theme.s_warn if ctx_pct >= CONTEXT_WARNING_THRESHOLD
+                else theme.s_ok
+            )
+            ctx_color = _fg(ctx_fill_rgb)
+        dim_ctx = _build_dimension(
+            "ctx", ctx_pct, ctx_color, use_color,
+            CONTEXT_WARNING_THRESHOLD, CONTEXT_CRITICAL_THRESHOLD, theme,
+            shimmer_phase=shimmer_phase, fill_rgb=ctx_fill_rgb,
+        )
+        parts = [dim_ctx]
+        # Model carries neutral ink: the ctx bar already conveys severity, and
+        # the (used/size) suffix is dropped upstream since the bar IS the readout.
+        parts.append(_format_model(model, ink, mute, use_color))
+        if cost_text:
+            parts.append(colorize(f"$ {cost_text}", ink, use_color))
+        if lang_text:
+            parts.append(lang_text)
+        if bypass:
+            parts.append(colorize("⚠️BYPASS", _fg(theme.s_hot), use_color))
+        separator = colorize(" | ", mute, use_color)
+        return separator.join(parts)
 
     # 5h/7d severity follows the projection (where usage is HEADED), falling
     # back to current usage before a projection exists. The bar fill LENGTH and

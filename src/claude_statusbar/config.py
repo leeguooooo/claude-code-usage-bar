@@ -20,6 +20,7 @@ DEFAULT_THEME = "graphite"
 DEFAULT_DENSITY = "regular"   # cozy | regular | compact
 DEFAULT_AUTO_COMPACT_WIDTH = 0  # 0 = disabled; otherwise force hairline below this width
 DEFAULT_CACHE_TTL_SECONDS = 300  # 5min — Anthropic's base prompt cache TTL.
+DEFAULT_API_MODE = "auto"  # auto-detect relay/Bedrock/Vertex | on (force) | off (force official)
 # DEPRECATED: the cache countdown now auto-detects the real TTL (5m vs 1h)
 # from the transcript's message.usage.cache_creation buckets, which reflect
 # subscription/API-key auth, ENABLE_PROMPT_CACHING_1H, FORCE_PROMPT_CACHING_5M
@@ -68,6 +69,10 @@ class StatusbarConfig:
     # its reset timer. Separate from the warning chip above.
     show_projection: bool = True
     cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS  # deprecated; auto-detected now
+    # No-quota mode: drop the 5h/7d quota bars and promote context when official
+    # quota is unavailable (third-party relay via ANTHROPIC_BASE_URL, Bedrock,
+    # Vertex). "auto" detects from the environment; "on"/"off" force it.
+    api_mode: str = DEFAULT_API_MODE
     warning_threshold: Optional[float] = None
     critical_threshold: Optional[float] = None
     # Per-severity color overrides — hex like "#4ec85b". None means "use the
@@ -119,6 +124,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         show_forecast=_to_bool(raw.get("show_forecast", True)),
         show_projection=_to_bool(raw.get("show_projection", True)),
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", DEFAULT_CACHE_TTL_SECONDS) or DEFAULT_CACHE_TTL_SECONDS),
+        api_mode=str(raw.get("api_mode", DEFAULT_API_MODE)),
         warning_threshold=raw.get("warning_threshold"),
         critical_threshold=raw.get("critical_threshold"),
         color_ok=raw.get("color_ok") or None,
@@ -142,10 +148,11 @@ VALID_KEYS = {
     "show_duration", "show_lines", "show_ahead_behind", "show_version",
     "bar_shimmer", "show_forecast", "show_projection",
     "show_mode", "mode_gradient",
-    "cache_ttl_seconds",
+    "cache_ttl_seconds", "api_mode",
     "warning_threshold", "critical_threshold",
     "color_ok", "color_warn", "color_hot",
 }
+_VALID_API_MODE = {"auto", "on", "off"}
 _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_cache_age",
               "show_project_branch",
               "show_todos", "show_tools", "show_tool_rollup", "show_agents",
@@ -212,6 +219,10 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
         if value not in _VALID_DENSITY:
             raise ValueError(f"density must be one of {sorted(_VALID_DENSITY)}, got {value!r}")
         setattr(cfg, key, value)
+    elif key == "api_mode":
+        if value not in _VALID_API_MODE:
+            raise ValueError(f"api_mode must be one of {sorted(_VALID_API_MODE)}, got {value!r}")
+        setattr(cfg, key, value)
     elif key == "style":
         # Lazy import to avoid a config↔styles cycle at module load.
         from .styles import list_styles
@@ -245,6 +256,16 @@ def resolve_style(cli_value: Optional[str], cfg: StatusbarConfig) -> str:
     if env:
         return env
     return cfg.style
+
+
+def resolve_api_mode(cfg: StatusbarConfig) -> str:
+    """Effective api_mode: CS_API_MODE env wins over the saved config, so a relay
+    user can force the layout per-shell without editing config. Unknown values
+    fall through to detection (is_no_quota_mode treats non on/off as auto)."""
+    env = os.environ.get("CS_API_MODE")
+    if env:
+        return env.strip().lower()
+    return cfg.api_mode
 
 
 def resolve_theme(cli_value: Optional[str], cfg: StatusbarConfig) -> str:
