@@ -467,8 +467,11 @@ def parse_stdin_data() -> Dict[str, Any]:
         result['_has_stdin'] = True
 
         # Only cache stdin when it contains rate_limits (avoid overwriting with empty data).
-        # Atomic write — Ctrl+C must not corrupt the cache.
-        if data.get('rate_limits', {}).get('five_hour'):
+        # Skip when the environment is a relay/cloud backend: a relay that happens
+        # to forward a five_hour object would otherwise get cached as official-looking
+        # quota and later suppress no-quota detection. Atomic write — Ctrl+C must
+        # not corrupt the cache.
+        if data.get('rate_limits', {}).get('five_hour') and not is_no_quota_mode(os.environ):
             from .cache import atomic_write_text
             atomic_write_text(debug_file, raw)
 
@@ -622,6 +625,123 @@ def parse_stdin_data() -> Dict[str, Any]:
         # still renders with whatever we managed to extract.
         pass
     return result
+
+
+_OFFICIAL_API_HOST = "api.anthropic.com"
+# Claude Code began emitting official rate_limits around this version. Below it,
+# an official subscription session legitimately has no rate_limits — so the
+# no-quota heuristic must NOT fire there (it would misread an old-client official
+# user as a relay). See _claude_emits_rate_limits / _no_quota_heuristic.
+_RATE_LIMITS_MIN_VERSION = (2, 1, 80)
+
+
+def _env_truthy(value) -> bool:
+    """True for the usual truthy env spellings (handles '1\\n', 'true', ' ON ')."""
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "y", "t"}
+
+
+def _leading_int(token: str) -> int:
+    digits = ""
+    for ch in str(token):
+        if ch.isdigit():
+            digits += ch
+        else:
+            break
+    return int(digits) if digits else 0
+
+
+def _claude_emits_rate_limits(version) -> bool:
+    """True when `version` (Claude Code's reported version) is new enough to emit
+    official rate_limits. Tolerates suffixes ('2.1.80-beta') and junk (→ False)."""
+    if not version:
+        return False
+    parts = tuple(_leading_int(p) for p in str(version).split(".")[:3])
+    parts = parts + (0,) * (3 - len(parts))
+    return parts >= _RATE_LIMITS_MIN_VERSION
+
+
+def is_no_quota_mode(env: Dict[str, str], *, override: str = "auto") -> bool:
+    """Return True when official 5h/7d rate-limit quota is structurally absent.
+
+    Triggered by third-party relays (``ANTHROPIC_BASE_URL`` pointing off
+    ``api.anthropic.com``) and cloud backends (Bedrock / Vertex), mirroring
+    claude-hud's ``shouldHideUsage``. In that case the bar drops the quota
+    battery bars and promotes the context window instead.
+
+    Pure function of the process environment plus an explicit override
+    (``auto`` / ``on`` / ``off``) so it stays trivially testable. The env
+    signal is stable from session start, so it never false-positives the
+    "session just started, quota not pushed yet" case the way a bare
+    "no rate_limits" check would.
+    """
+    if override == "on":
+        return True
+    if override == "off":
+        return False
+
+    base = (env.get("ANTHROPIC_BASE_URL") or "").strip()
+    if base:
+        from urllib.parse import urlparse
+        # Add a "//" authority prefix when there's no scheme, so urlparse pulls
+        # the host out instead of treating the whole value as a path. Then compare
+        # the parsed host EXACTLY (case-insensitive, trailing dot stripped) — a
+        # raw substring check misreads "API.ANTHROPIC.COM" and lets look-alikes
+        # like "notapi.anthropic.com.evil" pass as official.
+        parsed = urlparse(base if "//" in base else "//" + base)
+        host = (parsed.hostname or "").strip().rstrip(".").lower()
+        if host != _OFFICIAL_API_HOST:
+            return True
+
+    if _env_truthy(env.get("CLAUDE_CODE_USE_BEDROCK")):
+        return True
+    if _env_truthy(env.get("CLAUDE_CODE_USE_VERTEX")):
+        return True
+
+    return False
+
+
+def _no_quota_heuristic(stdin_data: Dict[str, Any], *,
+                        transcript_has_assistant: bool,
+                        claude_version_ok: bool = True) -> bool:
+    """Fallback no-quota detection for when the env signal is absent.
+
+    Insurance for the case where ``ANTHROPIC_BASE_URL`` is set but not inherited
+    by the statusLine subprocess. An official session gets ``rate_limits`` in
+    stdin the moment it has made an API call, and cs caches it — so once an
+    assistant response exists in the transcript, an official session would have
+    quota (live or cached). If a response exists yet quota is still entirely
+    absent, the headers are being stripped by a relay → no-quota mode.
+
+    ``claude_version_ok`` gates this on a Claude Code version that actually emits
+    rate_limits: on an OLD client an official subscription legitimately has no
+    rate_limits, and must NOT be misread as a relay — it keeps the existing
+    waiting/old-client layout instead. Only fires when there's also already an
+    assistant turn, so a brand-new session is never misclassified. Callers gate
+    on api_mode != 'off' and a prior env-detection miss.
+    """
+    if not claude_version_ok:
+        return False
+    if not stdin_data.get('_has_stdin'):
+        return False
+    if stdin_data.get('rate_limit_pct') is not None:
+        return False
+    if stdin_data.get('rate_limit_7d_pct') is not None:
+        return False
+    return transcript_has_assistant
+
+
+def _transcript_has_assistant(transcript_path: str) -> bool:
+    """True when the transcript carries at least one assistant response.
+
+    Reuses ``_last_assistant_info`` (a bounded tail scan, already used for the
+    prompt-cache countdown), which returns None when no assistant entry exists.
+    """
+    if not transcript_path:
+        return False
+    try:
+        return _last_assistant_info(transcript_path) is not None
+    except Exception:
+        return False
 
 
 def is_bypass_permissions_active() -> bool:
@@ -1175,6 +1295,33 @@ def main(json_output: bool = False,
             pass
 
     stdin_data = parse_stdin_data()
+
+    # No-quota mode (third-party relay / Bedrock / Vertex): official 5h/7d quota
+    # is structurally unavailable. Suppress any cached quota that parse_stdin_data
+    # may have backfilled — it belongs to a previous official session/account, not
+    # this relay session — so has_official stays False and the no-quota layout
+    # (context bar + activity) owns the render instead of leaking stale numbers.
+    _api_mode = _cfg.resolve_api_mode(cfg)
+    no_quota = is_no_quota_mode(os.environ, override=_api_mode)
+    # Heuristic fallback only when the env signal missed (and not force-disabled):
+    # an assistant turn exists yet no quota ever arrived → relay stripping headers.
+    # Gated tightly (no live/cached quota) so the tail scan only runs when unsure;
+    # official users keep their cached quota and skip both the scan and the switch.
+    if (not no_quota and _api_mode != 'off'
+            and stdin_data.get('_has_stdin')
+            and stdin_data.get('rate_limit_pct') is None
+            and stdin_data.get('rate_limit_7d_pct') is None):
+        no_quota = _no_quota_heuristic(
+            stdin_data,
+            transcript_has_assistant=_transcript_has_assistant(
+                stdin_data.get('transcript_path', '')),
+            claude_version_ok=_claude_emits_rate_limits(
+                stdin_data.get('claude_version')),
+        )
+    if no_quota:
+        stdin_data['rate_limit_pct'] = None
+        stdin_data['rate_limit_7d_pct'] = None
+
     if cfg.show_language:
         from .progress import format_language_body
         lang_body = format_language_body(
@@ -1298,7 +1445,45 @@ def main(json_output: bool = False,
         model_id, display_name = get_current_model(stdin_data)
         bypass = is_bypass_permissions_active()
 
-        if has_official:
+        if no_quota and stdin_data.get('_has_stdin'):
+            # 🔌 No-quota mode: third-party relay / Bedrock / Vertex. No official
+            # 5h/7d quota exists, so drop the quota bars and promote the context
+            # window to its own battery bar, mirroring claude-hud. Activity tail
+            # (todos/tools/agents) is appended by the style renderer as usual.
+            ctx_pct, ctx_size, ctx_used = _context_window_usage(stdin_data)
+            model = display_name if display_name != 'Unknown' else model_id
+            # Drop the redundant "(1M context)" suffix — the ctx bar IS the
+            # context readout now, so we don't also append "(used/size)".
+            import re as _re
+            model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
+
+            if json_output:
+                print(json.dumps({
+                    "success": True, "source": "no_quota",
+                    "context": {"used_percentage": ctx_pct,
+                                "context_window_size": ctx_size,
+                                "used_tokens": ctx_used},
+                    "meta": {"model": model_id, "display_name": display_name,
+                             "bypass": bypass},
+                }))
+            else:
+                print(_render_style(
+                    chosen_style,
+                    msgs_pct=None, weekly_pct=None,
+                    reset_5h="--", reset_7d="",
+                    model=model, lang_body=lang_body, cost_text=cost_text,
+                    bypass=bypass, cache_age_text=cache_age_text,
+                    use_color=use_color, theme=chosen_theme,
+                    warning_threshold=warning_threshold,
+                    critical_threshold=critical_threshold,
+                    density=cfg.density, show_weekly=cfg.show_weekly,
+                    ctx_pct=ctx_pct,
+                    shimmer_phase=shimmer_phase,
+                    no_quota=True,
+                    **identity_kwargs, **mode_kwargs,
+                    **activity_kwargs,
+                ))
+        elif has_official:
             # ✅ Official data from Anthropic API headers (Claude Code ≥ v2.1.80)
             msgs_pct = stdin_data.get('rate_limit_pct')
             weekly_pct = stdin_data.get('rate_limit_7d_pct')

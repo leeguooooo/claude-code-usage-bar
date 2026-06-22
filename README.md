@@ -256,8 +256,21 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_version` | bool, default `true` | **Identity line:** a faint `· vX.Y.Z` at the very end (darkest grey + dim attribute, so it recedes). When a newer version is on PyPI, an amber `↑<newver>` is appended (`· v3.11.2 ↑3.12.0`) — read from a local cache the background update check writes, so the render path never hits the network. Disable with `cs config set show_version false`. |
 | `show_mode` | bool, default `true` | A dedicated **`⚙` session-mode line**: `⚙ effort:high · think:on · fast:off · style:default`, straight from Claude Code's stdin (effort level / thinking / fast mode / output style). Each field is dropped when absent. Disable with `cs config set show_mode false`. |
 | `mode_gradient` | bool, default `true` | Tint the mode line with a **static gradient keyed to the effort tier** — a soft, **desaturated** cool→purple ladder matching Claude Code's own Faster→Smarter slider (low/auto teal, medium azure, high blue, xhigh indigo, max violet, **ultracode** dusty magenta) — muted so it doesn't shout next to the rest of the bar, while the hue still tells the level. Static, not animated (an external statusLine refreshes at ≤1 Hz, so motion only flickers). `cs config set mode_gradient false` → plain per-tier text colours. |
+| `api_mode` | `auto` (default) / `on` / `off` | **No-quota mode** for third-party relays & cloud backends — see below. `auto` detects from the environment; `on`/`off` force it. Per-shell override: `CS_API_MODE` env var (wins over config). |
 
 Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
+
+## No-quota mode (third-party relay / Bedrock / Vertex)
+
+When Claude Code talks to a **third-party relay** (`ANTHROPIC_BASE_URL` pointed off `api.anthropic.com` — "中转 API") or a cloud backend (`CLAUDE_CODE_USE_BEDROCK` / `CLAUDE_CODE_USE_VERTEX`), Anthropic's official 5h/7d quota headers don't exist, so the two quota bars have nothing real to show. Instead of leaving them empty (or worse, leaking a previous official session's cached numbers), cs switches to a **no-quota layout**: the 5h/7d bars are dropped and the **context window is promoted to its own battery bar**, keeping the bar alive and focused on what *is* real on a relay.
+
+```
+classic    ctx[███35%░░░░] | Opus 4.8 | cache COLD
+capsule     ⛁ CTX 35% ●  ╱  ◆ Opus 4.8  ╱  cache 59m57s
+hairline   › ctx █▃▁ 35% ┊ › Opus 4.8 ┊ cache 59m57s
+```
+
+The context bar colors on **70% / 85% used** (green → yellow → red), and the model name, prompt-cache countdown, and live-activity tail render as usual. Detection is automatic (`api_mode = auto`); a transcript heuristic also catches relays whose env var didn't propagate to the statusLine subprocess. Force it where auto-detect misses with `cs config set api_mode on` (or `CS_API_MODE=on` per shell); force the official layout back with `api_mode off`. Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud)'s context-first display.
 
 Override per-invocation via `--style` / `--theme` flags or `CLAUDE_STATUSBAR_STYLE` / `CLAUDE_STATUSBAR_THEME` env vars.
 
@@ -340,6 +353,7 @@ cs config set show_version false  # hide the faint · vX.Y.Z (+ ↑update hint) 
 cs config set show_mode false    # hide the ⚙ effort/thinking/fast/style line
 cs config set mode_gradient false # mode line: plain per-tier colours, no gradient
 cs config set show_ahead_behind true  # ↑2↓1 on the project/branch line
+cs config set api_mode on        # force no-quota layout (relay/Bedrock/Vertex; default auto)
 cs config set bar_shimmer true  # experimental: twinkling starfield on the battery bars
 cs config set show_projection false  # hide the →NN% end-of-window projection
 cs config set show_forecast false    # hide the ⚠~eta at-risk warning chip
