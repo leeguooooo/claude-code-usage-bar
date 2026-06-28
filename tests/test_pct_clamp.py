@@ -67,6 +67,20 @@ def test_pct_preserves_over_100(monkeypatch, isolated_cache):
     assert out["rate_limit_pct"] == 110
 
 
+def test_pct_rejects_leaked_epoch(monkeypatch, isolated_cache):
+    """Known upstream leak: used_percentage can carry the reset epoch (~1.78e9).
+    An implausibly large magnitude must be rejected, not rendered as a MAX bar."""
+    _stdin_with({
+        "rate_limits": {
+            "five_hour": {"used_percentage": 1782630000, "resets_at": 9999999999},
+            "seven_day": {"used_percentage": 1783209600, "resets_at": 9999999999},
+        },
+    }, monkeypatch)
+    out = core.parse_stdin_data()
+    assert out["rate_limit_pct"] == 0
+    assert out["rate_limit_7d_pct"] == 0
+
+
 def test_pct_rounds_floating_point_drift(monkeypatch, isolated_cache):
     """Anthropic occasionally returns 56.00000000000001."""
     _stdin_with({

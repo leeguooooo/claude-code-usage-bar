@@ -29,6 +29,63 @@ def _get_logger():
         _logger.addHandler(logging.NullHandler())
     return _logger
 
+
+# Per-million-token (input, output) USD rates, model-aware. Cache-write is
+# billed at input*1.25 by Anthropic; we fold that in at the call site.
+# Rates kept current as of 2026-06 (mirrors Claude-Code-Usage-Monitor v4.0.0
+# #182/#217): Opus 4.5+ dropped to $5/$25 from the legacy $15/$75, so pricing
+# every model at flat Sonnet-3.5 rates over- or under-charges depending on the
+# model. Non-Anthropic models routed through a relay/router (gpt/deepseek/…)
+# are NOT priced as Claude — they report $0 instead of a fabricated cost that
+# would pollute the session cost and the P90 cost-limit derived from it.
+_PRICING = {
+    "opus-4.5+": (5.0, 25.0),     # opus 4.5 / 4.6 / 4.8 …
+    "opus-legacy": (15.0, 75.0),  # opus 3 / 4.0 / 4.1
+    "sonnet": (3.0, 15.0),        # sonnet 3.5 / 3.6 / 4 / 4.5 / 4.6 (≤200k)
+    "haiku-4.5": (1.0, 5.0),
+    "haiku-3.5": (0.8, 4.0),
+    "haiku-3": (0.25, 1.25),
+    "fable": (10.0, 50.0),
+    "unknown-claude": (3.0, 15.0),  # clearly-Claude but unmatched → sonnet fallback
+}
+
+
+def model_pricing(model: str) -> Tuple[float, float]:
+    """Return (input_rate, output_rate) per million tokens for a model string.
+
+    Non-Anthropic / unrecognized-non-Claude models return (0.0, 0.0) so they
+    are not billed at Claude rates. Synthetic placeholder messages also price
+    at zero.
+    """
+    m = (model or "").lower()
+    if not m or m == "<synthetic>":
+        return (0.0, 0.0)
+    is_claude = "claude" in m or m.startswith(("opus", "sonnet", "haiku", "fable"))
+    if not is_claude:
+        # gpt / deepseek / gemini / qwen / … routed through a relay → unpriced.
+        return (0.0, 0.0)
+    if "opus" in m:
+        # Opus 4.5+ uses the new low rate; 3 / 4.0 / 4.1 keep the legacy rate.
+        if any(v in m for v in ("opus-4-5", "opus-4-6", "opus-4-8", "opus-4.5",
+                                "opus-4.6", "opus-4.8", "opus-45", "opus-46",
+                                "opus-48")):
+            return _PRICING["opus-4.5+"]
+        return _PRICING["opus-legacy"]
+    if "fable" in m:
+        return _PRICING["fable"]
+    if "haiku" in m:
+        if "4-5" in m or "4.5" in m or "haiku-45" in m:
+            return _PRICING["haiku-4.5"]
+        if "3-5" in m or "3.5" in m:
+            return _PRICING["haiku-3.5"]
+        if "haiku-3" in m or "claude-3-haiku" in m:
+            return _PRICING["haiku-3"]
+        return _PRICING["haiku-4.5"]  # bare "haiku" → newest
+    if "sonnet" in m:
+        return _PRICING["sonnet"]
+    return _PRICING["unknown-claude"]
+
+
 def try_original_analysis() -> Optional[Dict[str, Any]]:
     """Try to use the installed claude-monitor package"""
     # Local imports — these are heavy stdlib modules that we only need on
@@ -348,9 +405,19 @@ def direct_data_analysis() -> Optional[Dict[str, Any]]:
                             if total_tokens == 0:
                                 continue
                             
-                            # Estimate cost (simplified pricing model)
-                            # Based on Sonnet 3.5 pricing: input $3/M tokens, output $15/M tokens
-                            cost = (input_tokens * 3 + output_tokens * 15 + cache_creation * 3.75) / 1000000
+                            # Estimate cost using model-aware pricing. Non-Claude
+                            # models routed through a relay/router price at $0 so
+                            # they don't inflate session cost or the P90 cost-limit.
+                            model_name = ''
+                            msg = data.get('message')
+                            if isinstance(msg, dict):
+                                model_name = msg.get('model', '') or ''
+                            if not model_name:
+                                model_name = data.get('model', '') or ''
+                            in_rate, out_rate = model_pricing(model_name)
+                            cost = (input_tokens * in_rate
+                                    + output_tokens * out_rate
+                                    + cache_creation * in_rate * 1.25) / 1000000
                             
                             entry = {
                                 'timestamp': timestamp,
@@ -511,12 +578,18 @@ def parse_stdin_data() -> Dict[str, Any]:
         # - Don't cap at 100; values >100% are valid for over-quota indicators
         import math
         import time as _time
+        # No real quota percentage reaches this; an implausibly large value is
+        # the known upstream leak where used_percentage carries the reset epoch
+        # (~1.78e9). Reject it rather than render a spurious MAX bar.
+        PCT_LEAK_CEILING = 100000
         def _pct(v):
             try:
                 f = float(v)
             except (TypeError, ValueError):
                 return 0
             if math.isnan(f) or math.isinf(f):
+                return 0
+            if f >= PCT_LEAK_CEILING:
                 return 0
             return max(0, int(round(f)))
 
