@@ -9,6 +9,25 @@ For a quick overview of the latest release, see the
 
 ---
 
+## Unreleased
+
+### Added
+- **Relay account balance in no-quota mode (`show_balance`, default on, auto).**
+  When you're on a third-party relay / API key (no official 5h/7d quota), the bar
+  can now show `bal $X.XX` — your remaining relay balance. A detached helper
+  probes the relay's OpenAI-compatible billing endpoint
+  (`/dashboard/billing/subscription` + `/usage`, the new-api / one-api de-facto
+  standard) with your key, computes `hard_limit − used/100`, and caches it 5 min
+  (a relay that 404s is remembered as unsupported for 1 h, so we don't re-probe
+  every render). Fully automatic: **shown only if the relay actually answers,
+  silently hidden otherwise** — subscribers and unsupported relays see nothing,
+  zero config. The probe always runs in a separate process (like the git
+  dirty-state refresh), so it never blocks the bar; the default `Python-urllib`
+  User-Agent is replaced because some Cloudflare-fronted gateways 403 it. Turn
+  off with `cs config set show_balance false`.
+
+---
+
 ## v3.15.1 — 2026-06-29
 
 ### Fixed

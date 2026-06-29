@@ -123,6 +123,7 @@ def render_capsule(
     projection_5h: str = "",
     projection_7d: str = "",
     no_quota: bool = False,
+    balance_text: str = "",
     **_ignored,
 ) -> str:
     from .progress import window_severity_rgb
@@ -193,6 +194,8 @@ def render_capsule(
     model_body = f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}{model_sev}{INK}{_bg(theme.pill_model)}"
     parts.append(pill(theme.pill_model, model_body))
 
+    if balance_text:
+        parts.append(pill(theme.pill_cost, balance_text))
     if cost_text:
         parts.append(pill(theme.pill_cost, f"$ {cost_text}"))
 
@@ -227,6 +230,7 @@ def render_hairline(
     projection_5h: str = "",
     projection_7d: str = "",
     no_quota: bool = False,
+    balance_text: str = "",
     **_ignored,
 ) -> str:
     from .progress import window_severity_rgb
@@ -292,6 +296,8 @@ def render_hairline(
         model_color = _fg(col)
     parts.append(f"{MUTE}›{RESET} {model_color}{model}{RESET}")
 
+    if balance_text:
+        parts.append(f"{_fg(theme.s_ok)}{balance_text}{RESET}")
     if cost_text:
         parts.append(f"{MUTE}$ {INK}{cost_text}{RESET}")
 
@@ -327,6 +333,7 @@ def render_classic(
     forecast_5h: str = "",
     forecast_7d: str = "",
     no_quota: bool = False,
+    balance_text: str = "",
     **_ignored,
 ) -> str:
     from .progress import format_status_line, _fg, colorize, RESET
@@ -353,6 +360,7 @@ def render_classic(
         forecast_5h=forecast_5h,
         forecast_7d=forecast_7d,
         no_quota=no_quota,
+        balance_text=balance_text,
     )
     if cache_age_text:
         # Three-level severity: COLD red, <1m yellow, otherwise green.

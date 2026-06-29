@@ -349,6 +349,75 @@ def _transcript_has_assistant(transcript_path: str) -> bool:
         return False
 
 
+def _format_balance(entry: dict) -> str:
+    """Render a fresh, supported balance cache entry as ``bal $809.97``.
+
+    Two decimals always — at relay scale the cents are small but a bare
+    ``$810`` would hide that you've already burned into it. Returns "" for a
+    malformed entry so the caller can simply drop the segment.
+    """
+    bal = entry.get("balance")
+    if not isinstance(bal, (int, float)):
+        return ""
+    return f"bal ${bal:,.2f}"
+
+
+def relay_balance_text(env: Dict[str, str], *, spawn: bool = True) -> str:
+    """Best-effort relay account balance for the no-quota status segment.
+
+    Reads ``ANTHROPIC_BASE_URL`` + the bearer key from ``env``, returns the
+    cached balance as ``bal $…`` when fresh, and otherwise kicks off a detached
+    ``_balance_refresh`` probe (when ``spawn`` and not already inflight). Returns
+    "" whenever there's nothing to show yet, the relay doesn't expose the
+    OpenAI-compatible billing endpoints (cached ``supported=False``), or no
+    base_url/key is configured — so the segment self-hides, matching the
+    "show it if supported, hide if not" contract.
+
+    Never blocks on the network: the probe always runs in a separate process,
+    exactly like the git dirty-state refresh.
+    """
+    base = (env.get("ANTHROPIC_BASE_URL") or "").strip()
+    key = (env.get("ANTHROPIC_API_KEY") or "").strip()
+    auth = (env.get("ANTHROPIC_AUTH_TOKEN") or "").strip()
+    if not base or not (key or auth):
+        return ""
+
+    from . import balance_cache
+    fp = balance_cache.fingerprint(base, key or auth)
+    entry = balance_cache.read_cache(fp)
+    if balance_cache.is_fresh(entry):
+        return _format_balance(entry) if entry.get("supported") else ""
+
+    if spawn and not balance_cache.is_inflight(fp):
+        balance_cache.mark_inflight(fp)
+        try:
+            import subprocess  # lazy — keep the fresh-cache hot path import-light
+            import sys
+            child_env = dict(os.environ)
+            child_env["CS_BALANCE_FP"] = fp
+            if key:
+                child_env["CS_BALANCE_KEY"] = key
+            if auth:
+                child_env["CS_BALANCE_AUTH"] = auth
+            subprocess.Popen(
+                [sys.executable, "-m", "claude_statusbar._balance_refresh", base],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                start_new_session=True,
+                env=child_env,
+            )
+        except (OSError, ValueError):
+            balance_cache.clear_inflight(fp)
+
+    # Stale-but-supported: keep showing the last known balance while the
+    # refresh runs, so the segment doesn't flicker off every TTL boundary.
+    if entry and entry.get("supported"):
+        return _format_balance(entry)
+    return ""
+
+
 def is_bypass_permissions_active() -> bool:
     """Detect whether bypass-permissions mode is currently active.
 
@@ -1052,12 +1121,23 @@ def main(json_output: bool = False,
             import re as _re
             model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
 
+            # Optional relay account balance — only meaningful in no-quota mode
+            # (third-party relay). Self-hides when the relay exposes no billing
+            # endpoint. The probe runs in a detached process (like the git
+            # dirty-state refresh), so it spawns under both the inline and
+            # daemon render paths — _suppress_side_effects gates the per-render
+            # auto-update checks, not background data refreshes.
+            balance_text = ""
+            if cfg.show_balance:
+                balance_text = relay_balance_text(_effective_env)
+
             if json_output:
                 print(json.dumps({
                     "success": True, "source": "no_quota",
                     "context": {"used_percentage": ctx_pct,
                                 "context_window_size": ctx_size,
                                 "used_tokens": ctx_used},
+                    "balance": balance_text or None,
                     "meta": {"model": model_id, "display_name": display_name,
                              "bypass": bypass},
                 }))
@@ -1075,6 +1155,7 @@ def main(json_output: bool = False,
                     ctx_pct=ctx_pct,
                     shimmer_phase=shimmer_phase,
                     no_quota=True,
+                    balance_text=balance_text,
                     **identity_kwargs, **mode_kwargs,
                     **activity_kwargs,
                 ))

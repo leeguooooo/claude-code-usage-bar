@@ -459,6 +459,7 @@ def format_status_line(
     forecast_5h: str = "",
     forecast_7d: str = "",
     no_quota: bool = False,
+    balance_text="",
 ):
     """Build the complete classic-style status line.
 
@@ -498,6 +499,12 @@ def format_status_line(
         # Model carries neutral ink: the ctx bar already conveys severity, and
         # the (used/size) suffix is dropped upstream since the bar IS the readout.
         parts.append(_format_model(model, ink, mute, use_color))
+        # Relay balance is the headline number in no-quota mode (it's the
+        # closest thing to "quota left"), so it sits right after the model,
+        # ahead of the session cost. Colored green — it's a remaining figure,
+        # not a warning.
+        if balance_text:
+            parts.append(colorize(balance_text, _fg(theme.s_ok), use_color))
         if cost_text:
             parts.append(colorize(f"$ {cost_text}", ink, use_color))
         if lang_text:

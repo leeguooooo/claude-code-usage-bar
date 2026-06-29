@@ -188,6 +188,7 @@ def run() -> int:
         _line("theme", cfg.theme)
         _line("density", cfg.density)
         _line("show_cost", cfg.show_cost)
+        _line("show_balance", cfg.show_balance)
         _line("show_weekly", cfg.show_weekly)
         _line("show_language", cfg.show_language)
         if cfg.auto_compact_width:
