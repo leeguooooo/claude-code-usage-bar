@@ -9,6 +9,38 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.15.1 — 2026-06-29
+
+### Fixed
+- **`git status` refresh no longer strands `.git/index.lock`.** The background
+  dirty-state poll now runs with `--no-optional-locks`, so a slow repo hitting
+  the 2 s timeout (and getting killed) can't leave a stale lock that blocks your
+  own next `git add` / `commit` / `rebase`.
+- **`cs config set warning_threshold` / `critical_threshold` now actually
+  affect the bar.** The render path hardcoded 30/70 and never read the saved
+  config; severity thresholds now resolve **CLI flag → env → config → default**.
+- **Context-window colour is consistent across modes.** The model name's
+  context-fill colour now uses the 70/85 context band (not the 30/70 comfort
+  band), so ~35% context reads calm green instead of a false yellow in quota
+  mode — matching the no-quota `ctx[…]` bar. Applied to all three styles.
+- **Per-session no-quota detection under the shared daemon.** Relay /
+  `CLAUDE_CODE_USE_BEDROCK` / `CLAUDE_CODE_USE_VERTEX` env signals are now read
+  per session (stamped by the thin client into the payload) instead of the
+  daemon's frozen start-time `os.environ`, fixing mis-detection when sessions
+  with different backends share one daemon.
+- Concurrent `git status` cache writes use a unique temp file (no more
+  cross-write corruption / 30 s freeze); the reset-time exception fallback
+  returns `--` instead of a wrong "next 2 PM (local)" estimate.
+
+### Changed
+- Removed the orphaned claude-monitor cache subsystem (`try_original_analysis`,
+  `direct_data_analysis`, `cache_refresh.py`, and the `cache.py`
+  `read_cache`/`write_cache`/`refresh_cache_background` trio) — all dead code.
+  The displayed `$` figure comes from Claude Code's own `session_cost_usd`, so
+  no local token pricing is needed. Net −430 lines, no behaviour change.
+
+---
+
 ## v3.15.0 — 2026-06-22
 
 ### Added
