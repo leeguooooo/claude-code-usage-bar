@@ -9,6 +9,23 @@ For a quick overview of the latest release, see the
 
 ---
 
+## Unreleased
+
+### Added
+- **Stale-quota hint instead of silently blank 5h/7d bars.** When the statusLine
+  pipeline stops feeding cs (another tool displaced the statusLine, or the daemon
+  died) the cached 5h/7d windows expire and the expiry guard hid both bars —
+  indistinguishable from a fresh session, so it just looked *broken*. The bar now
+  shows `⟳ 5h/7d stale·restart` (yellow) in that exact case, telling you it's
+  stale and a restart refreshes it. Gated tightly: only fires when the client
+  emits rate_limits, an assistant turn already exists (a healthy session would
+  have data by then), and the quota cache is genuinely all-expired — so a real
+  session-start still shows the normal `--%` placeholders, never a false alarm.
+- **`cs doctor` now reports 5h/7d quota-cache freshness** — `fresh` / `empty` /
+  `stale (last update Nh ago … restart Claude Code; if it persists another tool
+  took the statusLine → cs --setup)`. Turns the cache-file archaeology a user
+  otherwise had to do into one diagnostic line.
+
 ## v3.17.0 — 2026-06-29
 
 ### Added

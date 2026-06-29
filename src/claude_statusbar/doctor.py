@@ -130,6 +130,30 @@ def run() -> int:
         _line("last_stdin cache",
               _dim("not yet — Claude Code hasn't pushed any payload"))
 
+    # --- 5h/7d quota cache freshness ---
+    # The single most-reported "my bars disappeared" cause: the statusLine got
+    # displaced (or the daemon died), cs stopped receiving rate_limits, and the
+    # cached windows expired — so the expiry guard hid the bars. Surface it here
+    # with the fix instead of making users diff cache files by hand.
+    try:
+        from .predict import quota_cache_status
+        _qs, _qage = quota_cache_status()
+        if _qs == "stale":
+            age_txt = f"{int(_qage/3600)}h" if _qage and _qage >= 3600 else (
+                f"{int(_qage/60)}m" if _qage else "?")
+            _line("5h/7d quota cache",
+                  _red(f"stale (last update {age_txt} ago, resets expired) — "
+                       f"restart Claude Code to refresh; if it keeps happening "
+                       f"another tool took the statusLine → run cs --setup"),
+                  ok=False)
+        elif _qs == "fresh":
+            _line("5h/7d quota cache", "fresh")
+        else:
+            _line("5h/7d quota cache",
+                  _dim("empty — no quota recorded yet (new account / relay)"))
+    except Exception:
+        pass
+
     # --- daemon (Phase B+) ---
     try:
         from . import daemon as _d

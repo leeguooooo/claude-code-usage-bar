@@ -336,6 +336,7 @@ def render_classic(
     balance_text: str = "",
     balance_pct=None,
     balance_amount: str = "",
+    quota_stale: bool = False,
     **_ignored,
 ) -> str:
     from .progress import format_status_line, _fg, colorize, RESET
@@ -365,6 +366,7 @@ def render_classic(
         balance_text=balance_text,
         balance_pct=balance_pct,
         balance_amount=balance_amount,
+        quota_stale=quota_stale,
     )
     if cache_age_text:
         # Three-level severity: COLD red, <1m yellow, otherwise green.

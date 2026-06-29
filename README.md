@@ -67,6 +67,7 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 | Segment | Meaning |
 |---------|---------|
 | `5h[27%]` | 5-hour rate-limit usage (rolling window from Anthropic API headers) |
+| `⟳ 5h/7d stale·restart` | Shown (in place of the two bars) when the cached 5h/7d data has gone stale because cs stopped receiving fresh ticks — usually another tool displaced the statusLine, or the daemon died. Restart Claude Code to refresh; if it keeps happening, run `cs --setup` to reclaim the statusLine. `cs doctor` explains it in detail. |
 | `⏰1h28m` | Time until the 5-hour window resets |
 | `7d[79%]` | 7-day rate-limit usage |
 | `⏰11h28m` | Time until the 7-day window resets |

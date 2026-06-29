@@ -1321,8 +1321,26 @@ def main(json_output: bool = False,
             version = stdin_data.get('claude_version', '') if stdin_data.get('_has_stdin') else ''
 
             if stdin_data.get('_has_stdin'):
-                # Have stdin but no rate_limits — session just started, show placeholders
+                # Have stdin but no rate_limits — session just started, OR the
+                # quota pipeline broke (statusLine displaced / daemon dead) and
+                # the cached windows rotted. Distinguish the two: a HEALTHY
+                # subscriber session that already has an assistant turn would
+                # carry rate_limits (live or cached-fresh). If instead an
+                # assistant turn exists, the client emits rate_limits, yet the
+                # quota cache is all-stale → the pipeline stopped feeding cs.
+                # Surface "stale · restart" rather than silently blank bars
+                # (the failure mode that left a Pro user staring at empty space).
                 ctx_pct, ctx_size, ctx_used = _context_window_usage(stdin_data)
+                quota_stale = False
+                if (_claude_emits_rate_limits(stdin_data.get('claude_version'))
+                        and _transcript_has_assistant(
+                            stdin_data.get('transcript_path', ''))):
+                    try:
+                        from .predict import quota_cache_status
+                        _st, _ = quota_cache_status()
+                        quota_stale = (_st == "stale")
+                    except Exception:
+                        quota_stale = False
                 if ctx_size > 0:
                     import re as _re
                     model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
@@ -1330,7 +1348,8 @@ def main(json_output: bool = False,
 
                 if json_output:
                     print(json.dumps({
-                        "success": True, "source": "waiting",
+                        "success": True,
+                        "source": "stale" if quota_stale else "waiting",
                         "meta": {"model": model_id, "display_name": display_name,
                                  "claude_version": version, "bypass": bypass},
                     }))
@@ -1347,6 +1366,7 @@ def main(json_output: bool = False,
                         density=cfg.density, show_weekly=cfg.show_weekly,
                         ctx_pct=ctx_pct,
                         shimmer_phase=shimmer_phase,
+                        quota_stale=quota_stale,
                         **identity_kwargs, **mode_kwargs,
                         **activity_kwargs,
                     ))

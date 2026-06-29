@@ -269,6 +269,47 @@ def _load_buckets(win_entry: Any) -> Dict[str, Dict[str, Any]]:
             if isinstance(v, dict) and _coerce(v.get("used")) is not None}
 
 
+def quota_cache_status(now=None, path=None):
+    """Classify the persisted rate-limit cache: ("fresh"|"stale"|"empty", age_s).
+
+    * empty — no store, or no usable window buckets (a genuinely new account).
+    * stale — buckets exist but EVERY reset is implausible (``resets_at`` in the
+      past): the cache rotted because no fresh tick arrived for a while (the
+      classic symptom of a displaced statusLine or a dead daemon). This is what
+      lets the bar say "stale · restart" instead of silently dropping the bars.
+    * fresh — at least one bucket has a still-plausible reset.
+
+    ``age_s`` is seconds since the most recent ``observed_at`` across all buckets
+    (None when nothing was ever confirmed). Never raises — errors → ("empty", None).
+    """
+    if now is None:
+        import time as _t
+        now = _t.time()
+    p = Path(path) if path is not None else _latest_path()
+    try:
+        store = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(store, dict):
+            return ("empty", None)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return ("empty", None)
+
+    total = 0
+    plausible = False
+    observed = []
+    for win in ("five_hour", "seven_day"):
+        for k, v in _load_buckets(store.get(win)).items():
+            total += 1
+            if _reset_plausible(win, _coerce(k), now):
+                plausible = True
+            o = _coerce(v.get("observed_at"))
+            if o is not None:
+                observed.append(o)
+    if total == 0:
+        return ("empty", None)
+    age = (now - max(observed)) if observed else None
+    return ("fresh" if plausible else "stale", age)
+
+
 def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=None):
     """Merge this session's reading into the shared store and return the
     freshest (u5, r5, u7, r7) FOR THIS SESSION'S WINDOWS.

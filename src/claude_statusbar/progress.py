@@ -477,6 +477,7 @@ def format_status_line(
     balance_text="",
     balance_pct=None,
     balance_amount="",
+    quota_stale: bool = False,
 ):
     """Build the complete classic-style status line.
 
@@ -534,6 +535,30 @@ def format_status_line(
             parts.append(seg)
         elif balance_text:
             parts.append(colorize(balance_text, _fg(theme.s_ok), use_color))
+        if cost_text:
+            parts.append(colorize(f"$ {cost_text}", ink, use_color))
+        if lang_text:
+            parts.append(lang_text)
+        if bypass:
+            parts.append(colorize("⚠️BYPASS", _fg(theme.s_hot), use_color))
+        separator = colorize(" | ", mute, use_color)
+        return separator.join(parts)
+
+    if quota_stale and msgs_pct is None and weekly_pct is None:
+        # The quota cache rotted (no fresh tick for a while — displaced
+        # statusLine / dead daemon). Two blank `--%` bars read as "broken"; an
+        # explicit, actionable hint tells the user it's stale and a restart
+        # refreshes it (the diagnosis a Pro user otherwise had to dig for).
+        parts = [colorize("⟳ 5h/7d stale·restart", _fg(theme.s_warn), use_color)]
+        if ctx_pct is None:
+            model_color = ink
+        else:
+            model_color = color_for_percent(
+                ctx_pct, theme=theme,
+                warning_threshold=CONTEXT_WARNING_THRESHOLD,
+                critical_threshold=CONTEXT_CRITICAL_THRESHOLD,
+            )
+        parts.append(_format_model(model, model_color, mute, use_color))
         if cost_text:
             parts.append(colorize(f"$ {cost_text}", ink, use_color))
         if lang_text:
