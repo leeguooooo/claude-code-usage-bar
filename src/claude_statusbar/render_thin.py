@@ -216,6 +216,43 @@ def _extract_session_id(payload: bytes) -> str:
     return sid
 
 
+# API-mode-relevant env vars. render_thin runs in the REAL session shell, but
+# the shared daemon's os.environ is frozen at its own start and is not this
+# session's — so no-quota detection there must read the session env, not the
+# daemon's. We stamp these into the payload the daemon consumes.
+_SESSION_ENV_KEYS = (
+    "ANTHROPIC_BASE_URL",
+    "CS_API_MODE",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+)
+
+
+def _inject_session_env(payload: bytes) -> bytes:
+    """Stamp this session's API-mode env vars into the payload under `_cs_env`.
+
+    The marker is always written (possibly with a subset / empty) when the
+    payload is a JSON object, so the daemon knows the signal came from the real
+    session env rather than its own frozen os.environ. Returns the payload
+    unchanged if it isn't a JSON object or re-serialisation fails."""
+    try:
+        d = json.loads(payload.decode("utf-8", errors="replace"))
+    except (ValueError, json.JSONDecodeError):
+        return payload
+    if not isinstance(d, dict):
+        return payload
+    env = {}
+    for k in _SESSION_ENV_KEYS:
+        v = os.environ.get(k)
+        if v:
+            env[k] = v
+    d["_cs_env"] = env
+    try:
+        return json.dumps(d).encode("utf-8")
+    except (TypeError, ValueError):
+        return payload
+
+
 def _atomic_write_bytes(target: Path, data: bytes) -> None:
     """Sibling tempfile + os.replace. Inlined so the fast path doesn't
     need to import cache.atomic_write_text.
@@ -297,7 +334,9 @@ def render() -> int:
     session_id = "default"
     if payload is not None:
         session_id = _extract_session_id(payload)
-        _persist_stdin_bytes(payload, session_id)
+        # Stamp the session env BEFORE persisting so the daemon (frozen env)
+        # detects no-quota mode per session, not from its own start-time env.
+        _persist_stdin_bytes(_inject_session_env(payload), session_id)
 
     # Fast path: if THIS session's daemon-rendered output is fresh, cat
     # the file and return. No core/styles/themes import.

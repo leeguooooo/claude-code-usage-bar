@@ -32,8 +32,8 @@ def repo(tmp_path):
 
 def test_daemon_refresh_writes_cache(repo, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    from claude_statusbar.daemon import _refresh_repo_sync
-    _refresh_repo_sync(str(repo))
+    from claude_statusbar._git_refresh import refresh
+    refresh(str(repo))
     from claude_statusbar.git_cache import read_cache
     entry = read_cache(str(repo))
     assert entry is not None

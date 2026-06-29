@@ -55,8 +55,14 @@ def parse_git_status_branch(
 
 def refresh(toplevel: str, timeout_s: float = 2.0) -> None:
     try:
+        # --no-optional-locks: never take .git/index.lock for this read. A
+        # background `git status` that the status bar polls must not refresh
+        # the index lock cache — if our 2s timeout SIGKILLs git mid-write it
+        # would strand .git/index.lock and break the user's own next
+        # add/commit/rebase. This is why editors poll the same way.
         proc = subprocess.run(
-            ["git", "-C", toplevel, "status", "--porcelain=v1", "--branch"],
+            ["git", "-C", toplevel, "--no-optional-locks",
+             "status", "--porcelain=v1", "--branch"],
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -67,18 +73,23 @@ def refresh(toplevel: str, timeout_s: float = 2.0) -> None:
     if proc.returncode != 0:
         clear_inflight(toplevel)
         return
-    dirty, ahead, behind = parse_git_status_branch(proc.stdout)
-    prev = read_cache(toplevel) or {}
-    entry = {
-        "toplevel": toplevel,
-        "branch": prev.get("branch"),
-        "dirty": dirty,
-        "ahead": ahead,
-        "behind": behind,
-        "ts": time.time(),
-    }
-    write_cache_atomic(toplevel, entry)
-    clear_inflight(toplevel)
+    # Always clear the inflight marker, even if write_cache_atomic raises —
+    # otherwise a failed write leaves the marker stranded for INFLIGHT_MAX_AGE_S
+    # (30s), freezing dirty-state refreshes for that repo.
+    try:
+        dirty, ahead, behind = parse_git_status_branch(proc.stdout)
+        prev = read_cache(toplevel) or {}
+        entry = {
+            "toplevel": toplevel,
+            "branch": prev.get("branch"),
+            "dirty": dirty,
+            "ahead": ahead,
+            "behind": behind,
+            "ts": time.time(),
+        }
+        write_cache_atomic(toplevel, entry)
+    finally:
+        clear_inflight(toplevel)
 
 
 def main(argv) -> int:

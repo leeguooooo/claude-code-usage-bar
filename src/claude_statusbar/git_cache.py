@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -43,9 +44,21 @@ def is_fresh(entry: Optional[dict], now: Optional[float] = None) -> bool:
 def write_cache_atomic(toplevel: str, entry: dict) -> None:
     p = cache_path_for(toplevel)
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(entry), encoding="utf-8")
-    os.replace(tmp, p)
+    # Unique temp name (mkstemp) so two concurrent refreshes for the same
+    # toplevel never share one `.tmp` and corrupt each other / crash on a
+    # half-written file. Atomic replace + unlink-on-error.
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=f".{p.name}.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry))
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _inflight_path(toplevel: str) -> Path:

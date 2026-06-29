@@ -340,12 +340,18 @@ def test_thin_client_forwards_stdin_to_per_session_cache(monkeypatch, tmp_path: 
     render_thin.render()
 
     # Both must have their own bucket; B did NOT overwrite A's stdin.
+    # render_thin stamps `_cs_env` into the payload, so compare content minus it.
+    def _without_env(b: bytes) -> dict:
+        d = json.loads(b)
+        d.pop("_cs_env", None)
+        return d
+
     a_stdin = tmp_path / "sessions" / sid_a / "last_stdin.json"
     b_stdin = tmp_path / "sessions" / sid_b / "last_stdin.json"
-    assert a_stdin.read_bytes() == payload_a, (
+    assert _without_env(a_stdin.read_bytes()) == json.loads(payload_a), (
         "session A's stdin was overwritten — multi-session race not fixed"
     )
-    assert b_stdin.read_bytes() == payload_b
+    assert _without_env(b_stdin.read_bytes()) == json.loads(payload_b)
 
 
 def test_thin_client_fallback_when_meta_stale(monkeypatch, tmp_path: Path):
@@ -523,8 +529,10 @@ def test_thin_client_routes_missing_session_id_to_default_bucket(
     assert out == "DEFAULT BUCKET LINE\n", out
 
     # And the stdin must have been persisted into sessions/default/.
-    persisted = (default_dir / "last_stdin.json").read_bytes()
-    assert persisted == payload
+    # render_thin stamps `_cs_env`; compare content minus it.
+    persisted = json.loads((default_dir / "last_stdin.json").read_bytes())
+    persisted.pop("_cs_env", None)
+    assert persisted == json.loads(payload)
 
 
 # ---------------------------------------------------------------------------

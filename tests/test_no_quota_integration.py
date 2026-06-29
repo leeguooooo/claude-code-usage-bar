@@ -146,3 +146,55 @@ def test_heuristic_silent_on_old_claude_version(tmp_path, monkeypatch, capsys):
     _run(tmp_path, monkeypatch, _payload_no_quota_with_transcript(str(tp), version="2.1.50"))
     out = capsys.readouterr().out
     assert "ctx[" not in out
+
+
+# ---------------------------------------------------------------------------
+# Per-session env (`_cs_env`) stamped by render_thin must drive no-quota
+# detection, NOT the process os.environ — the shared daemon's environment is
+# frozen at its own start and is not this session's.
+# ---------------------------------------------------------------------------
+
+def _payload_with_quota_and_env(session_env: dict):
+    d = json.loads(_payload_with_quota())
+    d["_cs_env"] = session_env
+    return json.dumps(d)
+
+
+def test_session_env_relay_overrides_clean_process_env(tmp_path, monkeypatch, capsys):
+    """Daemon scenario: os.environ is clean (daemon start env) but THIS session
+    is a relay. The stamped _cs_env must flip to the no-quota layout."""
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("CS_API_MODE", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_USE_BEDROCK", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_USE_VERTEX", raising=False)
+    payload = _payload_with_quota_and_env(
+        {"ANTHROPIC_BASE_URL": "https://relay.example.com"})
+    _run(tmp_path, monkeypatch, payload)
+    out = capsys.readouterr().out
+    assert "ctx[" in out
+    assert "5h[" not in out
+
+
+def test_session_env_official_overrides_polluted_process_env(tmp_path, monkeypatch, capsys):
+    """Inverse: os.environ carries a relay var (e.g. the daemon was started in a
+    relay shell) but THIS session is official (empty _cs_env). The session env
+    must win → keep the quota layout."""
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://relay.example.com")
+    monkeypatch.delenv("CS_API_MODE", raising=False)
+    payload = _payload_with_quota_and_env({})  # official session: no relay signal
+    _run(tmp_path, monkeypatch, payload)
+    out = capsys.readouterr().out
+    assert "5h[" in out
+    assert "ctx[" not in out
+
+
+def test_session_env_cs_api_mode_off_overrides_polluted_env(tmp_path, monkeypatch, capsys):
+    """Per-session CS_API_MODE=off forces official layout even if os.environ and
+    the session base-url both look like a relay."""
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://relay.example.com")
+    payload = _payload_with_quota_and_env(
+        {"ANTHROPIC_BASE_URL": "https://relay.example.com", "CS_API_MODE": "off"})
+    _run(tmp_path, monkeypatch, payload)
+    out = capsys.readouterr().out
+    assert "5h[" in out
+    assert "ctx[" not in out

@@ -541,10 +541,14 @@ def format_status_line(
     if ctx_pct is None:
         model_color = ink
     else:
+        # The model name reflects context-window fill, so it must use the
+        # context band (70/85), NOT the 5h/7d comfort band — otherwise ~35%
+        # context paints the model name yellow here while the identical 35%
+        # reads green on the no-quota ctx bar. Same metric, one threshold.
         model_color = color_for_percent(
             ctx_pct, theme=theme,
-            warning_threshold=warning_threshold,
-            critical_threshold=critical_threshold,
+            warning_threshold=CONTEXT_WARNING_THRESHOLD,
+            critical_threshold=CONTEXT_CRITICAL_THRESHOLD,
         )
     parts.append(_format_model(model, model_color, mute, use_color))
 

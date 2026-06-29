@@ -321,3 +321,41 @@ def test_battery_bar_single_filled_cell_keeps_pure_severity_color():
                             warning_threshold=30, critical_threshold=70)
     bgs = [tuple(map(int, m)) for m in re.findall(r"48;2;(\d+);(\d+);(\d+)", bar)]
     assert bgs[0] == tuple(theme.s_ok)         # lone cell = pure colour, no sink
+
+
+# ---------------------------------------------------------------------------
+# Context % must color the model name with the context band (70/85), not the
+# 5h/7d comfort band (30/70). Regression: a session at ~35% context used to
+# paint the model name yellow in quota mode while the no-quota ctx bar read
+# green for the identical 35%.
+# ---------------------------------------------------------------------------
+from claude_statusbar.progress import _fg as _fg_code
+
+
+def _quota_line(ctx_pct):
+    # Low 5h/7d so the only severity that can appear comes from ctx → model.
+    return format_status_line(
+        10, 10, "1h", "Opus",
+        weekly_pct=5, ctx_pct=ctx_pct,
+        use_color=True, theme=_TH,
+    )
+
+
+def test_ctx_model_color_calm_below_context_warning():
+    # 35% context is well under the 70 context-warning → no yellow anywhere.
+    out = _quota_line(35)
+    assert _fg_code(_TH.s_warn) not in out
+    assert _fg_code(_TH.s_hot) not in out
+    assert _fg_code(_TH.s_ok) in out
+
+
+def test_ctx_model_color_warns_at_context_band():
+    # 75% context is in the 70–85 context-warning band → model yellow.
+    out = _quota_line(75)
+    assert _fg_code(_TH.s_warn) in out
+
+
+def test_ctx_model_color_critical_above_context_critical():
+    # 90% context is above the 85 context-critical → model red.
+    out = _quota_line(90)
+    assert _fg_code(_TH.s_hot) in out

@@ -178,8 +178,18 @@ def render_capsule(
             parts.append(pill(theme.pill_7d, week_body))
 
     # In no_quota mode the CTX pill already carries the context severity, so the
-    # model pill stays neutral (no second ctx dot).
-    model_sev = "" if no_quota else sev_dot(ctx_pct)
+    # model pill stays neutral (no second ctx dot). In quota mode the model dot
+    # reflects context fill and must use the context band (70/85), not the 5h/7d
+    # comfort band — otherwise ~35% context shows a yellow dot here while the
+    # no-quota CTX pill reads green for the identical 35%.
+    if no_quota:
+        model_sev = ""
+    else:
+        from .progress import (window_severity_rgb as _wsr,
+                               CONTEXT_WARNING_THRESHOLD as _CW,
+                               CONTEXT_CRITICAL_THRESHOLD as _CC)
+        _ctx_rgb = _wsr(ctx_pct, "", theme, _CW, _CC)
+        model_sev = f" {_fg(_ctx_rgb)}●{RESET}" if _ctx_rgb is not None else ""
     model_body = f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}{model_sev}{INK}{_bg(theme.pill_model)}"
     parts.append(pill(theme.pill_model, model_body))
 
@@ -273,7 +283,12 @@ def render_hairline(
     if ctx_pct is None or no_quota:
         model_color = INK
     else:
-        col = _severity_color(theme, ctx_pct, warning_threshold, critical_threshold)
+        # Context fill uses the context band (70/85), not the 5h/7d comfort
+        # band — consistent with the no_quota ctx mini-bar above and the other
+        # styles. ~35% context must read calm, not warning.
+        from .progress import (CONTEXT_WARNING_THRESHOLD as _CW,
+                               CONTEXT_CRITICAL_THRESHOLD as _CC)
+        col = _severity_color(theme, ctx_pct, _CW, _CC)
         model_color = _fg(col)
     parts.append(f"{MUTE}›{RESET} {model_color}{model}{RESET}")
 

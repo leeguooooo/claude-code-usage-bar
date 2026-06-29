@@ -493,19 +493,28 @@ Integration:
 
     # Run the status bar
     use_color = not (args.no_color or no_color_env)
-    from .progress import normalize_thresholds  # heavy: pulls in all of progress
-    try:
-        warning_threshold, critical_threshold = normalize_thresholds(
-            args.warning_threshold
-            if args.warning_threshold is not None
-            else env_float("CLAUDE_STATUSBAR_WARNING_THRESHOLD"),
-            args.critical_threshold
-            if args.critical_threshold is not None
-            else env_float("CLAUDE_STATUSBAR_CRITICAL_THRESHOLD"),
-        )
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
+    # Resolve CLI flag > env, leaving None when neither is set so core.main()
+    # falls through to the persisted config value (CLI > env > config > default).
+    # Passing a normalized 30/70 here would shadow `cs config set`.
+    warning_threshold = (
+        args.warning_threshold
+        if args.warning_threshold is not None
+        else env_float("CLAUDE_STATUSBAR_WARNING_THRESHOLD")
+    )
+    critical_threshold = (
+        args.critical_threshold
+        if args.critical_threshold is not None
+        else env_float("CLAUDE_STATUSBAR_CRITICAL_THRESHOLD")
+    )
+    if warning_threshold is not None or critical_threshold is not None:
+        # Validate only when the user actually supplied a flag/env, so a bad
+        # explicit value still errors loudly instead of silently resetting.
+        from .progress import normalize_thresholds
+        try:
+            normalize_thresholds(warning_threshold, critical_threshold)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
 
     try:
         # Pull in the heavy render path only now (after we've definitely

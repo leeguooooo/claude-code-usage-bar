@@ -258,13 +258,18 @@ def resolve_style(cli_value: Optional[str], cfg: StatusbarConfig) -> str:
     return cfg.style
 
 
-def resolve_api_mode(cfg: StatusbarConfig) -> str:
+def resolve_api_mode(cfg: StatusbarConfig, env: Optional[dict] = None) -> str:
     """Effective api_mode: CS_API_MODE env wins over the saved config, so a relay
     user can force the layout per-shell without editing config. Unknown values
-    fall through to detection (is_no_quota_mode treats non on/off as auto)."""
-    env = os.environ.get("CS_API_MODE")
-    if env:
-        return env.strip().lower()
+    fall through to detection (is_no_quota_mode treats non on/off as auto).
+
+    `env` defaults to os.environ; the render path passes the per-session env
+    (stamped by render_thin) so the shared daemon reads the session's CS_API_MODE
+    rather than its own frozen start-time value."""
+    source = os.environ if env is None else env
+    val = source.get("CS_API_MODE")
+    if val:
+        return val.strip().lower()
     return cfg.api_mode
 
 
