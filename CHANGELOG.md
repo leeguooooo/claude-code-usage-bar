@@ -9,7 +9,7 @@ For a quick overview of the latest release, see the
 
 ---
 
-## Unreleased
+## v3.18.0 — 2026-06-29
 
 ### Added
 - **Stale-quota hint instead of silently blank 5h/7d bars.** When the statusLine
