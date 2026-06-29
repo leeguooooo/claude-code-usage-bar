@@ -9,7 +9,7 @@ For a quick overview of the latest release, see the
 
 ---
 
-## Unreleased
+## v3.17.0 — 2026-06-29
 
 ### Added
 - **Balance fuel-gauge battery (`balance_bar`, default on).** The relay balance
