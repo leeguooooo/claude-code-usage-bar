@@ -1,6 +1,8 @@
 """relay_balance_text gating + the no-quota balance segment in each style."""
 import time
 
+import pytest
+
 from claude_statusbar import balance_cache, core, progress, styles
 
 
@@ -87,3 +89,51 @@ def test_no_balance_segment_when_empty():
         msgs_pct=None, tkns_pct=None, reset_time="--", model="qwen-max",
         ctx_pct=0, no_quota=True, balance_text="", use_color=False)
     assert "bal" not in out
+
+
+# --- fuel-gauge battery (balance_bar) ---
+
+def test_remaining_pct_from_total():
+    assert core._balance_remaining_pct(
+        {"balance": 26.0, "total": 50.0}) == 52.0
+    assert core._balance_remaining_pct(
+        {"balance": 809.95, "total": 810.0}) == pytest.approx(99.99, abs=0.01)
+
+
+def test_remaining_pct_none_when_total_missing_or_zero():
+    assert core._balance_remaining_pct({"balance": 5.0}) is None
+    assert core._balance_remaining_pct({"balance": 5.0, "total": 0}) is None
+    assert core._balance_remaining_pct({"balance": 5.0, "total": -1}) is None
+
+
+def test_remaining_pct_clamped():
+    # overdraft / weird data never leaves the 0–100 rail
+    assert core._balance_remaining_pct({"balance": -3.0, "total": 10.0}) == 0.0
+    assert core._balance_remaining_pct({"balance": 15.0, "total": 10.0}) == 100.0
+
+
+def test_fuel_gauge_renders_battery_with_remaining_and_amount():
+    out = progress.format_status_line(
+        msgs_pct=None, tkns_pct=None, reset_time="--", model="qwen-max",
+        ctx_pct=0, no_quota=True, use_color=False,
+        balance_pct=52.0, balance_amount="$26.00")
+    assert "bal[" in out          # battery, not plain text
+    assert "52%" in out           # fill shows remaining %
+    assert "$26.00" in out        # remaining amount trails the bar
+
+
+def test_fuel_gauge_color_low_is_hot_full_is_ok():
+    theme = progress.get_theme("graphite")
+    assert progress._balance_fill_rgb(99.0, theme) == theme.s_ok
+    assert progress._balance_fill_rgb(20.0, theme) == theme.s_warn
+    assert progress._balance_fill_rgb(5.0, theme) == theme.s_hot
+
+
+def test_balance_bar_off_falls_back_to_text(tmp_path, monkeypatch):
+    """balance_pct=None (bar off or total unusable) → plain `bal $X`, no battery."""
+    out = progress.format_status_line(
+        msgs_pct=None, tkns_pct=None, reset_time="--", model="qwen-max",
+        ctx_pct=0, no_quota=True, use_color=False,
+        balance_text="bal $809.95", balance_pct=None)
+    assert "bal $809.95" in out
+    assert "bal[" not in out

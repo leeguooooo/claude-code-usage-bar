@@ -41,6 +41,9 @@ class StatusbarConfig:
     # Relay account balance (no-quota mode only). Auto: shown when the relay
     # exposes an OpenAI-compatible billing endpoint, silently hidden otherwise.
     show_balance: bool = True
+    # Render the balance as a fuel-gauge battery (fill = remaining %) instead of
+    # plain `bal $X`. Falls back to text when the relay reports no usable limit.
+    balance_bar: bool = True
     show_cache_age: bool = True
     show_project_branch: bool = True
     # Live-activity / session-stats segments. show_todos (activity line) and
@@ -112,6 +115,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         show_language=_to_bool(raw.get("show_language", True)),
         show_cost=_to_bool(raw.get("show_cost", False)),
         show_balance=_to_bool(raw.get("show_balance", True)),
+        balance_bar=_to_bool(raw.get("balance_bar", True)),
         show_cache_age=_to_bool(raw.get("show_cache_age", True)),
         show_project_branch=_to_bool(raw.get("show_project_branch", True)),
         show_todos=_to_bool(raw.get("show_todos", True)),
@@ -146,7 +150,8 @@ def save_config(cfg: StatusbarConfig, path: Optional[Path] = None) -> None:
 
 VALID_KEYS = {
     "style", "theme", "density", "auto_compact_width",
-    "show_weekly", "show_language", "show_cost", "show_balance", "show_cache_age",
+    "show_weekly", "show_language", "show_cost", "show_balance", "balance_bar",
+    "show_cache_age",
     "show_project_branch",
     "show_todos", "show_tools", "show_tool_rollup", "show_agents",
     "show_duration", "show_lines", "show_ahead_behind", "show_version",
@@ -158,6 +163,7 @@ VALID_KEYS = {
 }
 _VALID_API_MODE = {"auto", "on", "off"}
 _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_balance",
+              "balance_bar",
               "show_cache_age",
               "show_project_branch",
               "show_todos", "show_tools", "show_tool_rollup", "show_agents",

@@ -362,16 +362,32 @@ def _format_balance(entry: dict) -> str:
     return f"bal ${bal:,.2f}"
 
 
-def relay_balance_text(env: Dict[str, str], *, spawn: bool = True) -> str:
-    """Best-effort relay account balance for the no-quota status segment.
+def _balance_remaining_pct(entry: dict):
+    """Remaining-balance percent (0–100) for the fuel-gauge battery, or None.
 
-    Reads ``ANTHROPIC_BASE_URL`` + the bearer key from ``env``, returns the
-    cached balance as ``bal $…`` when fresh, and otherwise kicks off a detached
-    ``_balance_refresh`` probe (when ``spawn`` and not already inflight). Returns
-    "" whenever there's nothing to show yet, the relay doesn't expose the
-    OpenAI-compatible billing endpoints (cached ``supported=False``), or no
-    base_url/key is configured — so the segment self-hides, matching the
-    "show it if supported, hide if not" contract.
+    Returns None when ``total`` (the relay's hard_limit) is absent or non-positive
+    — some relays report a sentinel/zero limit, and a gauge off a meaningless
+    total would mislead, so the caller falls back to the plain ``bal $X`` text.
+    """
+    total = entry.get("total")
+    bal = entry.get("balance")
+    if not isinstance(total, (int, float)) or total <= 0:
+        return None
+    if not isinstance(bal, (int, float)):
+        return None
+    return max(0.0, min(100.0, bal / total * 100.0))
+
+
+def relay_balance(env: Dict[str, str], *, spawn: bool = True):
+    """Best-effort relay account balance entry (dict) for the no-quota segment.
+
+    Reads ``ANTHROPIC_BASE_URL`` + the bearer key from ``env``, returns the cached
+    balance entry (``{balance, total, used, ...}``) when fresh & supported, and
+    otherwise kicks off a detached ``_balance_refresh`` probe (when ``spawn`` and
+    not already inflight). Returns None whenever there's nothing to show yet, the
+    relay doesn't expose the OpenAI-compatible billing endpoints (cached
+    ``supported=False``), or no base_url/key is configured — so the segment
+    self-hides, matching the "show it if supported, hide if not" contract.
 
     Never blocks on the network: the probe always runs in a separate process,
     exactly like the git dirty-state refresh.
@@ -380,13 +396,13 @@ def relay_balance_text(env: Dict[str, str], *, spawn: bool = True) -> str:
     key = (env.get("ANTHROPIC_API_KEY") or "").strip()
     auth = (env.get("ANTHROPIC_AUTH_TOKEN") or "").strip()
     if not base or not (key or auth):
-        return ""
+        return None
 
     from . import balance_cache
     fp = balance_cache.fingerprint(base, key or auth)
     entry = balance_cache.read_cache(fp)
     if balance_cache.is_fresh(entry):
-        return _format_balance(entry) if entry.get("supported") else ""
+        return entry if entry.get("supported") else None
 
     if spawn and not balance_cache.is_inflight(fp):
         balance_cache.mark_inflight(fp)
@@ -414,8 +430,14 @@ def relay_balance_text(env: Dict[str, str], *, spawn: bool = True) -> str:
     # Stale-but-supported: keep showing the last known balance while the
     # refresh runs, so the segment doesn't flicker off every TTL boundary.
     if entry and entry.get("supported"):
-        return _format_balance(entry)
-    return ""
+        return entry
+    return None
+
+
+def relay_balance_text(env: Dict[str, str], *, spawn: bool = True) -> str:
+    """Thin string wrapper over ``relay_balance`` — ``bal $…`` or "" (back-compat)."""
+    entry = relay_balance(env, spawn=spawn)
+    return _format_balance(entry) if entry else ""
 
 
 def is_bypass_permissions_active() -> bool:
@@ -1127,9 +1149,22 @@ def main(json_output: bool = False,
             # dirty-state refresh), so it spawns under both the inline and
             # daemon render paths — _suppress_side_effects gates the per-render
             # auto-update checks, not background data refreshes.
+            #
+            # When balance_bar is on AND the relay reports a usable hard_limit,
+            # the segment renders as a fuel-gauge battery (fill = remaining %),
+            # else it falls back to the plain `bal $X` text.
             balance_text = ""
+            balance_pct = None
+            balance_amount = ""
             if cfg.show_balance:
-                balance_text = relay_balance_text(_effective_env)
+                _bentry = relay_balance(_effective_env)
+                if _bentry:
+                    balance_text = _format_balance(_bentry)
+                    if cfg.balance_bar:
+                        _rp = _balance_remaining_pct(_bentry)
+                        if _rp is not None:
+                            balance_pct = _rp
+                            balance_amount = f"${_bentry['balance']:,.2f}"
 
             if json_output:
                 print(json.dumps({
@@ -1138,6 +1173,7 @@ def main(json_output: bool = False,
                                 "context_window_size": ctx_size,
                                 "used_tokens": ctx_used},
                     "balance": balance_text or None,
+                    "balance_remaining_pct": balance_pct,
                     "meta": {"model": model_id, "display_name": display_name,
                              "bypass": bypass},
                 }))
@@ -1156,6 +1192,8 @@ def main(json_output: bool = False,
                     shimmer_phase=shimmer_phase,
                     no_quota=True,
                     balance_text=balance_text,
+                    balance_pct=balance_pct,
+                    balance_amount=balance_amount,
                     **identity_kwargs, **mode_kwargs,
                     **activity_kwargs,
                 ))

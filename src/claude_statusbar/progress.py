@@ -33,6 +33,21 @@ PROJECTION_CRITICAL_THRESHOLD = 85.0
 CONTEXT_WARNING_THRESHOLD = 70.0
 CONTEXT_CRITICAL_THRESHOLD = 85.0
 
+# Relay-balance fuel gauge colors on *remaining* %, not used: full is green,
+# getting low is yellow, nearly empty is red (a fuel/phone-battery mental model,
+# the inverse of the context bar where a full bar is bad).
+BALANCE_LOW_THRESHOLD = 25.0       # ≤25% left → yellow
+BALANCE_CRITICAL_THRESHOLD = 10.0  # ≤10% left → red
+
+
+def _balance_fill_rgb(remaining_pct, theme):
+    """Fuel-gauge fill color from remaining balance %: green high → red low."""
+    if remaining_pct <= BALANCE_CRITICAL_THRESHOLD:
+        return theme.s_hot
+    if remaining_pct <= BALANCE_LOW_THRESHOLD:
+        return theme.s_warn
+    return theme.s_ok
+
 
 def _fg(rgb): return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 def _bg(rgb): return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
@@ -460,6 +475,8 @@ def format_status_line(
     forecast_7d: str = "",
     no_quota: bool = False,
     balance_text="",
+    balance_pct=None,
+    balance_amount="",
 ):
     """Build the complete classic-style status line.
 
@@ -501,9 +518,21 @@ def format_status_line(
         parts.append(_format_model(model, ink, mute, use_color))
         # Relay balance is the headline number in no-quota mode (it's the
         # closest thing to "quota left"), so it sits right after the model,
-        # ahead of the session cost. Colored green — it's a remaining figure,
-        # not a warning.
-        if balance_text:
+        # ahead of the session cost. When a remaining % is available it renders
+        # as a fuel-gauge battery (fill = remaining, green when full → red when
+        # nearly empty); otherwise it falls back to the plain `bal $X` text.
+        if balance_pct is not None:
+            fill = _balance_fill_rgb(balance_pct, theme)
+            bar = _build_dimension(
+                "bal", balance_pct, _fg(fill), use_color,
+                BALANCE_LOW_THRESHOLD, BALANCE_CRITICAL_THRESHOLD, theme,
+                fill_rgb=fill,
+            )
+            seg = bar
+            if balance_amount:
+                seg += " " + colorize(balance_amount, _fg(fill), use_color)
+            parts.append(seg)
+        elif balance_text:
             parts.append(colorize(balance_text, _fg(theme.s_ok), use_color))
         if cost_text:
             parts.append(colorize(f"$ {cost_text}", ink, use_color))

@@ -30,6 +30,7 @@ def _run_config_subcommand(rest):
         print(f"show_language       = {cfg.show_language}")
         print(f"show_cost           = {cfg.show_cost}")
         print(f"show_balance        = {cfg.show_balance}")
+        print(f"balance_bar         = {cfg.balance_bar}")
         print(f"show_cache_age      = {cfg.show_cache_age}")
         print(f"show_project_branch = {cfg.show_project_branch}")
         print(f"show_ahead_behind   = {cfg.show_ahead_behind}")

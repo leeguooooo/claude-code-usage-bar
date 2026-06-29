@@ -9,6 +9,21 @@ For a quick overview of the latest release, see the
 
 ---
 
+## Unreleased
+
+### Added
+- **Balance fuel-gauge battery (`balance_bar`, default on).** The relay balance
+  now renders as a battery bar — `bal[████ 52%] $26.00` — where the fill is the
+  **remaining** proportion (a fuel/phone-battery mental model: full = green,
+  getting low = yellow ≤25%, nearly empty = red ≤10%), with the remaining amount
+  trailing. So you see both how much is left (the gauge + %) and the absolute
+  figure at a glance. Falls back to the plain `bal $X` text when the relay
+  reports no usable hard-limit (some relays return a sentinel/zero limit, which
+  would make a gauge misleading). Turn the bar off with
+  `cs config set balance_bar false` to keep the plain text.
+- **`.claude-plugin` marketplace/plugin manifests re-synced to 3.16.0** — they
+  were left at 3.15.1 by the v3.16.0 release (PyPI package was correct).
+
 ## v3.16.0 — 2026-06-29
 
 ### Added
