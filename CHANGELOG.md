@@ -9,7 +9,7 @@ For a quick overview of the latest release, see the
 
 ---
 
-## Unreleased
+## v3.16.0 — 2026-06-29
 
 ### Added
 - **Relay account balance in no-quota mode (`show_balance`, default on, auto).**
