@@ -98,22 +98,31 @@ def test_inflight_marker_blocks_double_spawn(tmp_path, monkeypatch):
     assert not spawned
 
 
-# --- refresh prober ---
+# --- refresh prober (single self-check to our own service) ---
 
 def test_refresh_writes_ok_entry(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
-    responses = {
-        "https://api.ipify.org": "9.9.9.9",
-        "https://proxycheck.io/v2/9.9.9.9?risk=1&vpn=1": json.dumps(
-            {"status": "ok", "9.9.9.9": {"proxy": "yes", "type": "VPN",
-                                         "risk": 66}}),
-    }
-    monkeypatch.setattr(refresh, "_get", lambda url: responses[url])
+    # one call to ip-check.leeguoo.com returns IP + verdict together
+    monkeypatch.setattr(refresh, "_get", lambda url, **kw: json.dumps(
+        {"ip": "104.28.193.16", "risk": 100, "level": "crit",
+         "type": "hosting", "reasons": ["datacenter ASN AS13335"]}))
     refresh.main()
     entry = ip_risk.read_cache()
     assert entry["ok"] is True
-    assert entry["risk"] == 66 and entry["proxy"] == "yes"
+    assert entry["ip"] == "104.28.193.16"
+    assert entry["risk"] == 100 and entry["proxy"] == "yes"
+    assert entry["provider"] == "ip-check.leeguoo.com"
     assert ip_risk.is_inflight() is False
+
+
+def test_refresh_clean_ip_marks_proxy_no(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    monkeypatch.setattr(refresh, "_get", lambda url, **kw: json.dumps(
+        {"ip": "220.26.40.233", "risk": 0, "level": "ok",
+         "type": "residential", "reasons": []}))
+    refresh.main()
+    entry = ip_risk.read_cache()
+    assert entry["risk"] == 0 and entry["proxy"] == "no"
 
 
 def test_refresh_failure_preserves_last_good(tmp_path, monkeypatch):
@@ -121,7 +130,7 @@ def test_refresh_failure_preserves_last_good(tmp_path, monkeypatch):
     ip_risk.write_cache_atomic({"ok": True, "ip": "9.9.9.9", "risk": 3,
                                 "proxy": "no", "ts": time.time() - 9999})
 
-    def _boom(url):
+    def _boom(url, **kw):
         raise OSError("net down")
     monkeypatch.setattr(refresh, "_get", _boom)
     refresh.main()
@@ -149,7 +158,7 @@ def test_render_no_ip_line_when_clean():
     assert "ip risk" not in out
 
 
-# --- two-tier freshness: cheap IP recheck vs rate-limited proxycheck ---
+# --- freshness gate: cheap re-check cadence catches a VPN toggle fast ---
 
 def test_should_refresh_on_check_ttl_not_risk_ttl(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
@@ -162,36 +171,19 @@ def test_should_refresh_on_check_ttl_not_risk_ttl(tmp_path, monkeypatch):
     assert not ip_risk.should_refresh(entry, now=now + 10)
 
 
-def test_prober_shortcircuits_when_ip_unchanged(tmp_path, monkeypatch):
-    _iso(tmp_path, monkeypatch)
-    import time as _t
-    ip_risk.write_cache_atomic({"ok": True, "ip": "1.1.1.1", "risk": 5,
-                                "proxy": "no", "type": "ISP",
-                                "ts": _t.time(), "checked_ts": _t.time() - 999})
-    calls = []
-    monkeypatch.setattr(refresh, "egress_ip", lambda: "1.1.1.1")
-    monkeypatch.setattr(refresh, "risk_for",
-                        lambda ip: calls.append(ip) or {"ok": True})
-    refresh.main()
-    assert calls == []                              # proxycheck skipped
-    entry = ip_risk.read_cache()
-    assert entry["risk"] == 5                        # old reading kept
-    assert entry["checked_ts"] >= entry["ts"]        # check clock advanced
-
-
-def test_prober_reprobes_when_ip_changed(tmp_path, monkeypatch):
+def test_prober_updates_on_ip_change(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     import time as _t
     ip_risk.write_cache_atomic({"ok": True, "ip": "1.1.1.1", "risk": 0,
                                 "proxy": "no", "ts": _t.time(),
                                 "checked_ts": _t.time()})
-    monkeypatch.setattr(refresh, "egress_ip", lambda: "2.2.2.2")  # VPN on
-    monkeypatch.setattr(refresh, "risk_for",
-                        lambda ip: {"ok": True, "ip": ip, "risk": 88,
-                                    "proxy": "yes", "type": "VPN"})
+    # egress switched to a risky IP; one self-check reflects it immediately
+    monkeypatch.setattr(refresh, "_get", lambda url, **kw: json.dumps(
+        {"ip": "2.2.2.2", "risk": 88, "level": "crit", "type": "vpn"}))
     refresh.main()
     entry = ip_risk.read_cache()
     assert entry["ip"] == "2.2.2.2" and entry["risk"] == 88
+    assert entry["checked_ts"] >= entry["ts"]
 
 
 def test_fp_risk_default_on_ip_risk_default_off():

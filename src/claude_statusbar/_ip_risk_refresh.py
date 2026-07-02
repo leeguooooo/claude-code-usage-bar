@@ -1,9 +1,11 @@
 """Detached egress-IP risk prober — spawned by ip_risk.ip_risk_segment().
 
-Two HTTP calls (own egress IP via ipify, then proxycheck.io risk for that
-IP), then one atomic cache write. Never raises; a failure writes an
-``ok: false`` entry so the render path backs off for FAIL_RETRY_S instead of
-respawning every render.
+One HTTP call to our own service ip-check.leeguoo.com (self-check: it reads
+the caller's egress IP from the edge and returns the risk verdict in a single
+response), then one atomic cache write. No third-party dependency, no rate
+cap for our own users — the service's "self" quota bucket is sized for this
+prober. Never raises; a failure writes an ``ok: false`` entry so the render
+path backs off for FAIL_RETRY_S instead of respawning every render.
 """
 import json
 import sys
@@ -14,33 +16,37 @@ from . import ip_risk
 
 _TIMEOUT_S = 8.0
 _UA = "claude-statusbar (+https://github.com/leeguooooo/claude-code-usage-bar)"
+# Self-check endpoint (no ?ip= → the generous, harvest-proof "self" quota
+# bucket). Returns {ip, risk, level, type, reasons, ...}.
+_SERVICE_URL = "https://ip-check.leeguoo.com/"
 
 
-def _get(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+def _get(url: str, *, accept_json: bool = False) -> str:
+    headers = {"User-Agent": _UA}
+    if accept_json:
+        headers["Accept"] = "application/json"
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
         return resp.read().decode("utf-8", "replace")
 
 
-def egress_ip() -> str:
-    ip = _get("https://api.ipify.org").strip()
-    if not ip or len(ip) > 64:
+def check_self() -> dict:
+    """Query our service for THIS machine's egress-IP verdict (one call)."""
+    raw = json.loads(_get(_SERVICE_URL, accept_json=True))
+    ip = raw.get("ip")
+    if not ip or not isinstance(ip, str):
         raise ValueError("no ip")
-    return ip
-
-
-def risk_for(ip: str) -> dict:
-    raw = json.loads(_get(f"https://proxycheck.io/v2/{ip}?risk=1&vpn=1"))
-    info = raw.get(ip) if isinstance(raw, dict) else None
-    if not isinstance(info, dict):
-        raise ValueError("no info")
+    typ = (raw.get("type") or "").strip()
+    level = (raw.get("level") or "").strip()
+    proxy = "yes" if (typ in ("vpn", "residential-proxy", "hosting", "tor")
+                      or level in ("warn", "crit")) else "no"
     return {
         "ok": True,
         "ip": ip,
-        "risk": info.get("risk", 0),
-        "proxy": info.get("proxy", ""),
-        "type": info.get("type", ""),
-        "provider": "proxycheck.io",
+        "risk": int(raw.get("risk") or 0),
+        "proxy": proxy,
+        "type": typ,
+        "provider": "ip-check.leeguoo.com",
     }
 
 
@@ -48,15 +54,7 @@ def main() -> int:
     now = time.time()
     prev = ip_risk.read_cache() or {}
     try:
-        ip = egress_ip()
-        # Short-circuit: same egress IP and the risk reading is still within
-        # its TTL → skip the rate-limited proxycheck call, just bump the
-        # cheap-check clock so the render path stops re-spawning.
-        if (prev.get("ok") and prev.get("ip") == ip
-                and ip_risk.is_fresh(prev, now)):
-            entry = dict(prev)
-        else:
-            entry = risk_for(ip)
+        entry = check_self()
     except Exception:
         # Keep the last good reading around so the bar can keep showing it
         # while the network is flaky; only the freshness clock resets.
