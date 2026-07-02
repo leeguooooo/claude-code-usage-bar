@@ -810,3 +810,21 @@ def test_suppress_side_effects_skips_update_check(monkeypatch, tmp_path: Path):
 
 # Helper imports for the side-effects test
 import io  # noqa: E402
+
+
+def test_gc_orphan_tmp_files(tmp_path, monkeypatch):
+    import time
+    import claude_statusbar.daemon as daemon
+    monkeypatch.setattr(daemon, "_cache_dir", lambda: tmp_path)
+    old = tmp_path / ".last_stdin.json.abc123.tmp"
+    old.write_text("")
+    import os
+    os.utime(old, (time.time() - 7200, time.time() - 7200))
+    fresh = tmp_path / ".last_stdin.json.def456.tmp"
+    fresh.write_text("")
+    keeper = tmp_path / "rate_latest.json"          # non-tmp: untouched
+    keeper.write_text("{}")
+    daemon._gc_orphan_tmp_files()
+    assert not old.exists()
+    assert fresh.exists()                            # younger than 1h: kept
+    assert keeper.exists()

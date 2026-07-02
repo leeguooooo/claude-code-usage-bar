@@ -1088,6 +1088,15 @@ def main(json_output: bool = False,
             ahead, behind = read_ahead_behind(info.toplevel)
             identity_kwargs["identity_ahead"] = ahead
             identity_kwargs["identity_behind"] = behind
+        if cfg.show_ip_risk:
+            try:
+                from .ip_risk import ip_risk_segment
+                ip_text, ip_level = ip_risk_segment()
+                if ip_text:
+                    identity_kwargs["identity_ip_text"] = ip_text
+                    identity_kwargs["identity_ip_level"] = ip_level
+            except Exception:
+                pass
 
     # Optional session-mode line (⚙): effort / thinking / fast / output-style,
     # straight from stdin. Each field is omitted by the renderer when absent.

@@ -330,6 +330,31 @@ def _active_sessions() -> list[str]:
     return [sid for _, sid in out]
 
 
+TMP_GC_AFTER_S = 60 * 60  # orphaned atomic-write temp files older than 1h
+
+
+def _gc_orphan_tmp_files() -> None:
+    """Remove orphaned ``.*.tmp`` files from the cache root.
+
+    atomic_write_text writes to a sibling tempfile then os.replace()s it into
+    place; a statusline process SIGKILLed between the two (Claude Code's 1s
+    render timeout) leaks the tempfile. Observed live 2026-07-02: ~4900 leaked
+    files. Anything older than TMP_GC_AFTER_S can't still be mid-write.
+    """
+    cutoff = time.time() - TMP_GC_AFTER_S
+    try:
+        for f in _cache_dir().iterdir():
+            try:
+                if (f.is_file() and f.name.startswith(".")
+                        and f.name.endswith(".tmp")
+                        and f.stat().st_mtime < cutoff):
+                    f.unlink()
+            except OSError:
+                continue
+    except OSError:
+        pass
+
+
 def _gc_old_sessions() -> None:
     """Drop session dirs that haven't been touched for SESSION_GC_AFTER_S.
 
@@ -421,6 +446,7 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
             _render_all_sessions()
             if t0 - last_gc > GC_INTERVAL_S:
                 _gc_old_sessions()
+                _gc_orphan_tmp_files()
                 # The daemon is the long-lived process, so it owns the periodic
                 # auto-update check (the per-render path suppresses side effects
                 # in daemon mode). check_for_updates is 24h-throttled and only

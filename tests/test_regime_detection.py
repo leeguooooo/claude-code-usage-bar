@@ -187,3 +187,26 @@ def test_core_main_passes_model_into_regime_detection(tmp_path, monkeypatch, cap
     store = json.loads((tmp_path / "rate_latest.json").read_text())
     assert store["sessions"]["wire-1"]["model"] == "claude-fable-5"
     assert store["regime"]["reason"] == "model-switch"
+
+
+def test_core_main_passes_session_id_into_sessions_map(tmp_path, monkeypatch, capsys):
+    """Wiring guard: the recording reconcile must receive stdin's session_id
+    (frozen-replay gating and regime detection both key off it)."""
+    import io, sys, time
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("CS_API_MODE", raising=False)
+    (tmp_path / ".claude").mkdir(parents=True)
+    cfg = tmp_path / ".claude" / "claude-statusbar.json"
+    cfg.write_text(json.dumps({"show_project_branch": False, "show_cache_age": False,
+                               "show_todos": False, "show_mode": False}))
+    import claude_statusbar.config as config
+    monkeypatch.setattr(config, "CONFIG_PATH", cfg)
+    from claude_statusbar.core import main
+    payload = json.loads(_main_payload("claude-fable-5", time.time()))
+    payload["session_id"] = "wire-sid-9"
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+    main(use_color=False, _suppress_side_effects=True)
+    store = json.loads((tmp_path / "rate_latest.json").read_text())
+    assert "wire-sid-9" in store["sessions"]
+    assert store["sessions"]["wire-sid-9"]["model"] == "claude-fable-5"

@@ -429,6 +429,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
                          ahead=None, behind=None,
                          duration_text: str = "", lines_text: str = "",
                          version_text: str = "", update_text: str = "",
+                         ip_text: str = "", ip_level: str = "ok",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
 
@@ -458,6 +459,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
                 tail += f" {ab}"
         if info.is_worktree:
             tail += " [worktree]"
+        if ip_text:
+            tail += f" · {ip_text}"
         ver = f" · v{version_text}" if version_text else ""
         if version_text and update_text:
             ver += f" ↑{update_text}"
@@ -468,7 +471,9 @@ def render_identity_line(info, *, theme: Theme, dirty,
     INK = _fg(theme.pill_ink)
     HOT = _fg(theme.s_warn)
 
-    head = f"{MUTE}⤷ {info.project_name}{RESET}"
+    # Project name in full ink — it's the line's identity anchor (user
+    # feedback 2026-07-02: mute made it near-invisible). The ⤷ stays mute.
+    head = f"{MUTE}⤷ {RESET}{INK}{info.project_name}{RESET}"
     if not info.in_git:
         body = f" {MUTE}{ITAL}(no git){RESET}"
     else:
@@ -484,6 +489,13 @@ def render_identity_line(info, *, theme: Theme, dirty,
             body += f" {_fg(theme.s_ok)}{ab}{RESET}"
     if info.is_worktree:
         body += f" {MUTE}[worktree]{RESET}"
+    if ip_text:
+        # Egress-IP risk chip: green check when clean stays quiet; a risky
+        # verdict escalates to the theme's warn/crit color — that's the whole
+        # point of the segment, so it may compete for attention.
+        ip_color = {"ok": theme.s_ok, "warn": theme.s_warn,
+                    "crit": theme.s_hot}.get(ip_level, theme.s_ok)
+        body += f" {MUTE}·{RESET} {_fg(ip_color)}{ip_text}{RESET}"
     # Version: the faintest thing on the line — edge (darkest grey) + dim
     # attribute, so it's there if you look for it but never competes for attention.
     ver = ""
@@ -715,6 +727,8 @@ def render(style: str, **kwargs) -> str:
     behind = kwargs.pop("identity_behind", None)
     duration_text = kwargs.pop("identity_duration", "")
     lines_text = kwargs.pop("identity_lines", "")
+    ip_text = kwargs.pop("identity_ip_text", "")
+    ip_level = kwargs.pop("identity_ip_level", "ok")
     show_version = kwargs.pop("identity_show_version", False)
     show_mode = kwargs.pop("mode_show", False)
     mode_effort = kwargs.pop("mode_effort", "")
@@ -738,6 +752,7 @@ def render(style: str, **kwargs) -> str:
             info, theme=theme, dirty=dirty, ahead=ahead, behind=behind,
             duration_text=duration_text, lines_text=lines_text,
             version_text=version_text, update_text=update_text,
+            ip_text=ip_text, ip_level=ip_level,
             use_color=use_color,
         )
 
