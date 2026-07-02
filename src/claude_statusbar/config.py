@@ -56,6 +56,10 @@ class StatusbarConfig:
     # Egress-IP risk chip on the identity line (proxycheck.io, 30-min cadence,
     # detached prober — see ip_risk.py). Opt-in: it talks to a third party.
     show_ip_risk: bool = False
+    # Relay fingerprint-risk warning line: relay base URL + a marked system
+    # timezone → Claude Code's request is fingerprintable (see fp_risk.py).
+    # Local-only, no network. Opt-in.
+    show_fp_risk: bool = False
     show_duration: bool = False
     show_lines: bool = True
     show_ahead_behind: bool = False
@@ -126,6 +130,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         show_tool_rollup=_to_bool(raw.get("show_tool_rollup", False)),
         show_agents=_to_bool(raw.get("show_agents", False)),
         show_ip_risk=_to_bool(raw.get("show_ip_risk", False)),
+        show_fp_risk=_to_bool(raw.get("show_fp_risk", False)),
         show_duration=_to_bool(raw.get("show_duration", False)),
         show_lines=_to_bool(raw.get("show_lines", True)),
         show_ahead_behind=_to_bool(raw.get("show_ahead_behind", False)),
@@ -158,7 +163,7 @@ VALID_KEYS = {
     "show_cache_age",
     "show_project_branch",
     "show_todos", "show_tools", "show_tool_rollup", "show_agents",
-    "show_ip_risk",
+    "show_ip_risk", "show_fp_risk",
     "show_duration", "show_lines", "show_ahead_behind", "show_version",
     "bar_shimmer", "show_forecast", "show_projection",
     "show_mode", "mode_gradient",
@@ -172,7 +177,7 @@ _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_balance",
               "show_cache_age",
               "show_project_branch",
               "show_todos", "show_tools", "show_tool_rollup", "show_agents",
-              "show_ip_risk",
+              "show_ip_risk", "show_fp_risk",
               "show_duration", "show_lines", "show_ahead_behind", "show_version",
               "bar_shimmer", "show_forecast", "show_projection",
               "show_mode", "mode_gradient"}

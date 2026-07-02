@@ -719,6 +719,8 @@ def render(style: str, **kwargs) -> str:
     lines_text = kwargs.pop("identity_lines", "")
     ip_line_text = kwargs.pop("ip_line_text", "")
     ip_line_level = kwargs.pop("ip_line_level", "ok")
+    fp_line_text = kwargs.pop("fp_line_text", "")
+    fp_line_level = kwargs.pop("fp_line_level", "ok")
     show_version = kwargs.pop("identity_show_version", False)
     show_mode = kwargs.pop("mode_show", False)
     mode_effort = kwargs.pop("mode_effort", "")
@@ -754,6 +756,14 @@ def render(style: str, **kwargs) -> str:
             out = out + "\n" + f"{_fg(color)}{ip_line_text}{RESET}"
         else:
             out = out + "\n" + ip_line_text
+
+    # Relay fingerprint-risk warning line (local env inference; see fp_risk.py).
+    if fp_line_text:
+        if use_color:
+            color = theme.s_hot if fp_line_level == "crit" else theme.s_warn
+            out = out + "\n" + f"{_fg(color)}{fp_line_text}{RESET}"
+        else:
+            out = out + "\n" + fp_line_text
 
     if show_mode:
         mode_line = render_mode_line(

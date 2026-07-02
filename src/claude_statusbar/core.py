@@ -1101,6 +1101,19 @@ def main(json_output: bool = False,
         except Exception:
             pass
 
+    # Relay fingerprint-risk warning line (local-only: relay base URL + a
+    # marked system timezone). Its own dedicated line, distinct from ip_risk.
+    fp_line_kwargs = {}
+    if cfg.show_fp_risk:
+        try:
+            from .fp_risk import fp_risk_line
+            fp_text, fp_level = fp_risk_line(_effective_env)
+            if fp_text:
+                fp_line_kwargs = {"fp_line_text": fp_text,
+                                  "fp_line_level": fp_level}
+        except Exception:
+            pass
+
     # Optional session-mode line (⚙): effort / thinking / fast / output-style,
     # straight from stdin. Each field is omitted by the renderer when absent.
     mode_kwargs = {}
@@ -1206,7 +1219,7 @@ def main(json_output: bool = False,
                     balance_text=balance_text,
                     balance_pct=balance_pct,
                     balance_amount=balance_amount,
-                    **identity_kwargs, **mode_kwargs, **ip_line_kwargs,
+                    **identity_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                     **activity_kwargs,
                 ))
         elif has_official:
@@ -1327,7 +1340,7 @@ def main(json_output: bool = False,
                     shimmer_phase=shimmer_phase,
                     **projection_kwargs,
                     **forecast_kwargs,
-                    **identity_kwargs, **mode_kwargs, **ip_line_kwargs,
+                    **identity_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                     **activity_kwargs,
                 ))
         else:
@@ -1382,7 +1395,7 @@ def main(json_output: bool = False,
                         ctx_pct=ctx_pct,
                         shimmer_phase=shimmer_phase,
                         quota_stale=quota_stale,
-                        **identity_kwargs, **mode_kwargs, **ip_line_kwargs,
+                        **identity_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                         **activity_kwargs,
                     ))
             else:
@@ -1414,7 +1427,7 @@ def main(json_output: bool = False,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
                 density=cfg.density, show_weekly=cfg.show_weekly,
-                **identity_kwargs, **mode_kwargs, **ip_line_kwargs,
+                **identity_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
             ))
 
 if __name__ == '__main__':
