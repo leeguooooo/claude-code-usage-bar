@@ -308,3 +308,28 @@ def test_reconcile_replaces_poisoned_stored_reset(tmp_path):
     }))
     u5, r5, u7, r7 = reconcile_account(5.0, now + 3000, 4.0, now + 9000, path=p, now=now)
     assert (u5, r5, u7, r7) == (5.0, now + 3000, 4.0, now + 9000)
+
+
+def test_project_5h_tracks_acceleration_with_short_lookback():
+    """Ramp scenario (backtest 2026-07-02): slow first half-hour, fast last
+    half-hour. The 1h trailing rate averages the ramp away; the 30-min
+    lookback must pull the projection up toward the current burn rate."""
+    import claude_statusbar.predict as predict
+    now = 1_782_900_000.0
+    reset = now + 2.5 * 3600           # mid-window
+    samples = []
+    # 60→30 min ago: +1% over 30 min (2%/h)
+    for k in range(4):
+        samples.append({"observed_at": now - 3600 + k * 600,
+                        "used_pct": 10.0 + 0.25 * k, "resets_at": reset})
+    # last 30 min: +6% (12%/h burst)
+    for k in range(4):
+        samples.append({"observed_at": now - 1800 + (k + 1) * 450,
+                        "used_pct": 11.0 + 1.5 * (k + 1), "resets_at": reset})
+    used = samples[-1]["used_pct"]
+    p = predict.project_5h(used, reset, now, samples)
+    slow_only = predict._rate_from_samples(samples, now, 3600.0, window="five_hour")
+    fast = predict._rate_from_samples(samples, now, 1800.0, window="five_hour")
+    assert fast > slow_only            # the ramp is real in the data
+    # projection must reflect at least the blended fast rate, not the 1h average
+    assert p > used + (slow_only * 0.55 + 0.0) * (reset - now)

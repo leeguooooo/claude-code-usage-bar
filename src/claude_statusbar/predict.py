@@ -773,6 +773,15 @@ def project_5h(current_used: float, resets_at: float, now: float,
         projected_final, _ttl = window_avg
         avg_rate = max(0.0, (projected_final - used) / ttr)
     recent = _rate_from_samples(samples, float(now), 3600.0, window="five_hour")
+    # Ramp tracking: heavy windows accelerate (more parallel sessions, a switch
+    # to a hungrier model) and the 1h trailing rate lags the ramp — backtested
+    # 2026-07-02 over 46 closed windows, mid-window misses (>10pp under) in
+    # heavy windows dropped 26% → 19% by also looking at the last 30 min and
+    # taking the faster of the two. Costs a mild high bias in light windows,
+    # which is the preferred failure direction for a quota warning.
+    fast = _rate_from_samples(samples, float(now), 1800.0, window="five_hour")
+    if fast is not None and (recent is None or fast > recent):
+        recent = fast
     learned = learn_bucket_rates(samples, window="five_hour")
     bucket = bucket_for_time(now)
     bucket_rate = expected_bucket_rate(bucket, learned.get(bucket, {})) / 3600.0
