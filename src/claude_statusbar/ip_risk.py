@@ -27,6 +27,9 @@ INFLIGHT_EXPIRY_S = 60.0
 # proxycheck.io's documented bands: 0-33 clean, 34-66 suspicious, 67+ bad.
 WARN_RISK = 34
 CRIT_RISK = 67
+# The warning line only appears above this risk score (user rule: a clean
+# IP earns silence, not a green checkmark taking up a whole line).
+SHOW_THRESHOLD = 40
 
 
 def _cache_root() -> Path:
@@ -107,24 +110,32 @@ def risk_level(entry: Dict[str, Any]) -> str:
     return "ok"
 
 
-def segment_text(entry: Dict[str, Any]) -> str:
-    level = risk_level(entry)
+def line_text(entry: Dict[str, Any]) -> str:
+    """Full warning line, or "" when the IP is clean enough (≤ SHOW_THRESHOLD).
+
+    English by design (user request) and explicit about the consequence:
+    a dirty egress IP is an account-ban risk.
+    """
     try:
         risk = int(entry.get("risk", 0))
     except (TypeError, ValueError):
         risk = 0
-    if level == "ok":
-        return "ip✓"
-    mark = "⚠" if level == "warn" else "✗"
-    return f"ip{mark}{risk}"
+    if risk <= SHOW_THRESHOLD:
+        return ""
+    kind = str(entry.get("type", "") or "").strip()
+    kind_part = f" ({kind})" if kind else ""
+    if risk >= CRIT_RISK:
+        return (f"✗ ip risk {risk}/100{kind_part} — "
+                f"high account-ban risk, consider switching network")
+    return f"⚠ ip risk {risk}/100{kind_part} — current ip may risk account ban"
 
 
-def ip_risk_segment(*, spawn: bool = True) -> Tuple[str, str]:
-    """(text, level) for the identity line; ("", "ok") hides the segment.
+def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:
+    """(text, level) for the dedicated warning line; ("", "ok") = hidden.
 
     Fresh ok cache → render it. Stale → keep rendering the last good reading
     (risk doesn't flap minute-to-minute) while a detached refresh runs.
-    Failed cache with nothing good to show → hidden.
+    Clean IP, failed probe, or no cache → hidden line, zero noise.
     """
     entry = read_cache()
     fresh = is_fresh(entry)
@@ -144,5 +155,5 @@ def ip_risk_segment(*, spawn: bool = True) -> Tuple[str, str]:
         except (OSError, ValueError):
             clear_inflight()
     if isinstance(entry, dict) and entry.get("ok"):
-        return segment_text(entry), risk_level(entry)
+        return line_text(entry), risk_level(entry)
     return "", "ok"

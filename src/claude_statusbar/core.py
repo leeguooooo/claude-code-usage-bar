@@ -1088,15 +1088,18 @@ def main(json_output: bool = False,
             ahead, behind = read_ahead_behind(info.toplevel)
             identity_kwargs["identity_ahead"] = ahead
             identity_kwargs["identity_behind"] = behind
-        if cfg.show_ip_risk:
-            try:
-                from .ip_risk import ip_risk_segment
-                ip_text, ip_level = ip_risk_segment()
-                if ip_text:
-                    identity_kwargs["identity_ip_text"] = ip_text
-                    identity_kwargs["identity_ip_level"] = ip_level
-            except Exception:
-                pass
+    # Dedicated egress-IP risk warning line (only shows above the risk
+    # threshold; independent of the git identity segment).
+    ip_line_kwargs = {}
+    if cfg.show_ip_risk:
+        try:
+            from .ip_risk import ip_risk_line
+            ip_text, ip_level = ip_risk_line()
+            if ip_text:
+                ip_line_kwargs = {"ip_line_text": ip_text,
+                                  "ip_line_level": ip_level}
+        except Exception:
+            pass
 
     # Optional session-mode line (⚙): effort / thinking / fast / output-style,
     # straight from stdin. Each field is omitted by the renderer when absent.
@@ -1203,7 +1206,7 @@ def main(json_output: bool = False,
                     balance_text=balance_text,
                     balance_pct=balance_pct,
                     balance_amount=balance_amount,
-                    **identity_kwargs, **mode_kwargs,
+                    **identity_kwargs, **mode_kwargs, **ip_line_kwargs,
                     **activity_kwargs,
                 ))
         elif has_official:
@@ -1324,7 +1327,7 @@ def main(json_output: bool = False,
                     shimmer_phase=shimmer_phase,
                     **projection_kwargs,
                     **forecast_kwargs,
-                    **identity_kwargs, **mode_kwargs,
+                    **identity_kwargs, **mode_kwargs, **ip_line_kwargs,
                     **activity_kwargs,
                 ))
         else:
@@ -1379,7 +1382,7 @@ def main(json_output: bool = False,
                         ctx_pct=ctx_pct,
                         shimmer_phase=shimmer_phase,
                         quota_stale=quota_stale,
-                        **identity_kwargs, **mode_kwargs,
+                        **identity_kwargs, **mode_kwargs, **ip_line_kwargs,
                         **activity_kwargs,
                     ))
             else:
@@ -1411,7 +1414,7 @@ def main(json_output: bool = False,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
                 density=cfg.density, show_weekly=cfg.show_weekly,
-                **identity_kwargs, **mode_kwargs,
+                **identity_kwargs, **mode_kwargs, **ip_line_kwargs,
             ))
 
 if __name__ == '__main__':

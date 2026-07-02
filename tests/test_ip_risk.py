@@ -1,5 +1,6 @@
-# Egress-IP risk segment (show_ip_risk): render path reads cache only; a
+# Egress-IP risk warning line (show_ip_risk): render path reads cache only; a
 # detached _ip_risk_refresh prober (proxycheck.io) rewrites it every 30 min.
+# The line only appears above SHOW_THRESHOLD (40) — a clean IP earns silence.
 import json
 import time
 
@@ -22,29 +23,38 @@ def test_levels_follow_proxycheck_bands():
     assert ip_risk.risk_level({"risk": 5, "proxy": "yes"}) == "warn"
 
 
-def test_segment_text_formats():
-    assert ip_risk.segment_text({"risk": 0, "proxy": "no"}) == "ip✓"
-    assert ip_risk.segment_text({"risk": 45, "proxy": "no"}) == "ip⚠45"
-    assert ip_risk.segment_text({"risk": 82, "proxy": "no"}) == "ip✗82"
+def test_line_hidden_at_or_below_threshold():
+    assert ip_risk.line_text({"risk": 0}) == ""
+    assert ip_risk.line_text({"risk": 40}) == ""
+
+
+def test_line_warn_and_crit_wording():
+    warn = ip_risk.line_text({"risk": 55, "type": "VPN"})
+    assert warn.startswith("⚠ ip risk 55/100 (VPN)")
+    assert "account ban" in warn
+    crit = ip_risk.line_text({"risk": 82, "type": "VPN"})
+    assert crit.startswith("✗ ip risk 82/100 (VPN)")
+    assert "account-ban" in crit and "switching network" in crit
 
 
 # --- cache / freshness / spawn ---
 
-def test_fresh_ok_cache_renders_without_spawn(tmp_path, monkeypatch):
+def test_fresh_clean_cache_is_silent_and_no_spawn(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     ip_risk.write_cache_atomic({"ok": True, "risk": 12, "proxy": "no",
                                 "ts": time.time()})
     spawned = []
     monkeypatch.setattr(ip_risk, "mark_inflight",
                         lambda: spawned.append(1))
-    text, level = ip_risk.ip_risk_segment()
-    assert (text, level) == ("ip✓", "ok")
+    text, level = ip_risk.ip_risk_line()
+    assert text == ""
     assert not spawned
 
 
 def test_stale_cache_keeps_last_reading_and_spawns(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     ip_risk.write_cache_atomic({"ok": True, "risk": 70, "proxy": "yes",
+                                "type": "VPN",
                                 "ts": time.time() - ip_risk.IP_RISK_TTL_S - 5})
     spawned = []
     monkeypatch.setattr(ip_risk, "mark_inflight", lambda: spawned.append(1))
@@ -53,15 +63,16 @@ def test_stale_cache_keeps_last_reading_and_spawns(tmp_path, monkeypatch):
         def __init__(self, *a, **k): spawned.append("popen")
     import subprocess
     monkeypatch.setattr(subprocess, "Popen", _P)
-    text, level = ip_risk.ip_risk_segment()
-    assert (text, level) == ("ip✗70", "crit")
+    text, level = ip_risk.ip_risk_line()
+    assert text.startswith("✗ ip risk 70/100")
+    assert level == "crit"
     assert spawned
 
 
-def test_failed_cache_hides_segment(tmp_path, monkeypatch):
+def test_failed_cache_hides_line(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     ip_risk.write_cache_atomic({"ok": False, "ts": time.time()})
-    text, level = ip_risk.ip_risk_segment(spawn=False)
+    text, level = ip_risk.ip_risk_line(spawn=False)
     assert text == ""
 
 
@@ -83,7 +94,7 @@ def test_inflight_marker_blocks_double_spawn(tmp_path, monkeypatch):
         def __init__(self, *a, **k): spawned.append("popen")
     import subprocess
     monkeypatch.setattr(subprocess, "Popen", _P)
-    ip_risk.ip_risk_segment()
+    ip_risk.ip_risk_line()
     assert not spawned
 
 
@@ -119,18 +130,20 @@ def test_refresh_failure_preserves_last_good(tmp_path, monkeypatch):
     assert entry["last_good"]["risk"] == 3
 
 
-# --- identity-line rendering ---
+# --- dedicated line rendering (NOT on the git identity line) ---
 
-def test_identity_line_renders_ip_chip():
-    from claude_statusbar.styles import render_identity_line, get_theme
-    from claude_statusbar.identity import IdentityInfo
-    info = IdentityInfo(project_name="proj", in_git=False, branch=None,
-                        detached=False, worktree_name=None, toplevel=None)
-    line = render_identity_line(info, theme=get_theme("graphite"), dirty=None,
-                                ip_text="ip⚠45", ip_level="warn",
-                                use_color=False)
-    assert "· ip⚠45" in line
-    colored = render_identity_line(info, theme=get_theme("graphite"),
-                                   dirty=None, ip_text="ip✗82",
-                                   ip_level="crit", use_color=True)
-    assert "ip✗82" in colored
+def test_render_appends_dedicated_ip_line():
+    from claude_statusbar.styles import render
+    out = render("classic", msgs_pct=10, weekly_pct=5, reset_5h="1h",
+                 reset_7d="2d", model="M", use_color=False,
+                 ip_line_text="⚠ ip risk 66/100 (VPN) — current ip may risk account ban",
+                 ip_line_level="warn")
+    lines = out.split("\n")
+    assert lines[-1].startswith("⚠ ip risk 66/100")
+
+
+def test_render_no_ip_line_when_clean():
+    from claude_statusbar.styles import render
+    out = render("classic", msgs_pct=10, weekly_pct=5, reset_5h="1h",
+                 reset_7d="2d", model="M", use_color=False)
+    assert "ip risk" not in out
