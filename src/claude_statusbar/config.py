@@ -58,8 +58,9 @@ class StatusbarConfig:
     show_ip_risk: bool = False
     # Relay fingerprint-risk warning line: relay base URL + a marked system
     # timezone → Claude Code's request is fingerprintable (see fp_risk.py).
-    # Local-only, no network. Opt-in.
-    show_fp_risk: bool = False
+    # Local-only, no network, silent unless there's real risk → default on so
+    # affected relay users are warned without having to opt in.
+    show_fp_risk: bool = True
     show_duration: bool = False
     show_lines: bool = True
     show_ahead_behind: bool = False
@@ -130,7 +131,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         show_tool_rollup=_to_bool(raw.get("show_tool_rollup", False)),
         show_agents=_to_bool(raw.get("show_agents", False)),
         show_ip_risk=_to_bool(raw.get("show_ip_risk", False)),
-        show_fp_risk=_to_bool(raw.get("show_fp_risk", False)),
+        show_fp_risk=_to_bool(raw.get("show_fp_risk", True)),
         show_duration=_to_bool(raw.get("show_duration", False)),
         show_lines=_to_bool(raw.get("show_lines", True)),
         show_ahead_behind=_to_bool(raw.get("show_ahead_behind", False)),

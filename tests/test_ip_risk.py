@@ -147,3 +147,55 @@ def test_render_no_ip_line_when_clean():
     out = render("classic", msgs_pct=10, weekly_pct=5, reset_5h="1h",
                  reset_7d="2d", model="M", use_color=False)
     assert "ip risk" not in out
+
+
+# --- two-tier freshness: cheap IP recheck vs rate-limited proxycheck ---
+
+def test_should_refresh_on_check_ttl_not_risk_ttl(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    now = 1000.0
+    # risk reading young (well under IP_RISK_TTL_S) but IP not re-checked for
+    # longer than IP_CHECK_TTL_S → must still spawn to catch a VPN toggle
+    entry = {"ok": True, "ip": "1.1.1.1", "risk": 0, "ts": now,
+             "checked_ts": now}
+    assert ip_risk.should_refresh(entry, now=now + ip_risk.IP_CHECK_TTL_S + 1)
+    assert not ip_risk.should_refresh(entry, now=now + 10)
+
+
+def test_prober_shortcircuits_when_ip_unchanged(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    import time as _t
+    ip_risk.write_cache_atomic({"ok": True, "ip": "1.1.1.1", "risk": 5,
+                                "proxy": "no", "type": "ISP",
+                                "ts": _t.time(), "checked_ts": _t.time() - 999})
+    calls = []
+    monkeypatch.setattr(refresh, "egress_ip", lambda: "1.1.1.1")
+    monkeypatch.setattr(refresh, "risk_for",
+                        lambda ip: calls.append(ip) or {"ok": True})
+    refresh.main()
+    assert calls == []                              # proxycheck skipped
+    entry = ip_risk.read_cache()
+    assert entry["risk"] == 5                        # old reading kept
+    assert entry["checked_ts"] >= entry["ts"]        # check clock advanced
+
+
+def test_prober_reprobes_when_ip_changed(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    import time as _t
+    ip_risk.write_cache_atomic({"ok": True, "ip": "1.1.1.1", "risk": 0,
+                                "proxy": "no", "ts": _t.time(),
+                                "checked_ts": _t.time()})
+    monkeypatch.setattr(refresh, "egress_ip", lambda: "2.2.2.2")  # VPN on
+    monkeypatch.setattr(refresh, "risk_for",
+                        lambda ip: {"ok": True, "ip": ip, "risk": 88,
+                                    "proxy": "yes", "type": "VPN"})
+    refresh.main()
+    entry = ip_risk.read_cache()
+    assert entry["ip"] == "2.2.2.2" and entry["risk"] == 88
+
+
+def test_fp_risk_default_on_ip_risk_default_off():
+    from claude_statusbar.config import StatusbarConfig
+    cfg = StatusbarConfig()
+    assert cfg.show_fp_risk is True     # local-only, silent unless risk
+    assert cfg.show_ip_risk is False    # makes a third-party network call

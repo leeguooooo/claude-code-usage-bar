@@ -18,8 +18,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-# Re-probe cadence for a successful reading.
+# proxycheck.io re-probe cadence for a successful reading (rate-limited API:
+# free tier ~100/day, so this stays coarse).
 IP_RISK_TTL_S = 30 * 60.0
+# Egress-IP re-verify cadence: a cheap ipify call (no rate limit) run more
+# often than the full risk probe, so toggling a VPN is caught within minutes
+# instead of waiting out the full IP_RISK_TTL_S. When the IP is unchanged the
+# prober short-circuits and never calls proxycheck.
+IP_CHECK_TTL_S = 3 * 60.0
 # A failed probe retries sooner, but not so fast that a dead network loops.
 FAIL_RETRY_S = 5 * 60.0
 # Inflight marker older than this is a crashed prober — allow a new spawn.
@@ -61,6 +67,8 @@ def write_cache_atomic(entry: Dict[str, Any]) -> None:
 
 
 def is_fresh(entry: Optional[Dict[str, Any]], now: Optional[float] = None) -> bool:
+    """Whether the proxycheck RISK reading is still current (ts vs its TTL).
+    Used by the prober to decide if it can skip the proxycheck call."""
     if not isinstance(entry, dict):
         return False
     if now is None:
@@ -70,6 +78,23 @@ def is_fresh(entry: Optional[Dict[str, Any]], now: Optional[float] = None) -> bo
     except (TypeError, ValueError):
         return False
     return age < (IP_RISK_TTL_S if entry.get("ok") else FAIL_RETRY_S)
+
+
+def should_refresh(entry: Optional[Dict[str, Any]], now: Optional[float] = None) -> bool:
+    """Whether to spawn the prober. Gated on the cheap egress-IP CHECK cadence
+    (``checked_ts``), not the risk TTL — so a VPN toggle is noticed within
+    IP_CHECK_TTL_S even though proxycheck itself is re-run far less often."""
+    if not isinstance(entry, dict):
+        return True
+    if now is None:
+        now = time.time()
+    if not entry.get("ok"):
+        return is_fresh(entry, now) is False   # failed → FAIL_RETRY_S backoff
+    checked = entry.get("checked_ts", entry.get("ts", 0))
+    try:
+        return (now - float(checked)) >= IP_CHECK_TTL_S
+    except (TypeError, ValueError):
+        return True
 
 
 def is_inflight(now: Optional[float] = None) -> bool:
@@ -138,8 +163,7 @@ def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:
     Clean IP, failed probe, or no cache → hidden line, zero noise.
     """
     entry = read_cache()
-    fresh = is_fresh(entry)
-    if not fresh and spawn and not is_inflight():
+    if should_refresh(entry) and spawn and not is_inflight():
         mark_inflight()
         try:
             import subprocess
