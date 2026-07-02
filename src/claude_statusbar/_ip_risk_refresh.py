@@ -40,7 +40,7 @@ def check_self() -> dict:
     level = (raw.get("level") or "").strip()
     proxy = "yes" if (typ in ("vpn", "residential-proxy", "hosting", "tor")
                       or level in ("warn", "crit")) else "no"
-    return {
+    entry = {
         "ok": True,
         "ip": ip,
         "risk": int(raw.get("risk") or 0),
@@ -48,6 +48,16 @@ def check_self() -> dict:
         "type": typ,
         "provider": "ip-check.leeguoo.com",
     }
+    # Carry the service's Claude-account verdict/action so the warning wording
+    # lives server-side (one place, synced across all clients). ip_risk.line_text
+    # prefers it and falls back to local wording when absent.
+    cl = raw.get("claude")
+    if isinstance(cl, dict):
+        entry["claude_verdict"] = (cl.get("verdict") or "").strip()
+        act = cl.get("action")
+        if isinstance(act, dict) and act.get("en"):
+            entry["claude_action"] = str(act["en"]).strip()
+    return entry
 
 
 def main() -> int:

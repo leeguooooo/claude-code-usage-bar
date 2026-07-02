@@ -436,14 +436,28 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
     _log(f"daemon started pid={os.getpid()} interval={render_interval}s")
 
     GC_INTERVAL_S = 60 * 30  # garbage-collect stale session dirs every 30 min
+    # Egress-IP risk re-check heartbeat. Runs on the daemon's own clock so a
+    # network change (VPN on/off) reflects even while the user is idle and
+    # Claude Code isn't re-rendering the statusline. The prober itself decides
+    # whether a re-check is actually due (its own TTL) and self-throttles via
+    # the inflight marker, so this can fire generously.
+    IP_HEARTBEAT_S = 20.0
     # Defer first GC by one full interval — without this the first tick of
     # every fresh daemon would scan the sessions tree, potentially racing
     # with a Claude Code window that's mid-restart.
     last_gc = time.time()
+    last_ip = 0.0
     try:
         while _running:
             t0 = time.time()
             _render_all_sessions()
+            if t0 - last_ip > IP_HEARTBEAT_S:
+                last_ip = t0
+                try:
+                    from . import ip_risk
+                    ip_risk.ensure_fresh()
+                except Exception:
+                    pass
             if t0 - last_gc > GC_INTERVAL_S:
                 _gc_old_sessions()
                 _gc_orphan_tmp_files()

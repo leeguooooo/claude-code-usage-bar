@@ -213,3 +213,29 @@ def test_fp_risk_default_on_ip_risk_default_off():
     cfg = StatusbarConfig()
     assert cfg.show_fp_risk is True     # local-only, silent unless risk
     assert cfg.show_ip_risk is False    # makes a third-party network call
+
+
+def test_ensure_fresh_spawns_when_due(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    import time as _t
+    # cache checked long ago → due for re-check
+    ip_risk.write_cache_atomic({"ok": True, "ip": "1.1.1.1", "risk": 0,
+                                "ts": _t.time() - 999, "checked_ts": _t.time() - 999})
+    spawned = []
+    monkeypatch.setattr(ip_risk, "mark_inflight", lambda: spawned.append(1))
+    import subprocess
+    monkeypatch.setattr(subprocess, "Popen",
+                        lambda *a, **k: spawned.append("popen"))
+    ip_risk.ensure_fresh()
+    assert spawned
+
+
+def test_ensure_fresh_noop_when_recent(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    import time as _t
+    ip_risk.write_cache_atomic({"ok": True, "ip": "1.1.1.1", "risk": 0,
+                                "ts": _t.time(), "checked_ts": _t.time()})
+    spawned = []
+    monkeypatch.setattr(ip_risk, "mark_inflight", lambda: spawned.append(1))
+    ip_risk.ensure_fresh()
+    assert not spawned

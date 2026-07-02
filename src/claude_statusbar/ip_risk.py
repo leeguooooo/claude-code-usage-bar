@@ -21,11 +21,12 @@ from typing import Any, Dict, Optional, Tuple
 # proxycheck.io re-probe cadence for a successful reading (rate-limited API:
 # free tier ~100/day, so this stays coarse).
 IP_RISK_TTL_S = 30 * 60.0
-# Egress-IP re-verify cadence: a cheap ipify call (no rate limit) run more
-# often than the full risk probe, so toggling a VPN is caught within minutes
-# instead of waiting out the full IP_RISK_TTL_S. When the IP is unchanged the
-# prober short-circuits and never calls proxycheck.
-IP_CHECK_TTL_S = 3 * 60.0
+# Egress-IP re-verify cadence. We now hit our own service (ip-check.leeguoo.com,
+# self quota bucket), so a network change is caught within ~1 min instead of
+# waiting minutes. The daemon also runs this on its own heartbeat (see
+# daemon.py), so a VPN toggle reflects even while you're idle and Claude Code
+# isn't re-rendering the statusline.
+IP_CHECK_TTL_S = 60.0
 # A failed probe retries sooner, but not so fast that a dead network loops.
 FAIL_RETRY_S = 5 * 60.0
 # Inflight marker older than this is a crashed prober — allow a new spawn.
@@ -167,21 +168,35 @@ def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:
     Clean IP, failed probe, or no cache → hidden line, zero noise.
     """
     entry = read_cache()
-    if should_refresh(entry) and spawn and not is_inflight():
-        mark_inflight()
-        try:
-            import subprocess
-            import sys
-            subprocess.Popen(
-                [sys.executable, "-m", "claude_statusbar._ip_risk_refresh"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                close_fds=True,
-                start_new_session=True,
-            )
-        except (OSError, ValueError):
-            clear_inflight()
+    if spawn:
+        ensure_fresh(entry)
     if isinstance(entry, dict) and entry.get("ok"):
         return line_text(entry), risk_level(entry)
     return "", "ok"
+
+
+def ensure_fresh(entry=None) -> None:
+    """Spawn the detached prober if the cache is due for a re-check and one
+    isn't already running. Safe to call from anywhere (render path AND the
+    daemon heartbeat) — the inflight marker prevents double-spawns. Never
+    raises."""
+    try:
+        if entry is None:
+            entry = read_cache()
+        if should_refresh(entry) and not is_inflight():
+            mark_inflight()
+            try:
+                import subprocess
+                import sys
+                subprocess.Popen(
+                    [sys.executable, "-m", "claude_statusbar._ip_risk_refresh"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    close_fds=True,
+                    start_new_session=True,
+                )
+            except (OSError, ValueError):
+                clear_inflight()
+    except Exception:
+        pass
