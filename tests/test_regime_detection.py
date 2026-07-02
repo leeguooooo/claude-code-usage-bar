@@ -147,3 +147,43 @@ def test_projection_display_resets_at_regime_boundary(tmp_path, monkeypatch):
     after = predict.projection(14.4, R5, 5.0, R7, NOW + 250, session_id="s1")[0]
     # display must jump with the new regime instead of easing over from before
     assert int(after.lstrip("→").rstrip("%")) > int(before.lstrip("→").rstrip("%")) + 10
+
+
+# --- core.main wiring (regression: model.id is flattened to stdin_data
+# ['model_id'] by parse_stdin_data; reading the wrong key made every render
+# pass model=None and regime detection never fired in production) ---
+
+def _main_payload(model_id, now):
+    return json.dumps({
+        "session_id": "wire-1",
+        "transcript_path": "/n.jsonl",
+        "model": {"id": model_id, "display_name": model_id},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 12, "resets_at": now + 3600},
+            "seven_day": {"used_percentage": 5, "resets_at": now + 3 * 86400},
+        },
+        "context_window": {"used_percentage": 35,
+                           "context_window_size": 1000000,
+                           "total_input_tokens": 350000},
+    })
+
+
+def test_core_main_passes_model_into_regime_detection(tmp_path, monkeypatch, capsys):
+    import io, sys, time
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("CS_API_MODE", raising=False)
+    (tmp_path / ".claude").mkdir(parents=True)
+    cfg = tmp_path / ".claude" / "claude-statusbar.json"
+    cfg.write_text(json.dumps({"show_project_branch": False, "show_cache_age": False,
+                               "show_todos": False, "show_mode": False}))
+    import claude_statusbar.config as config
+    monkeypatch.setattr(config, "CONFIG_PATH", cfg)
+    from claude_statusbar.core import main
+    now = time.time()
+    for model in ("claude-sonnet-5", "claude-fable-5"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO(_main_payload(model, now)))
+        main(use_color=False, _suppress_side_effects=True)
+    store = json.loads((tmp_path / "rate_latest.json").read_text())
+    assert store["sessions"]["wire-1"]["model"] == "claude-fable-5"
+    assert store["regime"]["reason"] == "model-switch"
