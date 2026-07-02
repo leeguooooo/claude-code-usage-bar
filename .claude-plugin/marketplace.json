@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Self-hosted marketplace for the claude-statusbar plugin. Add with `/plugin marketplace add leeguooooo/claude-code-usage-bar`, then `/plugin install claude-statusbar`. The plugin wires the statusLine + slash commands; the render engine is the `cs` CLI from PyPI (`pip install claude-statusbar` or `uv tool install claude-statusbar`).",
-    "version": "3.25.0"
+    "version": "3.25.1"
   },
   "plugins": [
     {

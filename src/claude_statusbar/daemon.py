@@ -453,9 +453,15 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
             _render_all_sessions()
             if t0 - last_ip > IP_HEARTBEAT_S:
                 last_ip = t0
+                # Only probe when the user actually enabled the egress-IP risk
+                # line. Default users (show_ip_risk off) make ZERO third-party
+                # calls — the feature is regional/niche and opt-in, so it must
+                # never phone home for people who didn't ask for it.
                 try:
-                    from . import ip_risk
-                    ip_risk.ensure_fresh()
+                    from .config import load_config
+                    if load_config().show_ip_risk:
+                        from . import ip_risk
+                        ip_risk.ensure_fresh()
                 except Exception:
                     pass
             if t0 - last_gc > GC_INTERVAL_S:

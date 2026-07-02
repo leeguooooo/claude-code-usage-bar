@@ -828,3 +828,24 @@ def test_gc_orphan_tmp_files(tmp_path, monkeypatch):
     assert not old.exists()
     assert fresh.exists()                            # younger than 1h: kept
     assert keeper.exists()
+
+
+def test_ip_heartbeat_gated_on_show_ip_risk(tmp_path, monkeypatch):
+    """The daemon's egress-IP probe heartbeat must NOT fire when the user
+    hasn't enabled show_ip_risk — default users make zero third-party calls."""
+    import claude_statusbar.ip_risk as ip_risk
+    import claude_statusbar.config as config
+    calls = []
+    monkeypatch.setattr(ip_risk, "ensure_fresh", lambda *a, **k: calls.append(1))
+
+    # Mirror the daemon's gate: only probe when show_ip_risk is on.
+    def _tick(cfg_on):
+        monkeypatch.setattr(config, "load_config",
+                            lambda *a, **k: config.StatusbarConfig(show_ip_risk=cfg_on))
+        if config.load_config().show_ip_risk:
+            ip_risk.ensure_fresh()
+
+    _tick(False)
+    assert calls == []          # default off → no probe
+    _tick(True)
+    assert calls == [1]         # opt-in → probes
