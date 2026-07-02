@@ -125,8 +125,9 @@ def test_forecast_uses_reconciled_reading(tmp_path, monkeypatch):
     import claude_statusbar.predict as predict
     monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "latest.json")
     now = 1000.0
-    # Active window seeds used=90 (5h, 1h to reset → at-risk).
-    forecast(90.0, now + 3600, 8.0, now + 536400, now)
+    # Active session seeds used=90 via the recording reconcile (as core.main
+    # does before calling forecast); forecast() itself is read-only now.
+    reconcile_account(90.0, now + 3600, 8.0, now + 536400, now=now)
     # A stale window with used=5 must still see the at-risk ETA (reconciled to 90).
     c5, _ = forecast(5.0, now + 3600, 8.0, now + 536400, now)
     assert c5 == "~26m"

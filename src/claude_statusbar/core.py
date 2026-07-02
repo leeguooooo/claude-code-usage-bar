@@ -1208,6 +1208,7 @@ def main(json_output: bool = False,
                 from .predict import reconcile_account
                 msgs_pct, resets_at, weekly_pct, resets_at_7d = reconcile_account(
                     msgs_pct, resets_at, weekly_pct, resets_at_7d,
+                    session_id=stdin_data.get('session_id') or None,
                 )
             except Exception:
                 pass

@@ -449,6 +449,9 @@ def test_projection_reconciles_stale_session_readings_before_recording(tmp_path,
     now = _ts(2026, 6, 1, 1)
     reset = now + 4 * 3600
 
+    # The fresh session's reading lands in rate_latest via the recording
+    # reconcile (core.main's first call); projection() itself is read-only.
+    predict.reconcile_account(20.0, reset, 15.0, now + 6 * 86400, now=now)
     predict.projection(20.0, reset, 15.0, now + 6 * 86400, now, session_id="fresh")
     p5, _ = predict.projection(10.0, reset, 15.0, now + 6 * 86400, now + 10, session_id="stale")
 

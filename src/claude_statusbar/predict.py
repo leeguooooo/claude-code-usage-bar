@@ -236,6 +236,19 @@ DOWNGRADE_GRACE_S = 120.0
 # Throttle for confirmation-only store writes (same value re-observed) so a
 # 1 Hz render loop doesn't rewrite the store every tick.
 CONFIRM_REFRESH_S = 15.0
+# A session whose rate-limits signature (u5, r5, u7, r7) hasn't changed for
+# this long is replaying a frozen blob: Claude Code only refreshes rate_limits
+# on API activity, so an idle-but-open window re-renders the same numbers
+# forever. Live incident 2026-07-02 (Claude 5 launch re-baseline, seven_day
+# 63% → 2%, same resets_at): frozen blobs whose five_hour reset was still
+# inside the current window passed the reset-plausibility gate and re-confirmed
+# 63% every render, so the grace clock never expired. Frozen sessions lose
+# write/confirm rights but still display the shared store reading.
+RL_IDLE_TTL_S = 600.0
+# Per-session signature entries kept in the store ("sessions" key): drop
+# entries idle past the horizon, cap the map so a long-lived store stays small.
+SESSION_SIG_HORIZON_S = 2 * 86400.0
+MAX_SESSION_SIGS = 64
 
 
 def _reset_plausible(window: str, reset, now: float) -> bool:
@@ -310,9 +323,20 @@ def quota_cache_status(now=None, path=None):
     return ("fresh" if plausible else "stale", age)
 
 
-def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=None):
+def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=None,
+                      session_id=None, record=True):
     """Merge this session's reading into the shared store and return the
     freshest (u5, r5, u7, r7) FOR THIS SESSION'S WINDOWS.
+
+    ``record=False`` answers from the store without ever writing or counting
+    as a confirmation — for derived callers (forecast/projection) that are fed
+    ALREADY-RECONCILED values. Recording those echoes restarted the grace
+    clock on every render, so an official downward re-baseline could never
+    land (live incident 2026-07-02, seven_day pinned at 63% against a real 2%).
+
+    ``session_id`` enables the frozen-blob gate: a session whose rate-limits
+    signature hasn't changed for RL_IDLE_TTL_S is replaying stale data and is
+    treated like a stale blob (no writes, no confirmations, display only).
 
     A reading's identity is (window, resets_at). Blob origin (which logged-in
     account produced it) is not in stdin, and with parallel sessions on
@@ -351,6 +375,38 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
             r = _coerce(reset)
             if r is not None and not _reset_plausible(win, r, now):
                 blob_fresh = False
+
+        # Frozen-blob gate: reset plausibility can't date a blob frozen inside
+        # the current 5h window, but an unchanged per-session signature can.
+        if record and session_id:
+            sessions = store.get("sessions")
+            if not isinstance(sessions, dict):
+                sessions = {}
+            sig = [_coerce(used_5h), _coerce(resets_5h),
+                   _coerce(used_7d), _coerce(resets_7d)]
+            ent = sessions.get(session_id)
+            prev_sig = ent.get("sig") if isinstance(ent, dict) else None
+            seen_at = _coerce(ent.get("changed_at")) if isinstance(ent, dict) else None
+            if prev_sig == sig and seen_at is not None:
+                if (now - seen_at) > RL_IDLE_TTL_S:
+                    blob_fresh = False
+            else:
+                sessions[session_id] = {"sig": sig, "changed_at": now}
+                changed = True
+            cutoff = now - SESSION_SIG_HORIZON_S
+            kept_sess = {k: v for k, v in sessions.items()
+                         if isinstance(v, dict)
+                         and (_coerce(v.get("changed_at")) or 0.0) >= cutoff}
+            if len(kept_sess) > MAX_SESSION_SIGS:
+                freshest = sorted(
+                    kept_sess,
+                    key=lambda k: _coerce(kept_sess[k].get("changed_at")) or 0.0,
+                    reverse=True)[:MAX_SESSION_SIGS]
+                kept_sess = {k: kept_sess[k] for k in freshest}
+            if kept_sess != sessions:
+                sessions = kept_sess
+                changed = True
+            store["sessions"] = sessions
         for win, used, reset in (("five_hour", used_5h, resets_5h),
                                  ("seven_day", used_7d, resets_7d)):
             buckets = _load_buckets(store.get(win))
@@ -417,7 +473,7 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
                 out[win] = (cu, cr)
             store[win] = buckets
 
-        if changed:
+        if changed and record:
             from .cache import atomic_write_text
             try:
                 atomic_write_text(p, json.dumps(store))
@@ -432,7 +488,11 @@ def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
     """Compute (chip_5h, chip_7d). Reconciles against the shared account-global
     latest reading first (so all windows agree), then projects. Never raises."""
     try:
-        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d, now=now)
+        # record=False: core.main feeds values that already went through the
+        # recording reconcile — persisting this echo would re-confirm the
+        # stored reading every render and freeze the downgrade grace clock.
+        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d,
+                                           now=now, record=False)
         c5 = forecast_chip("five_hour", u5, r5, now)
         c7 = forecast_chip("seven_day", u7, r7, now)
         return c5, c7
@@ -905,7 +965,9 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
 
 def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):
     try:
-        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d, now=now)
+        # record=False — same echo hazard as forecast(); see reconcile_account.
+        u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d,
+                                           now=now, record=False)
         ts = float(now)
         key = _projection_result_key(u5, r5, u7, r7)
         global _PROJECTION_RESULT_CACHE
