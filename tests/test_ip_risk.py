@@ -30,13 +30,33 @@ def test_line_hidden_at_or_below_threshold():
 
 def test_line_warn_and_crit_wording():
     warn = ip_risk.line_text({"risk": 55, "type": "VPN"})
-    assert warn.startswith("⚠ ip risk 55/100 (VPN)")
+    assert warn.split("\n")[0].startswith("⚠ ip risk 55/100 (VPN)")
     assert "log" in warn.lower() and "account-ban" in warn
     crit = ip_risk.line_text({"risk": 82, "type": "VPN"})
-    assert crit.startswith("✗ ip risk 82/100 (VPN)")
+    assert crit.split("\n")[0].startswith("✗ ip risk 82/100 (VPN)")
     # crit must name the login action and the certain consequence
     assert "log in" in crit and "WILL be banned" in crit
     assert "switch network" in crit
+
+
+def test_line_is_two_lines_summary_then_action():
+    for risk in (55, 100):
+        lines = ip_risk.line_text({"risk": risk, "type": "hosting"}).split("\n")
+        assert len(lines) == 2
+        assert "ip risk" in lines[0]          # summary
+        assert "↳" in lines[1]                # indented action line
+
+
+def test_render_colors_each_wrapped_ip_line():
+    from claude_statusbar.styles import render
+    out = render("classic", msgs_pct=10, weekly_pct=5, reset_5h="1h",
+                 reset_7d="2d", model="M", use_color=False,
+                 ip_line_text="✗ ip risk 100/100 (hosting) — account-ban risk\n"
+                              "   ↳ do NOT log in / re-auth Claude here",
+                 ip_line_level="crit")
+    tail = out.split("\n")[-2:]
+    assert tail[0].startswith("✗ ip risk 100/100")
+    assert tail[1].strip().startswith("↳")
 
 
 # --- cache / freshness / spawn ---

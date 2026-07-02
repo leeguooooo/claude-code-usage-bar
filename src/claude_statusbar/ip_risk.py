@@ -136,10 +136,10 @@ def risk_level(entry: Dict[str, Any]) -> str:
 
 
 def line_text(entry: Dict[str, Any]) -> str:
-    """Full warning line, or "" when the IP is clean enough (≤ SHOW_THRESHOLD).
-
-    English by design (user request) and explicit about the consequence:
-    a dirty egress IP is an account-ban risk.
+    """Warning as TWO lines (summary + action), or "" when the IP is clean
+    enough (≤ SHOW_THRESHOLD). Two lines because the single-line form is too
+    long for a terminal statusline and gets truncated. The renderer splits on
+    "\\n" and colors each line. English + explicit about the login/ban risk.
     """
     try:
         risk = int(entry.get("risk", 0))
@@ -152,10 +152,11 @@ def line_text(entry: Dict[str, Any]) -> str:
     if risk >= CRIT_RISK:
         # Name the specific dangerous action: logging in / re-authenticating
         # Claude from a flagged datacenter/proxy IP is what triggers the ban.
-        return (f"✗ ip risk {risk}/100{kind_part} — do NOT log in / re-auth "
-                f"Claude on this IP: account WILL be banned. switch network first")
-    return (f"⚠ ip risk {risk}/100{kind_part} — risky IP; avoid logging in / "
-            f"re-authenticating Claude here (account-ban risk)")
+        return (f"✗ ip risk {risk}/100{kind_part} — account-ban risk\n"
+                f"   ↳ do NOT log in / re-auth Claude here: "
+                f"account WILL be banned — switch network first")
+    return (f"⚠ ip risk {risk}/100{kind_part} — account-ban risk\n"
+            f"   ↳ avoid logging in / re-authenticating Claude on this IP")
 
 
 def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:

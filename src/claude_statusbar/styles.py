@@ -747,23 +747,22 @@ def render(style: str, **kwargs) -> str:
             use_color=use_color,
         )
 
-    # Dedicated egress-IP risk warning line — appears only above the risk
-    # threshold (ip_risk.SHOW_THRESHOLD), amber for suspicious, red for bad.
-    # Not part of the git identity line: network state isn't repo identity.
-    if ip_line_text:
-        if use_color:
-            color = theme.s_hot if ip_line_level == "crit" else theme.s_warn
-            out = out + "\n" + f"{_fg(color)}{ip_line_text}{RESET}"
-        else:
-            out = out + "\n" + ip_line_text
+    # Dedicated egress-IP risk warning — appears only above the risk threshold
+    # (ip_risk.SHOW_THRESHOLD), amber for suspicious, red for bad. May be
+    # multi-line (summary + action); each sub-line is colored separately so a
+    # long warning wraps cleanly instead of being truncated. Not part of the
+    # git identity line: network state isn't repo identity.
+    def _emit_risk(text, level):
+        nonlocal out
+        if not text:
+            return
+        color = theme.s_hot if level == "crit" else theme.s_warn
+        for seg in text.split("\n"):
+            out = out + "\n" + (f"{_fg(color)}{seg}{RESET}" if use_color else seg)
 
+    _emit_risk(ip_line_text, ip_line_level)
     # Relay fingerprint-risk warning line (local env inference; see fp_risk.py).
-    if fp_line_text:
-        if use_color:
-            color = theme.s_hot if fp_line_level == "crit" else theme.s_warn
-            out = out + "\n" + f"{_fg(color)}{fp_line_text}{RESET}"
-        else:
-            out = out + "\n" + fp_line_text
+    _emit_risk(fp_line_text, fp_line_level)
 
     if show_mode:
         mode_line = render_mode_line(
