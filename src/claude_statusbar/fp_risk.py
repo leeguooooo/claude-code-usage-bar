@@ -62,9 +62,17 @@ def system_timezone() -> Optional[str]:
 def fp_risk_line(env: Optional[Dict[str, str]] = None) -> Tuple[str, str]:
     """(text, level) for the dedicated warning line; ("", "ok") = hidden.
 
-    Fires only when a relay is active AND the system timezone is one the
-    watermark marks — the honest, list-free signal. Never touches the network
-    or the outgoing request.
+    Two tiers, both local-only (never touches the network or the outgoing
+    request):
+
+    * crit — relay + a marked timezone (Asia/Shanghai, Asia/Urumqi). The
+      watermark's timezone dimension DEFINITELY flips here, so the request is
+      certainly marked.
+    * warn — any third-party relay in another timezone. The watermark also has
+      domain/keyword dimensions that fire on the relay's host regardless of
+      timezone, so a relay user is fingerprintable even outside a marked
+      timezone. We don't reproduce those lists (that's their anti-abuse
+      control), but the honest signal is: on a relay ⇒ likely watermarked.
     """
     if env is None:
         env = os.environ
@@ -73,6 +81,12 @@ def fp_risk_line(env: Optional[Dict[str, str]] = None) -> Tuple[str, str]:
         return "", "ok"
     tz = system_timezone()
     if tz in _MARKED_TIMEZONES:
-        return ("⚠ relay + CN timezone — requests are fingerprintable, "
-                "account-ban risk (official endpoint avoids it)"), "warn"
-    return "", "ok"
+        return (
+            "✗ relay + CN timezone — request is watermarked\n"
+            "   ↳ traceable to you; login / heavy use risks Claude ban — "
+            "use official endpoint"
+        ), "crit"
+    return (
+        "⚠ third-party relay — request may carry an identity watermark\n"
+        "   ↳ some account-ban risk; the official endpoint avoids it"
+    ), "warn"

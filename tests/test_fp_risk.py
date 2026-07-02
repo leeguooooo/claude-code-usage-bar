@@ -14,32 +14,37 @@ def test_no_relay_is_silent(monkeypatch):
     assert text == ""
 
 
-def test_relay_plus_marked_tz_warns(monkeypatch):
+def test_relay_plus_marked_tz_is_crit(monkeypatch):
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: "Asia/Shanghai")
     text, level = fp_risk.fp_risk_line(
         {"ANTHROPIC_BASE_URL": "https://relay.example.com"})
-    assert level == "warn"
-    assert "fingerprint" in text and "account-ban" in text
+    assert level == "crit"
+    assert "watermark" in text and "CN timezone" in text
+    assert len(text.split("\n")) == 2
 
 
-def test_relay_urumqi_also_marked(monkeypatch):
+def test_relay_urumqi_also_crit(monkeypatch):
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: "Asia/Urumqi")
-    text, _ = fp_risk.fp_risk_line({"ANTHROPIC_BASE_URL": "relay.example.com"})
-    assert text != ""
+    text, level = fp_risk.fp_risk_line({"ANTHROPIC_BASE_URL": "relay.example.com"})
+    assert level == "crit"
 
 
-def test_relay_non_marked_tz_is_silent(monkeypatch):
+def test_relay_non_marked_tz_warns(monkeypatch):
+    # A relay in ANY timezone is fingerprintable (domain/keyword dimension) →
+    # at least a warn, not silent.
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: "America/New_York")
-    text, _ = fp_risk.fp_risk_line(
+    text, level = fp_risk.fp_risk_line(
         {"ANTHROPIC_BASE_URL": "https://relay.example.com"})
-    assert text == ""
+    assert level == "warn"
+    assert "relay" in text and "watermark" in text
 
 
-def test_unresolved_tz_is_silent(monkeypatch):
+def test_unresolved_tz_still_warns_on_relay(monkeypatch):
+    # tz unknown but still a relay → the non-timezone dimensions apply → warn.
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: None)
-    text, _ = fp_risk.fp_risk_line(
+    text, level = fp_risk.fp_risk_line(
         {"ANTHROPIC_BASE_URL": "https://relay.example.com"})
-    assert text == ""
+    assert level == "warn"
 
 
 def test_lookalike_host_not_treated_as_official(monkeypatch):
