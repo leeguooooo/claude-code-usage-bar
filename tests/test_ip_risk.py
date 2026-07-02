@@ -31,10 +31,12 @@ def test_line_hidden_at_or_below_threshold():
 def test_line_warn_and_crit_wording():
     warn = ip_risk.line_text({"risk": 55, "type": "VPN"})
     assert warn.startswith("⚠ ip risk 55/100 (VPN)")
-    assert "account ban" in warn
+    assert "log" in warn.lower() and "account-ban" in warn
     crit = ip_risk.line_text({"risk": 82, "type": "VPN"})
     assert crit.startswith("✗ ip risk 82/100 (VPN)")
-    assert "account-ban" in crit and "switching network" in crit
+    # crit must name the login action and the certain consequence
+    assert "log in" in crit and "WILL be banned" in crit
+    assert "switch network" in crit
 
 
 # --- cache / freshness / spawn ---

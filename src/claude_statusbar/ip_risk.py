@@ -150,9 +150,12 @@ def line_text(entry: Dict[str, Any]) -> str:
     kind = str(entry.get("type", "") or "").strip()
     kind_part = f" ({kind})" if kind else ""
     if risk >= CRIT_RISK:
-        return (f"✗ ip risk {risk}/100{kind_part} — "
-                f"high account-ban risk, consider switching network")
-    return f"⚠ ip risk {risk}/100{kind_part} — current ip may risk account ban"
+        # Name the specific dangerous action: logging in / re-authenticating
+        # Claude from a flagged datacenter/proxy IP is what triggers the ban.
+        return (f"✗ ip risk {risk}/100{kind_part} — do NOT log in / re-auth "
+                f"Claude on this IP: account WILL be banned. switch network first")
+    return (f"⚠ ip risk {risk}/100{kind_part} — risky IP; avoid logging in / "
+            f"re-authenticating Claude here (account-ban risk)")
 
 
 def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:
