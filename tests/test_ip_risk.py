@@ -120,31 +120,60 @@ def test_inflight_marker_blocks_double_spawn(tmp_path, monkeypatch):
     assert not spawned
 
 
-# --- refresh prober (single self-check to our own service) ---
+# --- refresh prober (local: ipify change-detect + ipapi.is + ip_score) ---
 
-def test_refresh_writes_ok_entry(tmp_path, monkeypatch):
+def _mock_get(monkeypatch, ipify_ip, ipapiis=None):
+    def _g(url):
+        if "ipify" in url:
+            return ipify_ip
+        if "ipapi.is" in url:
+            return json.dumps(ipapiis or {})
+        raise AssertionError("unexpected url " + url)
+    monkeypatch.setattr(refresh, "_get", _g)
+
+
+def test_refresh_writes_ok_entry_from_ipapiis(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
-    # one call to ip-check.leeguoo.com returns IP + verdict together
-    monkeypatch.setattr(refresh, "_get", lambda url, **kw: json.dumps(
-        {"ip": "104.28.193.16", "risk": 100, "level": "crit",
-         "type": "hosting", "reasons": ["datacenter ASN AS13335"]}))
+    _mock_get(monkeypatch, "104.28.193.16", {
+        "ip": "104.28.193.16", "is_datacenter": True,
+        "asn": {"abuser_score": "0.05 (High)"},
+        "location": {"country_code": "US"}})
     refresh.main()
     entry = ip_risk.read_cache()
     assert entry["ok"] is True
     assert entry["ip"] == "104.28.193.16"
-    assert entry["risk"] == 100 and entry["proxy"] == "yes"
-    assert entry["provider"] == "ip-check.leeguoo.com"
+    assert entry["type"] == "hosting" and entry["proxy"] == "yes"
+    assert entry["provider"] == "ipapi.is+local"
     assert ip_risk.is_inflight() is False
 
 
-def test_refresh_clean_ip_marks_proxy_no(tmp_path, monkeypatch):
+def test_refresh_clean_residential_marks_proxy_no(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
-    monkeypatch.setattr(refresh, "_get", lambda url, **kw: json.dumps(
-        {"ip": "220.26.40.233", "risk": 0, "level": "ok",
-         "type": "residential", "reasons": []}))
+    _mock_get(monkeypatch, "220.26.40.233", {
+        "ip": "220.26.40.233", "is_datacenter": False,
+        "asn": {"abuser_score": "0 (Very Low)"},
+        "location": {"country_code": "JP"}})
     refresh.main()
     entry = ip_risk.read_cache()
     assert entry["risk"] == 0 and entry["proxy"] == "no"
+    assert entry["verdict"] == "safe"
+
+
+def test_refresh_shortcircuits_when_ip_unchanged(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    ip_risk.write_cache_atomic({"ok": True, "ip": "1.1.1.1", "risk": 33,
+                                "type": "hosting", "ts": time.time(),
+                                "checked_ts": time.time() - 999})
+    calls = []
+    def _g(url):
+        calls.append(url)
+        if "ipify" in url:
+            return "1.1.1.1"
+        raise AssertionError("ipapi.is should be skipped")
+    monkeypatch.setattr(refresh, "_get", _g)
+    refresh.main()
+    assert not any("ipapi.is" in u for u in calls)   # no enrichment call
+    assert ip_risk.read_cache()["risk"] == 33
 
 
 def test_refresh_failure_preserves_last_good(tmp_path, monkeypatch):
@@ -152,7 +181,7 @@ def test_refresh_failure_preserves_last_good(tmp_path, monkeypatch):
     ip_risk.write_cache_atomic({"ok": True, "ip": "9.9.9.9", "risk": 3,
                                 "proxy": "no", "ts": time.time() - 9999})
 
-    def _boom(url, **kw):
+    def _boom(url):
         raise OSError("net down")
     monkeypatch.setattr(refresh, "_get", _boom)
     refresh.main()
@@ -199,13 +228,13 @@ def test_prober_updates_on_ip_change(tmp_path, monkeypatch):
     ip_risk.write_cache_atomic({"ok": True, "ip": "1.1.1.1", "risk": 0,
                                 "proxy": "no", "ts": _t.time(),
                                 "checked_ts": _t.time()})
-    # egress switched to a risky IP; one self-check reflects it immediately
-    monkeypatch.setattr(refresh, "_get", lambda url, **kw: json.dumps(
-        {"ip": "2.2.2.2", "risk": 88, "level": "crit", "type": "vpn"}))
+    # egress switched to a VPN; ipify sees the new IP → ipapi.is + local score
+    _mock_get(monkeypatch, "2.2.2.2", {
+        "ip": "2.2.2.2", "is_vpn": True, "location": {"country_code": "US"}})
     refresh.main()
     entry = ip_risk.read_cache()
-    assert entry["ip"] == "2.2.2.2" and entry["risk"] == 88
-    assert entry["checked_ts"] >= entry["ts"]
+    assert entry["ip"] == "2.2.2.2" and entry["type"] == "vpn"
+    assert entry["risk"] >= 50 and entry["checked_ts"] >= entry["ts"]
 
 
 def test_fp_risk_default_on_ip_risk_default_off():
