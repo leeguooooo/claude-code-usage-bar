@@ -249,6 +249,18 @@ RL_IDLE_TTL_S = 600.0
 # entries idle past the horizon, cap the map so a long-lived store stays small.
 SESSION_SIG_HORIZON_S = 2 * 86400.0
 MAX_SESSION_SIGS = 64
+# Burn-rate regime detection (see docs/superpowers/specs/2026-07-02-burn-
+# regime-detection-design.html): a model switch or a novel-model session
+# joining the fleet steps the aggregate burn rate, and a trailing-rate window
+# that spans the step averages it away (30-60 min of lag after switching
+# Sonnet↔Fable). Rate estimation clips its lookback to the last regime
+# boundary; right after a boundary the minimum sample span relaxes from
+# MIN_RECENT_RATE_SPAN_S to REGIME_MIN_SPAN_S so the projection jumps onto
+# the new rate within minutes ("fast, willing to jump" per user).
+REGIME_MIN_SPAN_S = 120.0
+# A session whose signature changed within this horizon defines the active
+# fleet; a new session bringing a model not in the fleet marks a boundary.
+FLEET_ACTIVE_S = 900.0
 
 
 def _reset_plausible(window: str, reset, now: float) -> bool:
@@ -323,8 +335,19 @@ def quota_cache_status(now=None, path=None):
     return ("fresh" if plausible else "stale", age)
 
 
+def regime_changed_at(path=None):
+    """Timestamp of the last burn-rate regime boundary (model switch or
+    novel-model fleet join), or None. Never raises."""
+    p = Path(path) if path is not None else _latest_path()
+    try:
+        store = json.loads(p.read_text(encoding="utf-8"))
+        return _coerce((store.get("regime") or {}).get("changed_at"))
+    except Exception:
+        return None
+
+
 def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=None,
-                      session_id=None, record=True):
+                      session_id=None, record=True, model=None):
     """Merge this session's reading into the shared store and return the
     freshest (u5, r5, u7, r7) FOR THIS SESSION'S WINDOWS.
 
@@ -387,11 +410,42 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
             ent = sessions.get(session_id)
             prev_sig = ent.get("sig") if isinstance(ent, dict) else None
             seen_at = _coerce(ent.get("changed_at")) if isinstance(ent, dict) else None
+            prev_model = ent.get("model") if isinstance(ent, dict) else None
+
+            # Burn-rate regime boundary: this session switched models, or a
+            # new session joined bringing a model the active fleet doesn't
+            # run. Downstream rate estimation clips its lookback here.
+            bump = None
+            if model:
+                if prev_model and model != prev_model:
+                    bump = "model-switch"
+                elif ent is None:
+                    active_cut = now - FLEET_ACTIVE_S
+                    fleet = {v.get("model") for v in sessions.values()
+                             if isinstance(v, dict) and v.get("model")
+                             and (_coerce(v.get("changed_at")) or 0.0) >= active_cut}
+                    if fleet and model not in fleet:
+                        bump = "fleet-join"
+            if bump:
+                store["regime"] = {"changed_at": now, "reason": bump,
+                                   "model": model}
+                changed = True
+
+            keep_model = model or prev_model
             if prev_sig == sig and seen_at is not None:
                 if (now - seen_at) > RL_IDLE_TTL_S:
                     blob_fresh = False
+                if keep_model and prev_model != keep_model:
+                    upd = dict(ent) if isinstance(ent, dict) else {
+                        "sig": sig, "changed_at": seen_at}
+                    upd["model"] = keep_model
+                    sessions[session_id] = upd
+                    changed = True
             else:
-                sessions[session_id] = {"sig": sig, "changed_at": now}
+                upd = {"sig": sig, "changed_at": now}
+                if keep_model:
+                    upd["model"] = keep_model
+                sessions[session_id] = upd
                 changed = True
             cutoff = now - SESSION_SIG_HORIZON_S
             kept_sess = {k: v for k, v in sessions.items()
@@ -738,9 +792,17 @@ def _samples_for_reset(samples: List[Dict[str, Any]], resets_at: float) -> List[
 
 
 def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: float,
-                       window: Optional[str] = None) -> Optional[float]:
+                       window: Optional[str] = None,
+                       since: Optional[float] = None) -> Optional[float]:
     cap = RATE_CAP_PCT_PER_H.get(window, _DEFAULT_RATE_CAP_PCT_PER_H)
     cutoff = now - lookback_s
+    span_min = MIN_RECENT_RATE_SPAN_S
+    if since is not None and since > cutoff:
+        # Regime boundary inside the lookback: pre-boundary samples belong to
+        # a different burn regime — clip them out and relax the span floor so
+        # the new rate is picked up within minutes.
+        cutoff = since
+        span_min = REGIME_MIN_SPAN_S
     ordered = _compressed_samples(samples)
     in_window = [
         s for s in ordered
@@ -755,7 +817,7 @@ def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: fl
         du = float(last["used_pct"]) - float(first["used_pct"])
     except (KeyError, TypeError, ValueError):
         return None
-    if dt < MIN_RECENT_RATE_SPAN_S or du <= 0:
+    if dt < span_min or du <= 0:
         return None
     rate = du / dt
     if rate > cap / 3600.0:
@@ -764,7 +826,8 @@ def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: fl
 
 
 def project_5h(current_used: float, resets_at: float, now: float,
-               samples: List[Dict[str, Any]]) -> float:
+               samples: List[Dict[str, Any]],
+               since: Optional[float] = None) -> float:
     used = float(current_used)
     ttr = max(0.0, float(resets_at) - float(now))
     window_avg = project_window(used, ttr, WINDOW_LEN_S["five_hour"])
@@ -772,14 +835,16 @@ def project_5h(current_used: float, resets_at: float, now: float,
     if window_avg is not None and ttr > 0:
         projected_final, _ttl = window_avg
         avg_rate = max(0.0, (projected_final - used) / ttr)
-    recent = _rate_from_samples(samples, float(now), 3600.0, window="five_hour")
+    recent = _rate_from_samples(samples, float(now), 3600.0, window="five_hour",
+                                since=since)
     # Ramp tracking: heavy windows accelerate (more parallel sessions, a switch
     # to a hungrier model) and the 1h trailing rate lags the ramp — backtested
     # 2026-07-02 over 46 closed windows, mid-window misses (>10pp under) in
     # heavy windows dropped 26% → 19% by also looking at the last 30 min and
     # taking the faster of the two. Costs a mild high bias in light windows,
     # which is the preferred failure direction for a quota warning.
-    fast = _rate_from_samples(samples, float(now), 1800.0, window="five_hour")
+    fast = _rate_from_samples(samples, float(now), 1800.0, window="five_hour",
+                              since=since)
     if fast is not None and (recent is None or fast > recent):
         recent = fast
     learned = learn_bucket_rates(samples, window="five_hour")
@@ -801,7 +866,8 @@ def project_5h(current_used: float, resets_at: float, now: float,
 
 
 def project_7d(current_used: float, resets_at: float, now: float,
-               samples: List[Dict[str, Any]]) -> float:
+               samples: List[Dict[str, Any]],
+               since: Optional[float] = None) -> float:
     used = float(current_used)
     learned = learn_bucket_rates(samples, window="seven_day")
     future = integrate_future_buckets(float(now), float(resets_at), learned)
@@ -810,7 +876,7 @@ def project_7d(current_used: float, resets_at: float, now: float,
     # deltas). Momentum may only RAISE the bucket estimate, never lower it —
     # an idle stretch yields no positive recent rate and changes nothing.
     recent = _rate_from_samples(samples, float(now), RECENT_MOMENTUM_HORIZON_S,
-                                window="seven_day")
+                                window="seven_day", since=since)
     if recent is not None:
         horizon = min(RECENT_MOMENTUM_HORIZON_S,
                       max(0.0, float(resets_at) - float(now)))
@@ -920,7 +986,8 @@ def _projection_result_key(u5, r5, u7, r7) -> Optional[Tuple[str, str, float, fl
 
 
 def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_at,
-                           now: float, session_id: str) -> str:
+                           now: float, session_id: str,
+                           since: Optional[float] = None) -> str:
     try:
         used = float(used_pct)
         reset = float(resets_at)
@@ -954,13 +1021,18 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
 
     samples = _samples_for_reset(store.get(window, []), reset)
     raw = (
-        project_5h(used, reset, now, samples)
+        project_5h(used, reset, now, samples, since=since)
         if window == "five_hour"
-        else project_7d(used, reset, now, samples)
+        else project_7d(used, reset, now, samples, since=since)
     )
     display = store.setdefault("display", {})
     previous = display.get(window) if isinstance(display.get(window), dict) else None
     if previous is not None and _coerce(previous.get("resets_at")) != reset:
+        previous = None
+    if (previous is not None and since is not None
+            and (_coerce(previous.get("updated_at")) or 0.0) < since):
+        # Display state predates the regime boundary: jump to the new raw
+        # projection instead of easing over from the old regime's estimate.
         previous = None
     display[window] = smooth_projection(window, raw, used, now, previous)
     display[window]["resets_at"] = reset
@@ -991,8 +1063,11 @@ def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: s
                 if isinstance(result, tuple) and len(result) == 2:
                     return result
         store = load_projection_store()
-        p5 = _projection_for_window(store, "five_hour", u5, r5, now, session_id)
-        p7 = _projection_for_window(store, "seven_day", u7, r7, now, session_id)
+        since = regime_changed_at()
+        p5 = _projection_for_window(store, "five_hour", u5, r5, now, session_id,
+                                    since=since)
+        p7 = _projection_for_window(store, "seven_day", u7, r7, now, session_id,
+                                    since=since)
         save_projection_store(store)
         result = (p5, p7)
         if key is not None:

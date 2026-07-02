@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>烧速政权检测(Burn-Rate Regime Detection)设计 · v3.19.0</title>
+<style>
+:root {
+  --fg: #1a1d21; --muted: #6b7280; --accent: #b45309;
+  --border: #e5e7eb; --bg-soft: #f9fafb;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--fg); max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; line-height: 1.65;
+}
+h1 { font-size: 1.5rem; border-bottom: 2px solid var(--accent); padding-bottom: .4rem; }
+h2 { font-size: 1.15rem; margin-top: 2rem; }
+table { border-collapse: collapse; width: 100%; margin: .8rem 0; font-size: .92rem; }
+th, td { border: 1px solid var(--border); padding: .45rem .6rem; text-align: left; vertical-align: top; }
+th { background: var(--bg-soft); }
+code { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 3px; padding: .05rem .3rem; font-size: .88em; }
+aside { background: var(--bg-soft); border-left: 3px solid var(--accent); padding: .6rem .9rem; margin: 1rem 0; font-size: .92rem; }
+.muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+<h1>烧速政权检测(Burn-Rate Regime Detection)</h1>
+<p class="muted">claude-statusbar v3.19.0 · 2026-07-02 · 决策依据:46 窗口/1057 时点回测 + 用户约束「快速反应,宁可跳」「预测只谈订阅额度,$ 不进模型」</p>
+</header>
+
+<section>
+<h2>问题</h2>
+<p>→NN% 预测的近期速率来自 30/60 分钟回看窗。用户临时切换模型(Sonnet↔Fable 烧速阶跃)或并行 fleet 组成变化(新 session 加入)时,回看窗横跨新旧两个「烧速政权」,把阶跃平均掉——切换后 30–60 分钟预测都在追旧政权。回测证实重度窗口中段低估源于此类爬升。</p>
+<aside><strong>明确不做:</strong>① $ 成本速率信号(产品只谈订阅额度);② 模型烧速权重表(Fable 权重纯猜,多 session 并行无法归因);③ Fable 专属周额度桶(stdin 的 <code>seven_day</code> 只有 All-models 一个数,上游数据边界);④ session 离场检测(无渲染即无事件,且漏检方向是安全侧高估)。</aside>
+</section>
+
+<section>
+<h2>方案</h2>
+<p>在账号级共享 store(<code>rate_latest.&lt;acct&gt;.json</code>)记政权边界时间戳;速率估计的回看窗被边界截断,边界后放宽最小样本跨度以尽快「跳」上新速率;display 平滑在边界处重置一次,不磨掉跳变。</p>
+
+<h2>数据与检测(predict.reconcile_account,仅记录型调用)</h2>
+<table>
+<tr><th>项</th><th>内容</th></tr>
+<tr><td>sessions 表扩展</td><td>v3.18.1 的 <code>sessions[sid]</code> 增加 <code>model</code> 字段 = 该 session 最近一次 stdin 的 <code>model.id</code>(core.main 传入;缺失时保留旧值,不清空)</td></tr>
+<tr><td>新 store 键</td><td><code>regime: {changed_at, reason, model}</code>;GC 不触碰,后来的 bump 覆盖</td></tr>
+<tr><td>触发 ①</td><td>已知 session 的 <code>model.id</code> 变化(reason=<code>model-switch</code>)</td></tr>
+<tr><td>触发 ②</td><td>新 session 首见,且其模型不在活跃 fleet(<code>changed_at</code> 距今 ≤ <code>FLEET_ACTIVE_S</code>=900s 的 sessions 的 model 集合)中(reason=<code>fleet-join</code>)。同模型加入不触发,避免频繁开窗把回看窗永久打短</td></tr>
+<tr><td>不触发</td><td><code>record=False</code> 回声调用;<code>model</code> 缺失;首个 session(无历史可截断)</td></tr>
+</table>
+
+<h2>生效(速率估计与显示)</h2>
+<table>
+<tr><th>位置</th><th>行为</th></tr>
+<tr><td><code>_rate_from_samples(…, since)</code></td><td>有效 cutoff = max(now − lookback, since);当截断生效时最小跨度从 300s 放宽到 <code>REGIME_MIN_SPAN_S</code>=120s。样本仍不足 → 返回 None,混合退化为平均+时段先验(盲区 ~2–5 分钟,可接受)</td></tr>
+<tr><td><code>project_5h / project_7d</code></td><td>新增 <code>since</code> 形参,透传给 30m/60m 回看与 7d 动量速率</td></tr>
+<tr><td><code>projection()</code></td><td>每次调用读一次 <code>regime_changed_at()</code>(新 helper,读共享 store,失败返回 None),传入 <code>_projection_for_window</code></td></tr>
+<tr><td>display 平滑</td><td><code>_projection_for_window</code> 中若 <code>previous.updated_at &lt; since</code> → 丢弃 previous,该次渲染直接跳到 raw,后续从新起点继续平滑</td></tr>
+</table>
+
+<h2>边界与风险</h2>
+<table>
+<tr><th>情形</th><th>行为</th></tr>
+<tr><td>反复 A/B 切换</td><td>反复 bump,回看窗持续被打短,预测更抖——「宁可跳」的自选代价</td></tr>
+<tr><td>速率样本</td><td>只截断速率估计,样本本身保留(时段先验学习不受影响)</td></tr>
+<tr><td>历史回测</td><td>存量样本未记录模型,政权检测无法离线验证;靠单元测试 + 实机观察</td></tr>
+<tr><td>旧版共存</td><td>旧版本读 store 忽略 <code>regime</code> 键;新版本读无该键的 store → since=None,行为同 v3.18.1</td></tr>
+</table>
+
+<h2>测试清单</h2>
+<p>新增 <code>tests/test_regime_detection.py</code>:模型切换 bump / 同模型不 bump / 新模型 fleet-join bump / 同模型 join 不 bump / 回声与缺 model 不 bump / 首 session 不 bump;<code>_rate_from_samples</code> 截断与跨度放宽;<code>project_5h</code> 合成两政权样本只用边界后速率(升/降两个方向);平滑重置;<code>regime</code> 键写入与共存。全量回归 745+。</p>
+</section>
+</body>
+</html>

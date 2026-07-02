@@ -1206,9 +1206,12 @@ def main(json_output: bool = False,
 
             try:
                 from .predict import reconcile_account
+                _model_info = stdin_data.get('model')
                 msgs_pct, resets_at, weekly_pct, resets_at_7d = reconcile_account(
                     msgs_pct, resets_at, weekly_pct, resets_at_7d,
                     session_id=stdin_data.get('session_id') or None,
+                    model=(_model_info.get('id') or None
+                           if isinstance(_model_info, dict) else None),
                 )
             except Exception:
                 pass
