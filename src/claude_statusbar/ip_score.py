@@ -14,6 +14,35 @@ from typing import Any, Dict, Optional, Tuple
 
 # proxycheck.io category baselines.
 _HOSTING, _VPN, _TOR, _PROXY = 33, 50, 75, 100
+# China-HQ cloud on TOP of hosting → 33+25=58 (中度), beats a neutral AWS-US 33.
+# Claude account-risk flags these by provider org/ASN regardless of where the IP
+# geolocates, so a Chinese cloud's US node still counts. Mirrors ip-check.
+_CHINA_CLOUD = 25
+_CHINA_CLOUD_KEYWORDS = (
+    "alibaba", "aliyun", "alicloud", "taobao", "alipay", "cainiao",
+    "ant group", "antgroup", "tencent", "qcloud", "huawei", "bytedance",
+    "volcengine", "volces", "ucloud", "kingsoft", "ksyun", "baidu",
+)
+_CHINA_CLOUD_ASNS = {
+    45102, 37963, 134963, 134964, 24429, 45104,  # Alibaba / Taobao (incl. overseas)
+    45090, 132203, 132591,                        # Tencent Cloud
+    55990, 136907,                                # Huawei Cloud
+    38365, 55967,                                 # Baidu
+    396986, 138421,                               # ByteDance / Volcengine
+    135377,                                       # UCloud
+}
+
+
+def _is_china_cloud(org, asn, hosting_indication):
+    o = str(org or "").lower()
+    if any(k in o for k in _CHINA_CLOUD_KEYWORDS):
+        return True
+    if asn in _CHINA_CLOUD_ASNS:
+        return True
+    # A CN-registered org (org string ends in ', CN') only counts as a China
+    # cloud if it's ALSO hosting — don't turn a CN residential ISP into a cloud.
+    import re
+    return bool(re.search(r"[,\s]cn\s*$", str(org or "").strip(), re.I)) and hosting_indication
 
 # Anthropic-blocked (US-sanctioned) and unsupported regions.
 _SANCTIONED = {"KP", "IR", "CU", "SY", "RU", "BY"}
@@ -39,11 +68,16 @@ def _abuser_points(score: Optional[float]) -> int:
 
 def classify(sig: Dict[str, Any]) -> Dict[str, Any]:
     """sig = ipapi.is-shaped flags → {risk 0-100, type, level}."""
-    datacenter = bool(sig.get("is_datacenter"))
     vpn = bool(sig.get("is_vpn"))
     proxy = bool(sig.get("is_proxy"))
     tor = bool(sig.get("is_tor"))
     abuser_score = sig.get("abuser_score")
+    # China cloud is flagged by provider (org/ASN), even when is_datacenter is
+    # false or the IP geolocates outside China — so a Chinese cloud's US node
+    # still counts as datacenter for scoring.
+    china_cloud = _is_china_cloud(sig.get("org"), sig.get("asn") or 0,
+                                  bool(sig.get("is_datacenter")))
+    datacenter = bool(sig.get("is_datacenter")) or china_cloud
     residential_proxy = proxy and not datacenter and not vpn
 
     risk = 0
@@ -55,6 +89,8 @@ def classify(sig: Dict[str, Any]) -> Dict[str, Any]:
         risk += _HOSTING
         if typ == "residential":
             typ = "hosting"
+    if china_cloud:
+        risk += _CHINA_CLOUD
     if vpn:
         risk += _VPN
         typ = "vpn/hosting" if typ == "hosting" else ("vpn" if typ == "residential" else typ)
@@ -66,7 +102,7 @@ def classify(sig: Dict[str, Any]) -> Dict[str, Any]:
     risk += _abuser_points(abuser_score)
     risk = max(0, min(100, risk))
     level = "crit" if risk >= 70 else "warn" if risk >= 40 else "low" if risk >= 15 else "ok"
-    return {"risk": risk, "type": typ, "level": level}
+    return {"risk": risk, "type": typ, "level": level, "china_cloud": china_cloud}
 
 
 def verdict(risk: int, typ: str, country: Optional[str]) -> Dict[str, Any]:
@@ -119,6 +155,7 @@ def evaluate(sig: Dict[str, Any], country: Optional[str]) -> Dict[str, Any]:
                            or c["level"] in ("warn", "crit")) else "no",
         "verdict": v["verdict"],
         "region": v.get("region", False),
+        "china_cloud": c.get("china_cloud", False),
         "country": (country or "").upper() or None,
         "score": score(c["risk"], c["type"], country),
     }

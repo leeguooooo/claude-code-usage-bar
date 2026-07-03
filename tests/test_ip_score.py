@@ -66,3 +66,27 @@ def test_ban_threshold_aligns_with_crit_band():
     # ban-risk cutoff (70) has to match classify()'s crit band (also 70).
     assert ip_score.verdict(69, "hosting", "US")["verdict"] == "caution"
     assert ip_score.verdict(70, "hosting", "US")["verdict"] == "ban-risk"
+
+
+def test_china_cloud_by_org_flagged_even_on_us_ip():
+    # Aliyun node geolocating to the US: flagged by provider org, not IP geo.
+    e = ip_score.evaluate({"is_datacenter": True, "org": "Alibaba (US) Technology Co."}, "US")
+    assert e["china_cloud"] is True
+    assert e["risk"] == 33 + 25            # hosting + china-cloud
+    assert e["score"] <= 42               # notably worse than a neutral US DC (60)
+
+
+def test_china_cloud_by_asn():
+    e = ip_score.evaluate({"is_datacenter": True, "asn": 45102}, "US")  # Alibaba
+    assert e["china_cloud"] is True and e["risk"] == 58
+
+
+def test_cn_residential_isp_is_not_china_cloud():
+    # CN-registered but NOT hosting → a normal residential ISP, not a cloud.
+    c = ip_score.classify({"is_datacenter": False, "org": "China Telecom, CN"})
+    assert c["china_cloud"] is False and c["type"] == "residential"
+
+
+def test_neutral_datacenter_is_not_china_cloud():
+    e = ip_score.evaluate({"is_datacenter": True, "org": "Amazon AWS", "asn": 16509}, "US")
+    assert e["china_cloud"] is False and e["risk"] == 33

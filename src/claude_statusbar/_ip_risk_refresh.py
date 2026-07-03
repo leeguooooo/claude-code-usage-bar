@@ -44,6 +44,7 @@ def evaluate_ip() -> dict:
     if not ip or not isinstance(ip, str):
         raise ValueError("no ip")
     asn = raw.get("asn") or {}
+    company = raw.get("company") or {}
     loc = raw.get("location") or {}
     sig = {
         "is_datacenter": raw.get("is_datacenter"),
@@ -52,6 +53,9 @@ def evaluate_ip() -> dict:
         "is_tor": raw.get("is_tor"),
         "is_abuser": raw.get("is_abuser"),
         "abuser_score": _parse_abuser(asn.get("abuser_score")),
+        # org + ASN drive the China-cloud check (flagged by provider, not IP geo)
+        "org": company.get("name") or asn.get("org") or asn.get("descr"),
+        "asn": _parse_asn(asn.get("asn")),
     }
     country = loc.get("country_code") or loc.get("country")
     out = ip_score.evaluate(sig, country)
@@ -65,6 +69,15 @@ def _parse_abuser(s):
     import re
     m = re.search(r"([\d.]+)", str(s or ""))
     return float(m.group(1)) if m else None
+
+
+def _parse_asn(v):
+    """ipapi.is asn.asn may be an int or a string like 'AS12345' / '12345'."""
+    if isinstance(v, int):
+        return v
+    import re
+    m = re.search(r"(\d+)", str(v or ""))
+    return int(m.group(1)) if m else 0
 
 
 def main() -> int:
