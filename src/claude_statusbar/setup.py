@@ -26,6 +26,27 @@ SKILLS_DIR    = Path.home() / ".claude" / "skills"
 # CLI binary names we ship — `cs` is shortest and the documented one.
 OUR_COMMAND_NAMES = ("cs", "cstatus", "claude-statusbar")
 
+# Launcher shims pip/pipx create on Windows around our entry points.
+# shutil.which can also return uppercase extensions there ("cs.EXE"),
+# so matching must lowercase first (see _normalize_command_name).
+_WINDOWS_SHIM_EXTENSIONS = (".exe", ".cmd", ".bat")
+
+
+def _normalize_command_name(name: str) -> str:
+    """Normalize a binary basename for matching against OUR_COMMAND_NAMES.
+
+    On Windows, shutil.which("cs") resolves to "...\\cs.EXE" and pip writes
+    "cs.exe"/"cs.cmd" shims — an exact match against "cs" would then fail,
+    making doctor report "(not ours)" and --setup refuse to touch a
+    perfectly valid entry (issue #32). Lowercase and strip the known shim
+    extension before comparing.
+    """
+    name = name.lower()
+    for ext in _WINDOWS_SHIM_EXTENSIONS:
+        if name.endswith(ext):
+            return name[: -len(ext)]
+    return name
+
 
 def _resolve_cs_command() -> str:
     """Best-effort absolute path to our `cs` binary.
@@ -45,7 +66,7 @@ def _resolve_cs_command() -> str:
 
     # If we're being invoked as `python -m claude_statusbar`, sys.argv[0] is the script
     argv0 = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
-    if argv0 and argv0.is_file() and argv0.name in OUR_COMMAND_NAMES:
+    if argv0 and argv0.is_file() and _normalize_command_name(argv0.name) in OUR_COMMAND_NAMES:
         return str(argv0.resolve())
 
     for p in (
@@ -96,7 +117,7 @@ def _is_our_statusline(entry: object) -> bool:
     cmd = entry.get("command")
     if not isinstance(cmd, str) or not cmd.strip():
         return False
-    name = Path(cmd.strip().split()[0]).name  # strip args + path
+    name = _normalize_command_name(Path(cmd.strip().split()[0]).name)  # strip args + path + .exe shim
     return name in OUR_COMMAND_NAMES
 
 
