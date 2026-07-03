@@ -9,6 +9,39 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.26.0 — 2026-07-03
+
+Community issue sweep — all four open issues fixed (#29 #30 #31 #32).
+
+### Fixed
+- **Windows: `cs doctor` / `cs --setup` false-positive "not ours" (#32).**
+  `shutil.which("cs")` on Windows resolves to `cs.EXE`; the basename never
+  exact-matched our command names, so setup refused to configure and doctor
+  always flagged a foreign statusLine. Command basenames are now lowercased
+  and stripped of the pip/pipx shim extensions (`.exe`/`.cmd`/`.bat`) before
+  matching. Foreign tools ending in `.exe` are still refused.
+- **Windows: unbounded daemon process leak (#31).** The old no-`fcntl`
+  fallback always returned True ("honor system"), so every stale render tick
+  spawned another daemon (~150 orphans/day reported). Three defenses now:
+  a real `msvcrt.locking` exclusive lock on a separate `daemon.lock`
+  sentinel (locking `daemon.pid` itself would blind `stop`/`status` —
+  Windows byte locks are mandatory), a ctypes `OpenProcess` liveness probe
+  (`os.kill(pid, 0)` on Windows *terminates* the target), and a 30s spawn
+  debounce in the thin client so even a broken lock leaks at most one
+  short-lived process per 30s. *Not yet verified on real Windows — feedback
+  welcome on #31.*
+
+### Added
+- **`CLAUDE_CODE_AUTO_COMPACT_WINDOW` / `CLAUDE_CODE_DISABLE_1M_CONTEXT`
+  respected for the ctx gauge (#29).** Users who raise the context window
+  (e.g. `400000`) no longer see ctx% computed against the stock window;
+  a truthy `CLAUDE_CODE_DISABLE_1M_CONTEXT` caps a >200K reported window
+  back to 200K. Empty/invalid values keep current behavior.
+- **`show_cwd` toggle (#30).** Opt-in working-directory segment (default
+  off) rendered from stdin's `workspace.current_dir` — zero extra I/O.
+  `cwd_style` chooses `basename` (default) or `full`; the segment is
+  skipped when it would just repeat the project name.
+
 ## v3.18.0 — 2026-06-29
 
 ### Added
