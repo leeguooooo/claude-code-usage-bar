@@ -59,3 +59,10 @@ def test_sanctioned_is_ban_risk():
 def test_china_plus_bad_ip_escalates():
     e = ip_score.evaluate({"is_vpn": True}, "CN")
     assert e["verdict"] == "ban-risk"
+
+
+def test_ban_threshold_aligns_with_crit_band():
+    # risk 67-69 must NOT read as ban-risk on a non-anonymizer type — the
+    # ban-risk cutoff (70) has to match classify()'s crit band (also 70).
+    assert ip_score.verdict(69, "hosting", "US")["verdict"] == "caution"
+    assert ip_score.verdict(70, "hosting", "US")["verdict"] == "ban-risk"

@@ -73,7 +73,10 @@ def verdict(risk: int, typ: str, country: Optional[str]) -> Dict[str, Any]:
     """Claude-account decision. Region first (the documented trigger), then
     anonymizer egress, then plain datacenter (a softer caution)."""
     cc = (country or "").upper()
-    ip_is_ban = risk >= 67 or typ in _BAN_TYPES
+    # 70 = the classify() crit-band cutoff. Was 67, which disagreed with the
+    # band (risk 67-69 would read as ban-risk here but only 中度 there); keep
+    # them aligned, matching the ip-check service fix.
+    ip_is_ban = risk >= 70 or typ in _BAN_TYPES
 
     if cc in _SANCTIONED:
         return {"verdict": "ban-risk", "region": True}
