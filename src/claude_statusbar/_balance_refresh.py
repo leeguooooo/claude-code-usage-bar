@@ -4,7 +4,7 @@ inline render path (core.py) the same way ``_git_refresh`` is — fire-and-forge
 output discarded.
 
 Contract:
-  argv[1]                — the relay base URL (e.g. https://ai.leeguoo.com)
+  argv[1]                — the relay base URL (e.g. https://relay.example.com)
   env CS_BALANCE_KEY     — primary bearer token (ANTHROPIC_API_KEY)
   env CS_BALANCE_AUTH    — fallback bearer token (ANTHROPIC_AUTH_TOKEN)
   env CS_BALANCE_FP      — cache fingerprint (so we don't re-derive the key here)
