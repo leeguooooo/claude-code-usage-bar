@@ -21,6 +21,8 @@ def test_relay_plus_marked_tz_is_crit(monkeypatch):
     assert level == "crit"
     assert "watermark" in text and "CN timezone" in text
     assert len(text.split("\n")) == 2
+    # names the concrete fix (local-only advice, no network call)
+    assert "Asia/Taipei" in text
 
 
 def test_relay_urumqi_also_crit(monkeypatch):

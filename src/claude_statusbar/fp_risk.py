@@ -81,10 +81,14 @@ def fp_risk_line(env: Optional[Dict[str, str]] = None) -> Tuple[str, str]:
         return "", "ok"
     tz = system_timezone()
     if tz in _MARKED_TIMEZONES:
+        # Name the concrete, lowest-cost fix: the watermark's timezone
+        # dimension reads the system tz, and Asia/Taipei is UTC+8 (same clock
+        # as Beijing) but NOT on the marked list — so switching it drops this
+        # dimension. Official endpoint drops the whole watermark.
         return (
-            "✗ relay + CN timezone — request is watermarked\n"
-            "   ↳ traceable to you; login / heavy use risks Claude ban — "
-            "use official endpoint"
+            "✗ relay + CN timezone — request is watermarked (traceable)\n"
+            "   ↳ set system timezone to Asia/Taipei (not Shanghai) + use the "
+            "official endpoint to stop it"
         ), "crit"
     return (
         "⚠ third-party relay — request may carry an identity watermark\n"
