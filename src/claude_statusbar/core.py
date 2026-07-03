@@ -687,11 +687,56 @@ def _time_now() -> float:
     return _t.time()
 
 
-def _context_window_usage(stdin_data: Dict[str, Any]) -> Tuple[Optional[float], int, int]:
+# Claude Code's stock context window (tokens). Only used when the env vars
+# below override the stdin-reported size — never as a default size.
+_STOCK_CONTEXT_WINDOW = 200_000
+
+
+def _env_context_window_override(reported_size: float, env=None) -> Optional[int]:
+    """Max context window forced via Claude Code's own env vars, or None.
+
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW=<tokens> wins outright (#29 — Claude Code
+    honors it, but statusLine stdin keeps reporting the stock size, so ctx%
+    reads wrong without this). A truthy CLAUDE_CODE_DISABLE_1M_CONTEXT caps a
+    reported >200K window back to the stock 200K. Empty/invalid values return
+    None → keep the stdin-reported size (current behavior).
+
+    Keys absent from a stamped session env fall back to os.environ: render_thin
+    only stamps the API-mode keys into `_cs_env`, and these vars are global
+    config (settings.json env / shell profile) that the daemon inherits anyway.
+    """
+    source = os.environ if env is None else env
+
+    def _get(key):
+        v = source.get(key)
+        if v is None and source is not os.environ:
+            v = os.environ.get(key)
+        return v
+
+    raw = str(_get('CLAUDE_CODE_AUTO_COMPACT_WINDOW') or '').strip()
+    if raw:
+        try:
+            val = int(raw)
+        except ValueError:
+            val = 0
+        if val > 0:
+            return val
+    if (_env_truthy(_get('CLAUDE_CODE_DISABLE_1M_CONTEXT') or '')
+            and reported_size > _STOCK_CONTEXT_WINDOW):
+        return _STOCK_CONTEXT_WINDOW
+    return None
+
+
+def _context_window_usage(stdin_data: Dict[str, Any],
+                          env=None) -> Tuple[Optional[float], int, int]:
     """Return (ctx_pct, ctx_size, ctx_used) for renderer/model suffix.
 
     Claude sometimes sends null for context_window.used_percentage. Treat that
     as unknown instead of falling into the expensive reset-time fallback.
+
+    `env` is the session's effective environment (daemon renders pass the
+    per-session env stamped by render_thin; None → os.environ). It carries the
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW / CLAUDE_CODE_DISABLE_1M_CONTEXT overrides.
     """
     raw_size = stdin_data.get('context_window_size', 0)
     try:
@@ -714,6 +759,14 @@ def _context_window_usage(stdin_data: Dict[str, Any]) -> Tuple[Optional[float], 
             stdin_data.get('total_input_tokens', 0)
             + stdin_data.get('total_output_tokens', 0)
         )
+
+    # Env override (#29): used tokens stay what stdin reported; the window and
+    # the percentage are re-derived against the real (env-forced) size.
+    override = _env_context_window_override(ctx_size_f, env)
+    if override is not None and override != int(ctx_size_f):
+        if ctx_pct is not None:
+            ctx_pct = ctx_used / override * 100.0
+        ctx_size_f = float(override)
     return ctx_pct, int(ctx_size_f), int(ctx_used)
 
 
@@ -1088,6 +1141,21 @@ def main(json_output: bool = False,
             ahead, behind = read_ahead_behind(info.toplevel)
             identity_kwargs["identity_ahead"] = ahead
             identity_kwargs["identity_behind"] = behind
+    # Optional working-directory segment (#30): workspace.current_dir (falling
+    # back to cwd — parse_stdin_data flattens both into workspace_current_dir).
+    # Zero extra I/O: the data is already in the statusLine stdin. Rides the
+    # identity line when that line is on; else gets its own minimal `⤷` line.
+    cwd_kwargs = {}
+    if cfg.show_cwd:
+        _raw_cwd = str(stdin_data.get('workspace_current_dir') or '')
+        if _raw_cwd:
+            if cfg.cwd_style == "full":
+                cwd_kwargs = {"cwd_text": _raw_cwd}
+            else:
+                # basename (default); rstrip so "/repos/proj/" → "proj"
+                cwd_kwargs = {"cwd_text":
+                              os.path.basename(_raw_cwd.rstrip('/')) or _raw_cwd}
+
     # Dedicated egress-IP risk warning line (only shows above the risk
     # threshold; independent of the git identity segment).
     ip_line_kwargs = {}
@@ -1161,7 +1229,8 @@ def main(json_output: bool = False,
             # 5h/7d quota exists, so drop the quota bars and promote the context
             # window to its own battery bar, mirroring claude-hud. Activity tail
             # (todos/tools/agents) is appended by the style renderer as usual.
-            ctx_pct, ctx_size, ctx_used = _context_window_usage(stdin_data)
+            ctx_pct, ctx_size, ctx_used = _context_window_usage(
+                stdin_data, env=_effective_env)
             model = display_name if display_name != 'Unknown' else model_id
             # Drop the redundant "(1M context)" suffix — the ctx bar IS the
             # context readout now, so we don't also append "(used/size)".
@@ -1219,7 +1288,7 @@ def main(json_output: bool = False,
                     balance_text=balance_text,
                     balance_pct=balance_pct,
                     balance_amount=balance_amount,
-                    **identity_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                    **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                     **activity_kwargs,
                 ))
         elif has_official:
@@ -1283,7 +1352,8 @@ def main(json_output: bool = False,
                 }))
             else:
                 # Append context window usage to model name: Opus 4.6(10k/1M)
-                ctx_pct, ctx_size, ctx_used = _context_window_usage(stdin_data)
+                ctx_pct, ctx_size, ctx_used = _context_window_usage(
+                    stdin_data, env=_effective_env)
                 if ctx_size > 0:
                     # Strip redundant size suffix like "(1M context)" from display_name
                     import re as _re
@@ -1340,7 +1410,7 @@ def main(json_output: bool = False,
                     shimmer_phase=shimmer_phase,
                     **projection_kwargs,
                     **forecast_kwargs,
-                    **identity_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                    **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                     **activity_kwargs,
                 ))
         else:
@@ -1358,7 +1428,8 @@ def main(json_output: bool = False,
                 # quota cache is all-stale → the pipeline stopped feeding cs.
                 # Surface "stale · restart" rather than silently blank bars
                 # (the failure mode that left a Pro user staring at empty space).
-                ctx_pct, ctx_size, ctx_used = _context_window_usage(stdin_data)
+                ctx_pct, ctx_size, ctx_used = _context_window_usage(
+                    stdin_data, env=_effective_env)
                 quota_stale = False
                 if (_claude_emits_rate_limits(stdin_data.get('claude_version'))
                         and _transcript_has_assistant(
@@ -1395,7 +1466,7 @@ def main(json_output: bool = False,
                         ctx_pct=ctx_pct,
                         shimmer_phase=shimmer_phase,
                         quota_stale=quota_stale,
-                        **identity_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                        **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                         **activity_kwargs,
                     ))
             else:
@@ -1427,7 +1498,7 @@ def main(json_output: bool = False,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
                 density=cfg.density, show_weekly=cfg.show_weekly,
-                **identity_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
             ))
 
 if __name__ == '__main__':

@@ -429,6 +429,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
                          ahead=None, behind=None,
                          duration_text: str = "", lines_text: str = "",
                          version_text: str = "", update_text: str = "",
+                         cwd_text: str = "",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
 
@@ -441,6 +442,10 @@ def render_identity_line(info, *, theme: Theme, dirty,
     linked git worktree (`info.is_worktree`), a bare ``[worktree]`` marker is
     appended after the branch — a boolean signal only; the branch already
     says which worktree it is, so the name isn't repeated.
+
+    `cwd_text` (show_cwd, #30) is the session's working directory; it's
+    appended after the branch only when it adds information — skipped when it
+    equals the project name (cwd at the repo root would just repeat the anchor).
     """
     ab = _ahead_behind_glyphs(ahead, behind) if info.in_git else ""
     stats = _stats_segment(duration_text, lines_text, theme=theme,
@@ -458,6 +463,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
                 tail += f" {ab}"
         if info.is_worktree:
             tail += " [worktree]"
+        if cwd_text and cwd_text != info.project_name:
+            tail += f" · {cwd_text}"
         ver = f" · v{version_text}" if version_text else ""
         if version_text and update_text:
             ver += f" ↑{update_text}"
@@ -486,6 +493,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
             body += f" {_fg(theme.s_ok)}{ab}{RESET}"
     if info.is_worktree:
         body += f" {MUTE}[worktree]{RESET}"
+    if cwd_text and cwd_text != info.project_name:
+        body += f" {MUTE}·{RESET} {INK}{cwd_text}{RESET}"
     # Version: the faintest thing on the line — edge (darkest grey) + dim
     # attribute, so it's there if you look for it but never competes for attention.
     ver = ""
@@ -717,6 +726,7 @@ def render(style: str, **kwargs) -> str:
     behind = kwargs.pop("identity_behind", None)
     duration_text = kwargs.pop("identity_duration", "")
     lines_text = kwargs.pop("identity_lines", "")
+    cwd_text = kwargs.pop("cwd_text", "")
     ip_line_text = kwargs.pop("ip_line_text", "")
     ip_line_level = kwargs.pop("ip_line_level", "ok")
     fp_line_text = kwargs.pop("fp_line_text", "")
@@ -744,8 +754,17 @@ def render(style: str, **kwargs) -> str:
             info, theme=theme, dirty=dirty, ahead=ahead, behind=behind,
             duration_text=duration_text, lines_text=lines_text,
             version_text=version_text, update_text=update_text,
+            cwd_text=cwd_text,
             use_color=use_color,
         )
+    elif cwd_text:
+        # show_cwd is on but the identity line is off — give the directory its
+        # own minimal line, styled like the identity anchor.
+        if use_color:
+            out = (out + "\n" + f"{_fg(theme.mute)}⤷ {RESET}"
+                   f"{_fg(theme.pill_ink)}{cwd_text}{RESET}")
+        else:
+            out = out + "\n" + f"⤷ {cwd_text}"
 
     # Dedicated egress-IP risk warning — appears only above the risk threshold
     # (ip_risk.SHOW_THRESHOLD), amber for suspicious, red for bad. May be
