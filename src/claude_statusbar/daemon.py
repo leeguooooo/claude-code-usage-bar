@@ -58,6 +58,9 @@ def _cache_dir() -> Path:
 
 def pid_path() -> Path: return _cache_dir() / "daemon.pid"
 def log_path() -> Path: return _cache_dir() / "daemon.log"
+# Windows-only lock sentinel — msvcrt byte locks are mandatory, so the lock
+# lives on this file and daemon.pid stays readable by stop/status.
+def lock_path() -> Path: return _cache_dir() / "daemon.lock"
 
 
 # Per-session state (v3.3.0+) — multi-window safe.
@@ -119,17 +122,19 @@ def _shutdown(_signum, _frame):
 # Pidfile + flock
 # ---------------------------------------------------------------------------
 def _acquire_pidfile() -> bool:
-    """Take an exclusive flock on daemon.pid. Returns False if another
-    daemon already holds it (or if flock isn't available on this platform)."""
+    """Take an exclusive lock on daemon.pid. Returns False if another
+    daemon already holds it.
+
+    POSIX: fcntl.flock (unchanged). Windows: msvcrt.locking on a separate
+    daemon.lock sentinel — the old "honor system" fallback always returned
+    True, so every stale render tick leaked another daemon (issue #31,
+    ~150 orphans/day).
+    """
     global _pidfile_handle
     try:
         import fcntl
     except ImportError:
-        # Windows — skip locking. Single daemon per user honor system.
-        _pidfile_handle = open(pid_path(), "w")
-        _pidfile_handle.write(str(os.getpid()))
-        _pidfile_handle.flush()
-        return True
+        return _acquire_pidfile_windows()
 
     fh = open(pid_path(), "a+")
     try:
@@ -145,18 +150,97 @@ def _acquire_pidfile() -> bool:
     return True
 
 
+def _acquire_pidfile_windows(msvcrt_mod=None) -> bool:
+    """Windows branch: exclusive msvcrt.locking on byte 0 of a SEPARATE
+    sentinel file (daemon.lock), with the pid written to daemon.pid
+    unlocked.
+
+    The lock must NOT live on daemon.pid itself: msvcrt byte-range locks
+    are MANDATORY (unlike POSIX flock) — while the daemon held it, every
+    other process's read of daemon.pid raised a lock-violation OSError,
+    so `cs daemon stop`/`status` saw "not running" and the CLI could
+    never kill a live daemon.
+
+    `msvcrt_mod` is injectable so the branch is unit-testable on POSIX CI
+    (a fake module with `locking` / `LK_NBLCK` is enough). If msvcrt itself
+    is missing (non-Windows caller without fcntl — exotic, but possible),
+    fall back to the lock-free pid-liveness check instead of assuming we
+    own the file.
+    """
+    global _pidfile_handle
+    if msvcrt_mod is None:
+        try:
+            import msvcrt as msvcrt_mod
+        except ImportError:
+            return _acquire_pidfile_unlocked()
+
+    fh = open(lock_path(), "a+")
+    try:
+        # Lock 1 byte at offset 0 — byte-range locks may extend past EOF
+        # on Windows, so this works even on a freshly created empty file.
+        fh.seek(0)
+        msvcrt_mod.locking(fh.fileno(), msvcrt_mod.LK_NBLCK, 1)
+    except OSError:
+        # Held by another daemon (or the filesystem refused byte locks —
+        # either way, don't risk a duplicate).
+        fh.close()
+        return False
+    # Lock won — now record our pid in the (never-locked) pidfile so
+    # stop/status/spawn_if_dead can read it while we run.
+    try:
+        pid_path().write_text(str(os.getpid()), encoding="utf-8")
+    except OSError:
+        try:
+            msvcrt_mod.locking(fh.fileno(), msvcrt_mod.LK_UNLCK, 1)
+        except OSError:
+            pass
+        fh.close()
+        return False
+    _pidfile_handle = fh
+    return True
+
+
+def _acquire_pidfile_unlocked() -> bool:
+    """Belt-and-suspenders path when NO lock primitive exists: read the
+    recorded pid and verify that process is alive before concluding no
+    daemon runs. Weaker than a real lock (TOCTOU window between check and
+    write), but combined with render_thin's spawn debounce it bounds the
+    worst case to a short-lived duplicate rather than an unbounded leak.
+    """
+    global _pidfile_handle
+    existing = read_pidfile()
+    if existing is not None and existing != os.getpid() and is_alive(existing):
+        return False
+    fh = open(pid_path(), "w")
+    fh.write(str(os.getpid()))
+    fh.flush()
+    _pidfile_handle = fh
+    return True
+
+
 def _release_pidfile():
     global _pidfile_handle
     if _pidfile_handle is None:
         return
+    # Windows: explicitly drop the byte lock before close() — the OS can
+    # lag releasing region locks on plain close, which would make the next
+    # daemon's acquire fail spuriously. No-op on POSIX (ImportError) and
+    # on the lock-free fallback path (OSError from LK_UNLCK).
+    try:
+        import msvcrt
+        _pidfile_handle.seek(0)
+        msvcrt.locking(_pidfile_handle.fileno(), msvcrt.LK_UNLCK, 1)
+    except (ImportError, OSError, ValueError):
+        pass
     try:
         _pidfile_handle.close()
     except OSError:
         pass
-    try:
-        pid_path().unlink()
-    except OSError:
-        pass
+    for p in (pid_path(), lock_path()):
+        try:
+            p.unlink()
+        except OSError:
+            pass
     _pidfile_handle = None
 
 
@@ -172,12 +256,55 @@ def read_pidfile() -> Optional[int]:
 
 
 def is_alive(pid: int) -> bool:
-    """Best-effort liveness check — does this PID still exist?"""
+    """Best-effort liveness check — does this PID still exist?
+
+    POSIX: kill(pid, 0), the classic no-op probe. Windows: os.kill(pid, 0)
+    is NOT a probe there — CPython maps any non-CTRL sig to
+    TerminateProcess, i.e. it would kill the daemon we're checking on —
+    so use a ctypes OpenProcess query instead (stdlib-only, no psutil).
+    """
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        return _is_alive_windows(pid)
     try:
         os.kill(pid, 0)
         return True
     except (OSError, ProcessLookupError):
         return False
+
+
+# GetExitCodeProcess reports this magic value while the process still runs.
+_STILL_ACTIVE = 259
+
+
+def _is_alive_windows(pid: int, kernel32=None) -> bool:
+    """Windows liveness via OpenProcess + GetExitCodeProcess.
+
+    `kernel32` is injectable so this is unit-testable on POSIX CI. The
+    exit-code check matters: OpenProcess can succeed on a terminated
+    process whose handle someone still holds, and PIDs recycle — a bare
+    handle check would over-report "alive".
+    """
+    import ctypes
+    if kernel32 is None:
+        try:
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        except AttributeError:
+            return False
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return code.value == _STILL_ACTIVE
+        # Handle opened but the query failed — assume alive (safer than
+        # spawning a duplicate daemon).
+        return True
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _process_is_our_daemon(pid: int) -> bool:

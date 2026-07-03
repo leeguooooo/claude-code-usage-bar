@@ -288,12 +288,52 @@ def _persist_stdin_bytes(data: bytes, session_id: str) -> None:
     _atomic_write_bytes(_LEGACY_STDIN_CACHE, data)
 
 
+# Spawn debounce (issue #31): mtime of this marker = last spawn attempt.
+# Even if the daemon's pidfile lock is broken on some platform, the thin
+# client fires at most one spawn attempt per _SPAWN_DEBOUNCE_S — that's
+# what turned "every stale tick leaks a daemon" (Windows, ~150 orphans/day)
+# into a bounded, self-healing retry. Shared across sessions on purpose:
+# one daemon serves all windows.
+_SPAWN_MARKER = _CACHE_DIR / "daemon.spawn"
+_SPAWN_DEBOUNCE_S = 30.0
+
+
+def _spawn_recently_attempted() -> bool:
+    """True if a spawn attempt was recorded < _SPAWN_DEBOUNCE_S ago.
+
+    Future mtime (clock jumped backward) reads as NOT debounced — the next
+    attempt re-touches the marker, so skew self-heals instead of either
+    wedging spawns forever or suppressing them forever.
+    """
+    try:
+        age = time.time() - _SPAWN_MARKER.stat().st_mtime
+    except OSError:
+        return False
+    return 0 <= age < _SPAWN_DEBOUNCE_S
+
+
+def _record_spawn_attempt() -> None:
+    try:
+        _SPAWN_MARKER.parent.mkdir(parents=True, exist_ok=True)
+        _SPAWN_MARKER.touch()
+    except OSError:
+        pass
+
+
 def _spawn_daemon_async() -> None:
     """Best-effort spawn of cs daemon in a detached child process.
 
     Failures are silent — the user's status line already rendered via
     fallback, so we just want a daemon up for the *next* tick.
+
+    Debounced to one attempt per _SPAWN_DEBOUNCE_S so a broken/unavailable
+    pidfile lock can't leak unbounded daemon processes (issue #31). Worst
+    case cost of the debounce: up to 30s of inline-rendered (still correct)
+    ticks after a daemon dies before the respawn retry.
     """
+    if _spawn_recently_attempted():
+        return
+    _record_spawn_attempt()
     try:
         # Lazy import — only the fallback path pays for daemon.py.
         from .daemon import spawn_if_dead
