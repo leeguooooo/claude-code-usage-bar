@@ -9,6 +9,29 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.27.0 — 2026-07-03
+
+IP-risk detection re-synced with the ip-check.leeguoo.com service (this module
+mirrors its `classify` + `claude-verdict`); both diverged and are now aligned.
+
+### Added
+- **China-cloud detection.** Claude account-risk systems flag Chinese clouds
+  (Alibaba/Aliyun, Tencent/QCloud, Huawei, ByteDance/Volcengine, Baidu, UCloud,
+  Kingsoft…) by provider **org/ASN**, not by where the IP geolocates — so a
+  Chinese cloud's *US* node still counts. The local scorer now detects these by
+  org keyword and ASN, adds a +25 risk weight on top of hosting (33 → 58, 中度;
+  worse than a neutral AWS-US datacenter at 60), and exposes a `china_cloud`
+  flag. A CN-registered but non-hosting org (a normal residential ISP) is *not*
+  misclassified as a cloud. This is the most relevant signal for the tool's
+  audience — users on a Chinese cloud's overseas node — which was previously
+  scored as an ordinary datacenter and let through.
+
+### Fixed
+- **Ban-risk threshold aligned with the crit band.** `verdict()` treated
+  `risk >= 67` as ban-risk while `classify()`'s crit band is `risk >= 70`, so
+  scores 67–69 on a non-anonymizer type read as ban-risk in one place and only
+  中度 in the other. Both now use 70 (matching the ip-check service fix).
+
 ## v3.26.0 — 2026-07-03
 
 Community issue sweep — all four open issues fixed (#29 #30 #31 #32).
