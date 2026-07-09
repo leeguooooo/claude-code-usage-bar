@@ -9,6 +9,30 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.28.0 — 2026-07-09
+
+### Added
+- **AgentParty / Codex bridge line (`show_party`, default on).** When the same
+  workspace has an AgentParty local status cache, the bar appends a local-only
+  line such as `🎈 #agentparty · 🤖 xdream-agent · 👂serve · 3 unread · bob:
+  shipped the auth patch 2m`. This is designed for Codex + AgentParty workflows:
+  the writer side runs in AgentParty, while `cs` only reads
+  `~/.agentparty/state/<workspaceId>/statusline.json`.
+- **Shared workspace id contract.** The reader matches AgentParty's cwd-scoped
+  `workspaceId` algorithm and has fixture tests for macOS `/tmp` behavior, so
+  Codex/AgentParty and Claude Code renders point at the same local state file.
+
+### Changed
+- **Documentation now separates Claude Code and Codex support.** Claude Code
+  remains the full native `statusLine` data source for quota/session fields;
+  Codex support is the local AgentParty presence/channel/unread bridge and does
+  not make network requests or read AgentParty tokens.
+
+### Fixed
+- **Stale listener state degrades visibly.** If the AgentParty cache is older
+  than 10 minutes, or the recorded listener pid is gone, the appended line marks
+  `stale` / `down` instead of showing a live listener.
+
 ## v3.27.0 — 2026-07-03
 
 IP-risk detection re-synced with the ip-check.leeguoo.com service (this module

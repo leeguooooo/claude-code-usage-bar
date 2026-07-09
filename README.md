@@ -6,7 +6,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/leeguooooo/claude-code-usage-bar?style=social)](https://github.com/leeguooooo/claude-code-usage-bar/stargazers)
 
-Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage, reset timers, current model, context window, prompt-cache freshness, and (optionally) session cost — in a single compact line driven by Claude Code's `statusLine` hook.
+Lightweight status-line monitor for Claude Code, with a local AgentParty bridge
+for Codex workflows. In Claude Code it shows your 5h / 7d rate-limit usage,
+reset timers, current model, context window, prompt-cache freshness, and
+(optionally) session cost. In Codex + AgentParty workflows it can append the
+current AgentParty channel, identity, listener, unread count, and last-message
+preview from a local cache.
 
 ```
 5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s
@@ -16,7 +21,9 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 
 ![claude-statusbar live demo](docs/images/hero.gif)
 
-3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. Just run `pip install claude-statusbar && cs --setup` and restart Claude Code.
+3 styles × 9 themes, configurable in one command. Auto-updates from PyPI. For
+Claude Code, run `pip install claude-statusbar && cs --setup` and restart
+Claude Code.
 
 ## Contents
 - [Latest release](#latest-release)
@@ -39,6 +46,10 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 - [Contributors](#contributors)
 
 ## Latest release
+
+**v3.28.0** (2026-07-09) — **AgentParty / Codex bridge line** (`show_party`, default on): when the same workspace has AgentParty local status, `cs` appends `🎈 #channel · 🤖/👤 name · 👂watch/serve · unread · last message` under the project line. This is local-only (`~/.agentparty/state/<workspaceId>/statusline.json`), uses the same cwd-scoped workspace id fixtures as AgentParty, and marks stale/down listener state instead of pretending it is live.
+
+**v3.27.0** (2026-07-03) — **IP-risk detection aligned with ip-check**: China-cloud provider detection and ban-risk threshold handling now match the ip-check.leeguoo.com classifier.
 
 **v3.11.0** (2026-06-02) — **rate-limit projections** (`show_projection`, default on): after each `⏰<reset>` timer the bar shows `→NN%`, your expected end-of-window usage. The 5h model blends recent pace, whole-window average, and a local baseline; the 7d model integrates learned coarse rhythm buckets (work hours, non-work hours, night, weekend) so a busy first day is not blindly extrapolated across the whole week. `show_forecast` remains the separate `⚠<eta>` warning chip for imminent cap hits. Plus: `context_window.used_percentage = null` handled gracefully, and the daemon only renders windows active in the last 10s.
 
@@ -81,13 +92,14 @@ Lightweight Claude Code status-line monitor. Shows your 5h / 7d rate-limit usage
 | `▸ <task> (3/7) · ◐ Edit auth.py · ✓ Read×3` | Third "activity" line — what's happening *right now*, parsed from the transcript: the in-progress **todo** + done/total (`show_todos`, on by default), the **active tool** (`◐`, `show_tools`), and an optional completed-tool rollup (`✓ name×N`, `show_tool_rollup`, default off). Omitted entirely when nothing is active. |
 | `◐ explore[haiku] <task> 2m15s` | Bottom line(s) — one per running **subagent** (`show_agents`, opt-in, default **off**). Note: Claude Code already shows background agents in its own native panel, so this largely duplicates that; off by default for that reason. |
 | `⚙ effort:high · think:on · fast:off · style:default` | **Session-mode line** (`show_mode`, on by default) — how this turn is configured, from stdin. Tinted with a per-effort static gradient (`mode_gradient`) so the level reads at a glance. |
+| `🎈 #agentparty · 🤖 xdream-agent · 👂serve · 3 unread · bob: shipped the auth patch 2m` | **AgentParty line** (`show_party`, on by default). Local bridge for Codex + AgentParty workflows: reads only `~/.agentparty/state/<workspaceId>/statusline.json`, never calls AgentParty, never reads tokens, and never makes network requests. Stale cache / dead listener pid renders as `stale` / `down`. |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
 Colors default to green / yellow / red at `30%` and `70%` — both thresholds configurable.
 
 ## Install
 
-### Recommended: PyPI
+### Claude Code: PyPI + `cs --setup`
 
 ```bash
 pip install claude-statusbar     # or: uv tool install claude-statusbar
@@ -108,6 +120,24 @@ Restart Claude Code to see the bar. `cs --setup` writes the following into `~/.c
 ```
 
 Since v3.6.0 `cs --setup` defaults to daemon mode (`cs render` + `refreshInterval: 1`), which keeps CPU under 1% continuously while ticking the cache-age countdown every second. The daemon is auto-started by `cs --setup` and lazy-respawns on `cs render` if it ever dies, so you never see a frozen bar. Opt out with `cs --setup --inline` (writes plain `cs`, ~3% CPU at 1Hz) or set `refreshInterval` to a higher value — `cs --setup` preserves any explicit value you've already chosen.
+
+### Codex: AgentParty local status bridge
+
+Codex support is intentionally local and narrow: `cs` can show the AgentParty
+context for the current workspace when AgentParty has written
+`~/.agentparty/state/<workspaceId>/statusline.json`.
+
+This does **not** turn Codex into a Claude Code `statusLine` source, and it does
+not add OpenAI quota/session accounting. The Claude Code quota, context, cache,
+tool, and session fields still come from Claude Code's native statusLine stdin.
+The Codex/AgentParty bridge only adds workspace presence: channel, human/agent
+identity, listener mode, unread count, and last-message preview.
+
+```text
+🎈 #agentparty · 🤖 xdream-agent · 👂serve · 3 unread · bob: shipped the auth patch 2m
+```
+
+Disable it with `cs config set show_party false`.
 
 ### Alternative: one-shot installer (audit first, then run)
 
@@ -229,6 +259,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "balance_bar": true,
   "show_cache_age": true,
   "show_project_branch": true,
+  "show_party": true,
   "show_todos": true,
   "show_tools": false,
   "show_agents": false,
@@ -251,6 +282,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_cache_age` | bool, default `true` | Append a `cache 4m23s` countdown to Anthropic's prompt-cache expiry, with the TTL (5min vs 1h) auto-detected from the transcript. Three-level color: green (>1min remaining), yellow (<1min), red `cache COLD` (expired). Cache hits consume ~10× less rate-limit quota — for Pro/Max subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. `cs --setup` writes `refreshInterval: 1` by default so this segment ticks visibly. Original implementation contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). Disable with `cs config set show_cache_age false`. |
 | `cache_ttl_seconds` | int, default `300` | **Deprecated since v3.9.0.** The segment now auto-detects the real TTL (5min vs 1h) from the transcript's `cache_creation` buckets, so this value is no longer consulted. Still accepted (and `cs config set cache_ttl_seconds …` still works) so existing configs don't break. See [How the cache countdown works](#how-the-cache-countdown-works). |
 | `show_project_branch` | bool, default `true` | Append a second line `⤷ <project> ⎇ <branch>●` below the bar. Project name comes from Claude Code's `workspace.repo.name` stdin field (falls back to cwd basename); branch is read from `.git/HEAD` directly. The `●` dirty marker is refreshed by a background helper and cached 5 s — the inline render path never blocks on `git`. Disable with `cs config set show_project_branch false`. |
+| `show_party` | bool, default `true` | Append the local AgentParty/Codex bridge line when `~/.agentparty/state/<workspaceId>/statusline.json` exists for the current workspace. Shows channel, identity kind/name, listener mode, unread count, and last-message preview. Local-only: no AgentParty CLI call, no token read, no network. Disable with `cs config set show_party false`. |
 | `show_ahead_behind` | bool, default `false` | Append a `↑2↓1` commits-ahead/behind-upstream marker after the branch on the identity line. Reuses the same cached `git status --branch` call as the dirty dot, so it adds no extra git spawn. Only takes effect when `show_project_branch` is on (it lives on that line). Arrows show only for nonzero directions; in sync → nothing. |
 | `show_todos` | bool, default `true` | Third "activity" line: the in-progress todo + `done/total`, e.g. `▸ Wire the activity line (1/3)`. Parsed from the newest `TodoWrite` in the transcript (full list, last-write-wins) via the same bounded reverse-tail read as the cache countdown. The clearest "is my long turn making progress?" signal. Disable with `cs config set show_todos false`. |
 | `show_tools` | bool, default `false` | Activity line: the **active tool** (`◐ Edit auth.py` — the newest tool_use with no result yet). MCP names are shortened (`mcp__figma__get_screenshot` → `get_screenshot`). Opt-in. |
@@ -396,10 +428,12 @@ cs --no-auto-update             # skip the per-day PyPI version check
 
 `--plan` still exists for older scripts, but is deprecated and no longer changes the rendered output.
 
-### AgentParty line
+### AgentParty / Codex line
 
 When AgentParty has initialized the same workspace, `cs` adds a local-only line
-under the project identity, for example:
+under the project identity. This is the Codex-facing integration point: Codex
+or another AgentParty writer updates the local cache, and the statusbar reads it
+on the next render.
 
 ```text
 🎈 #agentparty · 🤖 xdream-agent · 👂serve · 3 unread · bob: shipped the auth patch 2m
@@ -410,6 +444,9 @@ It does not call the AgentParty CLI, read tokens, or make network requests. If
 the cache is older than 10 minutes, or the recorded listener pid is gone, the
 line degrades with `stale` / `down` instead of pretending the listener is live.
 Turn it off with `cs config set show_party false`.
+
+Claude Code support remains the full native `statusLine` integration configured
+by `cs --setup`; Codex support is this local AgentParty bridge line.
 
 ### Environment variables
 

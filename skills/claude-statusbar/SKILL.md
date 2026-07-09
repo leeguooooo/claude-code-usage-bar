@@ -1,6 +1,6 @@
 ---
 name: claude-statusbar
-description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age. Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, or asks to install / configure / diagnose / customize the bottom status line in Claude Code.
+description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age, or toggle the AgentParty/Codex bridge line. Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, AgentParty, Codex, show_party, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, or asks to install / configure / diagnose / customize the bottom status line in Claude Code or Codex/AgentParty workflows.
 ---
 
 # claude-statusbar control skill
@@ -34,6 +34,7 @@ give a short confirmation (one line, no lecture).
 | Toggle session cost display | `cs config set show_cost true\|false` |
 | Toggle prompt-cache countdown | `cs config set show_cache_age true\|false` |
 | Toggle project + branch 2nd line | `cs config set show_project_branch true\|false` (default `true`) |
+| Toggle AgentParty/Codex bridge line | `cs config set show_party true\|false` (default `true`) |
 | Hide weekly bar | `cs config set show_weekly false` |
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |
@@ -58,6 +59,17 @@ when a user says "用 API 就没状态了 / 连上下文都没了".
   (or per-shell `CS_API_MODE=on`). Force the official layout back with
   `api_mode off`. `CS_API_MODE` env wins over the saved config.
 - Works under both the inline and fast-mode (daemon) render paths.
+
+## AgentParty / Codex bridge line
+
+Claude Code support is the full native `statusLine` integration configured by
+`cs --setup`. Codex support is narrower: when AgentParty writes
+`~/.agentparty/state/<workspaceId>/statusline.json` for the current workspace,
+`cs` appends a local-only line with channel, human/agent identity, listener
+mode, unread count, and last-message preview.
+
+Use `cs config set show_party false` to hide it. This bridge never calls the
+AgentParty CLI, reads tokens, or makes network requests.
 
 ## Per-severity color overrides (v3.4.1+)
 
@@ -123,6 +135,10 @@ when it sees `refreshInterval ≤ 2s` on the inline command. Fast mode drops
 **"Color won't change after `cs config set theme X`"** → check the user
 isn't on a Claude Code session that read `settings.json` at start. Ask
 them to send a new prompt; the next render picks up the new theme.
+
+**"Codex / AgentParty name isn't showing"** → confirm AgentParty has written
+`~/.agentparty/state/<workspaceId>/statusline.json` for the current cwd and
+that `show_party` is still true.
 
 ## Don't
 
