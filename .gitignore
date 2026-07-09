@@ -49,3 +49,6 @@ setup_*.py
 
 # Agent runtime state
 .omx/
+
+# CodeGraph local index (MCP server)
+.codegraph/

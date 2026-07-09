@@ -560,8 +560,43 @@ def render_activity_line(activity, *, theme: Theme, use_color: bool = True,
     return line
 
 
+def _clip_width(s: str, limit: int) -> str:
+    """Truncate `s` to `limit` display columns, appending … when cut.
+
+    Wide East-Asian glyphs count as two columns, so a CJK preview clips at the
+    same visual width as an ASCII one.
+    """
+    from unicodedata import east_asian_width
+
+    def w(ch):
+        return 2 if east_asian_width(ch) in ("W", "F") else 1
+
+    if sum(w(ch) for ch in s) <= limit:
+        return s
+    out, used = [], 0
+    for ch in s:
+        if used + w(ch) > limit - 1:
+            break
+        out.append(ch)
+        used += w(ch)
+    return "".join(out) + "…"
+
+
 def render_party_line(party, *, theme: Theme, use_color: bool = True) -> str:
-    """Render the optional AgentParty line from local cached state."""
+    """Render the AgentParty block: a header line plus the last message.
+
+    Header  ``#seamail · ⬡ leo-zego-voice · ◉ watching @mentions``
+    Message ``   ↳ ●@ Jarvis  <preview>  28m``
+
+    Glyphs are monochrome geometry, not emoji: they inherit the theme color (so
+    the listener state reads as a signal lamp — ``◉`` live, ``⊘`` down, ``◌``
+    unattached) and stay single-width. ``⬡`` is an agent, ``⬢`` a human.
+
+    The message gets its own line so a long preview can't push the header off
+    screen. Its two leading glyphs are the message's state: ``●`` unread /
+    ``○`` read, then ``@`` when the preview mentions us (a space otherwise, so
+    the sender column stays put).
+    """
     if party is None:
         return ""
     channel = str(_attr(party, "channel", "") or "").strip()
@@ -574,32 +609,60 @@ def render_party_line(party, *, theme: Theme, use_color: bool = True) -> str:
     last_age = str(_attr(party, "last_age", "") or "").strip()
     fresh = bool(_attr(party, "fresh", True))
     listener_stale = bool(_attr(party, "listener_stale", False))
-    listener_alive = bool(_attr(party, "listener_alive", False))
+    listener_present = bool(_attr(party, "listener_present", bool(listener_mode)))
+    mentions_only = bool(_attr(party, "listener_mentions_only", False))
+    mentioned = bool(_attr(party, "mentioned", False))
 
     if not any((channel, identity, unread, listener_mode, last_preview)):
         return ""
 
-    icon = "👤" if kind == "human" else "🤖"
-    parts = [f"🎈 {channel}" if channel else "🎈 AgentParty"]
-    if identity:
-        parts.append(f"{icon} {identity}")
-    if listener_mode:
-        suffix = " down" if listener_stale or not listener_alive else ""
-        parts.append(f"👂{listener_mode}{suffix}")
-    if unread > 0:
-        parts.append(f"{unread} unread")
-    if last_preview:
-        who = f"{last_from}: " if last_from else ""
-        age = f" {last_age}" if last_age else ""
-        parts.append(f"{who}{last_preview}{age}")
-    if not fresh:
-        parts.append("stale")
+    INK  = _fg(theme.ink)
+    MUTE = _fg(theme.mute)
+    EDGE = _fg(theme.edge)
+    OK   = _fg(theme.s_ok)
+    WARN = _fg(theme.s_warn)
+    HOT  = _fg(theme.s_hot)
+    SEP  = f"{EDGE} · {RESET}"
 
-    line = " · ".join(parts)
-    if not use_color:
-        return line
-    color = theme.edge if (not fresh or listener_stale) else theme.mute
-    return f"{FAINT}{_fg(color)}{line}{RESET}"
+    # ---- header ---------------------------------------------------------
+    # The `#` is ours; a channel that already carries one must not render `##`.
+    chan = (channel.lstrip("#") or "AgentParty") if channel else "AgentParty"
+    head = [f"{EDGE}#{RESET}{INK}{chan}{RESET}"]
+    if identity:
+        icon = "⬢" if kind == "human" else "⬡"
+        head.append(f"{MUTE}{icon} {identity}{RESET}")
+
+    # Listening state is the question the header must answer outright: are we
+    # attached and hearing messages, or not? The glyph alone carries it.
+    if not listener_present:
+        head.append(f"{MUTE}◌ not listening{RESET}")
+    elif listener_stale:
+        head.append(f"{HOT}⊘ listener down{RESET}")
+    else:
+        verb = "serving" if listener_mode == "serve" else "watching"
+        scope = f" {MUTE}@mentions{RESET}" if mentions_only else ""
+        head.append(f"{OK}◉ {verb}{RESET}{scope}")
+
+    if unread > 0:
+        head.append(f"{WARN}{unread} unread{RESET}")
+    if not fresh:
+        head.append(f"{HOT}stale{RESET}")
+
+    lines = [SEP.join(head)]
+
+    # ---- last message, on its own line ----------------------------------
+    if last_preview:
+        hot_msg = unread > 0 or mentioned
+        dot = f"{WARN}●{RESET}" if unread > 0 else f"{EDGE}○{RESET}"
+        at = f"{WARN}@{RESET}" if mentioned else " "
+        who = f"{INK}{last_from}{RESET}" if hot_msg else f"{MUTE}{last_from}{RESET}"
+        who = f"{who}  " if last_from else ""
+        body = f"{MUTE}{_clip_width(last_preview, 54)}{RESET}"
+        age = f" {EDGE}{last_age}{RESET}" if last_age else ""
+        lines.append(f"   {EDGE}↳{RESET} {dot}{at} {who}{body}{age}")
+
+    out = "\n".join(lines)
+    return out if use_color else _strip(out)
 
 
 def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:

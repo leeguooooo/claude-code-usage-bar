@@ -569,10 +569,17 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
     # whether a re-check is actually due (its own TTL) and self-throttles via
     # the inflight marker, so this can fire generously.
     IP_HEARTBEAT_S = 20.0
-    # Defer first GC by one full interval — without this the first tick of
-    # every fresh daemon would scan the sessions tree, potentially racing
-    # with a Claude Code window that's mid-restart.
+    # Defer the first *session* GC by one full interval — without this the
+    # first tick of every fresh daemon would scan the sessions tree,
+    # potentially racing with a Claude Code window that's mid-restart.
     last_gc = time.time()
+    # Maintenance (orphan-tmp GC + update check) has no such race, so it runs
+    # on the first tick. Deferring it starved both: this daemon is restarted
+    # whenever the thin client spots code drift, and it rarely survives a full
+    # GC_INTERVAL_S, so neither the tmp sweep nor the auto-update check ever
+    # fired. Observed live: 15 orphaned .tmp files, the oldest 99 min old,
+    # against a 60-minute TMP_GC_AFTER_S cutoff.
+    last_maint = 0.0
     last_ip = 0.0
     try:
         while _running:
@@ -591,8 +598,7 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
                         ip_risk.ensure_fresh()
                 except Exception:
                     pass
-            if t0 - last_gc > GC_INTERVAL_S:
-                _gc_old_sessions()
+            if t0 - last_maint > GC_INTERVAL_S:
                 _gc_orphan_tmp_files()
                 # The daemon is the long-lived process, so it owns the periodic
                 # auto-update check (the per-render path suppresses side effects
@@ -603,6 +609,9 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
                     check_for_updates()
                 except Exception:
                     pass
+                last_maint = t0
+            if t0 - last_gc > GC_INTERVAL_S:
+                _gc_old_sessions()
                 last_gc = t0
             elapsed = time.time() - t0
             sleep_for = max(0.0, render_interval - elapsed)

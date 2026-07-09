@@ -41,7 +41,7 @@ def test_reads_statusline_cache_and_renders_no_color(tmp_path):
         "listener": {
             "mode": "serve",
             "pid": 1,
-            "heartbeat_at": int(now * 1000),
+            "heartbeat_ts": int(now * 1000),
         },
     }), encoding="utf-8")
 
@@ -50,12 +50,94 @@ def test_reads_statusline_cache_and_renders_no_color(tmp_path):
     assert status.channel == "#agentparty"
     assert status.identity_name == "xdream-agent"
     assert status.unread == 3
+    assert status.listener_stale is False
     line = render_party_line(status, theme=get_theme("graphite"), use_color=False)
-    assert "🎈 #agentparty" in line
-    assert "🤖 xdream-agent" in line
-    assert "👂serve" in line
-    assert "3 unread" in line
-    assert "bob: shipped the auth patch 2m" in line
+    head, msg = line.split("\n")
+    assert "#agentparty" in head
+    assert "⬡ xdream-agent" in head
+    assert "◉ serving" in head
+    assert "3 unread" in head
+    # Unread and not mentioned → filled dot, no @ badge; message on its own line.
+    assert msg == "   ↳ ●  bob  shipped the auth patch 2m"
+
+
+def test_live_watch_listener_is_not_reported_as_down(tmp_path):
+    """Regression: the contract field is `heartbeat_ts`, not `heartbeat_at`.
+
+    Reading only `heartbeat_at` made every live listener render as "down".
+    """
+    import os
+
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    state_dir = tmp_path / "state" / workspace_id(cwd)
+    state_dir.mkdir(parents=True)
+    now = 1_800_000_000.0
+    (state_dir / "statusline.json").write_text(json.dumps({
+        "updated_at": int(now * 1000),
+        "channel": "seamail",
+        "identity": {"name": "leo-zego-voice", "kind": "agent"},
+        "listener": {"mode": "watch", "pid": os.getpid(),
+                     "heartbeat_ts": int(now * 1000)},
+    }), encoding="utf-8")
+
+    status = read_party_status(cwd, now=now, home=tmp_path)
+    assert status.listener_alive is True
+    assert status.listener_stale is False
+    line = render_party_line(status, theme=get_theme("graphite"), use_color=False)
+    assert "◉ watching" in line
+    assert "down" not in line
+
+
+def test_mention_of_self_is_badged(tmp_path):
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    state_dir = tmp_path / "state" / workspace_id(cwd)
+    state_dir.mkdir(parents=True)
+    now = 1_800_000_000.0
+    (state_dir / "statusline.json").write_text(json.dumps({
+        "updated_at": int(now * 1000),
+        "channel": "seamail",
+        "identity": {"name": "leo-zego-im", "kind": "agent"},
+        "unread": 0,
+        "last_message": {"from": "Jarvis", "ts": int(now - 60),
+                         "preview": "@karl-ag @leo-zego-im ping"},
+    }), encoding="utf-8")
+
+    status = read_party_status(cwd, now=now, home=tmp_path)
+    assert status.mentioned is True
+    msg = render_party_line(status, theme=get_theme("graphite"),
+                            use_color=False).split("\n")[1]
+    # Read (unread == 0) but mentioned → hollow dot + @ badge.
+    assert msg == "   ↳ ○@ Jarvis  @karl-ag @leo-zego-im ping 1m"
+
+
+def test_mention_requires_exact_identity(tmp_path):
+    """`@leo-zego-im` must not count as a mention of `leo-zego`."""
+    from claude_statusbar.party import _is_mentioned
+
+    assert _is_mentioned("@leo-zego-im ping", "leo-zego") is False
+    assert _is_mentioned("@leo-zego-im ping", "leo-zego-im") is True
+    assert _is_mentioned("hi @bob, look", "bob") is True
+    assert _is_mentioned("email bob@x.com", "x") is False
+
+
+def test_no_listener_key_reads_as_not_listening(tmp_path):
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    state_dir = tmp_path / "state" / workspace_id(cwd)
+    state_dir.mkdir(parents=True)
+    now = 1_800_000_000.0
+    (state_dir / "statusline.json").write_text(json.dumps({
+        "updated_at": int(now * 1000),
+        "channel": "seamail",
+        "identity": {"name": "leo", "kind": "agent"},
+    }), encoding="utf-8")
+
+    status = read_party_status(cwd, now=now, home=tmp_path)
+    assert status.listener_present is False
+    line = render_party_line(status, theme=get_theme("graphite"), use_color=False)
+    assert "◌ not listening" in line
 
 
 def test_stale_status_and_dead_listener_degrade(tmp_path):
@@ -71,7 +153,7 @@ def test_stale_status_and_dead_listener_degrade(tmp_path):
         "listener": {
             "mode": "watch",
             "pid": 99999999,
-            "heartbeat_at": int((now - 700) * 1000),
+            "heartbeat_ts": int((now - 700) * 1000),
         },
     }), encoding="utf-8")
 
@@ -81,8 +163,8 @@ def test_stale_status_and_dead_listener_degrade(tmp_path):
     assert status.listener_alive is False
     assert status.listener_stale is True
     line = render_party_line(status, theme=get_theme("graphite"), use_color=False)
-    assert "👤 leo" in line
-    assert "👂watch down" in line
+    assert "⬢ leo" in line
+    assert "⊘ listener down" in line
     assert "stale" in line
 
 
@@ -97,7 +179,7 @@ def test_dispatcher_appends_party_line():
         party=PartyStatus(channel="#agentparty", identity_name="agent"),
     )
     assert "\n" in out
-    assert "🎈 #agentparty" in out
+    assert "#agentparty" in out
 
 
 def test_show_party_config_default_and_set(tmp_path):

@@ -166,6 +166,39 @@ def test_thin_client_does_not_signal_daemon_for_age_stale_meta(monkeypatch, tmp_
     assert signalled == []
 
 
+def test_thin_client_drift_tick_does_not_burn_spawn_debounce(monkeypatch, tmp_path: Path):
+    """The drift tick SIGTERMs the outdated daemon but must NOT attempt a spawn.
+
+    The old daemon is still alive while it handles the signal, so `spawn_if_dead`
+    would find a valid pidfile and refuse — after `_spawn_daemon_async` had
+    already stamped the 30s debounce marker. That stranded every session on the
+    slow inline path for 30s after each upgrade. Leave the debounce untouched so
+    the next tick (~1s later) spawns the fresh daemon.
+    """
+    _setup_session_paths(monkeypatch, tmp_path)
+    sdir = tmp_path / "sessions" / "default"
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("old\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time(),
+        "stale_after_seconds": 5.0,
+        "daemon_started_at": time.time() - 3600,  # booted before the upgrade
+        "pid": 12345,
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_pkg_mtime", lambda: time.time())
+
+    signalled, spawned = [], []
+    monkeypatch.setattr(render_thin, "_signal_outdated_daemon",
+                        lambda meta: signalled.append(meta["pid"]))
+    monkeypatch.setattr(render_thin, "_spawn_daemon_async",
+                        lambda: spawned.append(True))
+    monkeypatch.setattr(render_thin, "_fallback_inline", lambda: 0)
+
+    assert render_thin.render() == 0
+    assert signalled == [12345], "outdated daemon must be told to exit"
+    assert spawned == [], "must not spawn while the outdated daemon is still alive"
+
+
 def test_thin_client_handles_missing_fields():
     assert render_thin._is_fresh({}) is False
     assert render_thin._is_fresh({"generated_at": "not-a-number"}) is False
@@ -849,3 +882,37 @@ def test_ip_heartbeat_gated_on_show_ip_risk(tmp_path, monkeypatch):
     assert calls == []          # default off → no probe
     _tick(True)
     assert calls == [1]         # opt-in → probes
+
+
+def test_maintenance_runs_on_the_first_tick(monkeypatch, tmp_path: Path):
+    """Orphan-tmp GC and the update check must fire on the daemon's first tick.
+
+    They used to share the session-GC timer, which is seeded to `now` and only
+    fires after 30 minutes. But the thin client SIGTERMs this daemon whenever it
+    spots code drift, so it seldom lives that long — the tmp sweep and the
+    auto-update check were starved and effectively never ran. Observed live: 15
+    orphaned .tmp files, oldest 99 min, against a 60-minute cutoff.
+    """
+    monkeypatch.setattr(_d, "_acquire_pidfile", lambda: True)
+    monkeypatch.setattr(_d, "_release_pidfile", lambda: None, raising=False)
+    monkeypatch.setattr(_d, "_log", lambda *a, **k: None)
+    monkeypatch.setattr(_d.signal, "signal", lambda *a, **k: None)
+
+    calls = []
+    monkeypatch.setattr(_d, "_gc_orphan_tmp_files", lambda: calls.append("tmp_gc"))
+    monkeypatch.setattr(_d, "_gc_old_sessions", lambda: calls.append("session_gc"))
+
+    import claude_statusbar.core as core
+    monkeypatch.setattr(core, "check_for_updates", lambda: calls.append("update_check"))
+
+    # Render once, then break out of the loop.
+    def _one_tick():
+        _d._running = False
+    monkeypatch.setattr(_d, "_render_all_sessions", _one_tick)
+
+    _d.run_forever(render_interval=0.0)
+
+    assert "tmp_gc" in calls, "orphan-tmp GC must not wait 30 minutes"
+    assert "update_check" in calls, "update check must not wait 30 minutes"
+    # Session GC keeps its deferral — it can race a mid-restart Claude Code window.
+    assert "session_gc" not in calls

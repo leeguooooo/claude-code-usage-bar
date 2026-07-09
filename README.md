@@ -49,6 +49,8 @@ Claude Code.
 
 **v3.28.2** (2026-07-09) — **uv-tool upgrade fix**: `cs upgrade` now detects uv-tool Python symlinks correctly and selects `uv tool install --upgrade claude-statusbar`.
 
+**v3.29.0** (2026-07-09) — **AgentParty block redesign + daemon-restart fixes.** The AgentParty line was unreadable (`FAINT` stacked on the dimmest grey) and always claimed `watch down`: the reader looked for `heartbeat_at` while the contract writes `heartbeat_ts`, so every live listener read as dead. Now it renders as two lines with monochrome glyphs that inherit the theme — a header that states the listening state outright, and the last message on its own line marked `●` unread / `○` read and `@` when it mentions you. Also fixes three daemon defects found while chasing "I upgraded but nothing changed": the code-drift tick burned its own 30s spawn debounce and left every session inline-rendering; `_signal_outdated_daemon` could SIGTERM a recycled PID belonging to an unrelated process; and the orphan-`.tmp` sweep + auto-update check were starved by sharing a timer seeded to daemon start (a daemon that restarts on drift never lived the 30 minutes needed to fire either).
+
 **v3.28.1** (2026-07-09) — **upgrade/version UX fix**: `cs upgrade` upgrades the install channel that is actually running `cs` (`uv tool`, `pipx`, or plain `pip`), and `cs -v`, `cs -V`, `cs -version` all work like `cs --version`.
 
 **v3.28.0** (2026-07-09) — **AgentParty / Codex bridge line** (`show_party`, default on): when the same workspace has AgentParty local status, `cs` appends `🎈 #channel · 🤖/👤 name · 👂watch/serve · unread · last message` under the project line. This is local-only (`~/.agentparty/state/<workspaceId>/statusline.json`), uses the same cwd-scoped workspace id fixtures as AgentParty, and marks stale/down listener state instead of pretending it is live.
@@ -96,7 +98,7 @@ Claude Code.
 | `▸ <task> (3/7) · ◐ Edit auth.py · ✓ Read×3` | Third "activity" line — what's happening *right now*, parsed from the transcript: the in-progress **todo** + done/total (`show_todos`, on by default), the **active tool** (`◐`, `show_tools`), and an optional completed-tool rollup (`✓ name×N`, `show_tool_rollup`, default off). Omitted entirely when nothing is active. |
 | `◐ explore[haiku] <task> 2m15s` | Bottom line(s) — one per running **subagent** (`show_agents`, opt-in, default **off**). Note: Claude Code already shows background agents in its own native panel, so this largely duplicates that; off by default for that reason. |
 | `⚙ effort:high · think:on · fast:off · style:default` | **Session-mode line** (`show_mode`, on by default) — how this turn is configured, from stdin. Tinted with a per-effort static gradient (`mode_gradient`) so the level reads at a glance. |
-| `🎈 #agentparty · 🤖 xdream-agent · 👂serve · 3 unread · bob: shipped the auth patch 2m` | **AgentParty line** (`show_party`, on by default). Local bridge for Codex + AgentParty workflows: reads only `~/.agentparty/state/<workspaceId>/statusline.json`, never calls AgentParty, never reads tokens, and never makes network requests. Stale cache / dead listener pid renders as `stale` / `down`. |
+| `#agentparty · ⬡ xdream-agent · ◉ serving · 3 unread` + `↳ ●@ bob  shipped the auth patch 2m` | **AgentParty block** (`show_party`, on by default). Local bridge for Codex + AgentParty workflows: reads only `~/.agentparty/state/<workspaceId>/statusline.json`, never calls AgentParty, never reads tokens, and never makes network requests. The header answers *am I listening* outright — `◉ watching/serving` (green), `⊘ listener down` (red), `◌ not listening` (grey). The last message gets its own line, prefixed `●` unread / `○` read and `@` when it mentions you. |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
 Colors default to green / yellow / red at `30%` and `70%` — both thresholds configurable.
@@ -138,7 +140,8 @@ The Codex/AgentParty bridge only adds workspace presence: channel, human/agent
 identity, listener mode, unread count, and last-message preview.
 
 ```text
-🎈 #agentparty · 🤖 xdream-agent · 👂serve · 3 unread · bob: shipped the auth patch 2m
+#agentparty · ⬡ xdream-agent · ◉ serving · 3 unread
+   ↳ ●@ bob  shipped the auth patch 2m
 ```
 
 Disable it with `cs config set show_party false`.
@@ -440,7 +443,8 @@ or another AgentParty writer updates the local cache, and the statusbar reads it
 on the next render.
 
 ```text
-🎈 #agentparty · 🤖 xdream-agent · 👂serve · 3 unread · bob: shipped the auth patch 2m
+#agentparty · ⬡ xdream-agent · ◉ serving · 3 unread
+   ↳ ●@ bob  shipped the auth patch 2m
 ```
 
 The statusbar only reads `~/.agentparty/state/<workspaceId>/statusline.json`.

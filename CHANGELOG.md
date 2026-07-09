@@ -9,6 +9,58 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.0 — 2026-07-09
+
+### AgentParty block redesign
+
+The AgentParty line answered none of the questions it existed to answer.
+
+- **`watch down` was a lie.** The statusline contract writes the listener
+  heartbeat as `heartbeat_ts`; `party.py` read `heartbeat_at`. It always got
+  `None`, so the heartbeat never looked fresh and *every live listener rendered
+  as `down`*. Two test fixtures wrote `heartbeat_at` too, so the bug was pinned
+  in place by its own tests.
+- **It was unreadable.** The whole line stacked the `FAINT` attribute on top of
+  the theme's dimmest grey. Colour is now assigned by meaning: channel in `ink`,
+  identity in `mute`, listening state green/red/grey, unread count amber.
+- **The message no longer crowds the header.** It gets its own line, clipped to
+  54 display columns with wide CJK glyphs counted as two, so a long preview
+  cannot push the header off screen.
+- **The listening state is stated outright** — `◉ watching` / `◉ serving`
+  (green), `⊘ listener down` (red), `◌ not listening` (grey, no listener
+  attached). `@mentions` is appended when the live listener runs with
+  `--mentions-only`, detected from its argv.
+- **The message carries its own state**: `●` unread / `○` read, followed by `@`
+  when the preview mentions your identity. Mention matching is exact, so
+  `@leo-zego-im` does not mark `leo-zego`. (The writer clips previews at 48
+  chars, so a mention past that cut is missed — it under-reports, never
+  over-reports.)
+- Emoji gave way to monochrome geometry (`⬡` agent, `⬢` human). Glyphs now
+  inherit the theme colour and hold a single column.
+
+### Daemon restart fixes
+
+Found while investigating "I upgraded but nothing changed".
+
+- **The code-drift tick burned its own spawn debounce.** On detecting drift the
+  thin client SIGTERMed the old daemon and immediately called
+  `_spawn_daemon_async()`. The old daemon was still alive handling the signal,
+  so `spawn_if_dead` found a valid pidfile and refused — after the 30s debounce
+  marker had already been stamped. Every session then inline-rendered for 30
+  seconds. The drift tick no longer spawns; the next tick (~1s) does.
+- **`_signal_outdated_daemon` could SIGTERM an unrelated process.** A session's
+  meta outlives the daemon that wrote it, so `meta["pid"]` may have been
+  recycled. It now verifies `_process_is_our_daemon(pid)` first — the guard that
+  the function's own docstring already claimed to apply.
+- **The orphan-`.tmp` sweep and the auto-update check were starved.** Both hung
+  off the session-GC timer, which is seeded to daemon start and fires after 30
+  minutes. Since the thin client restarts the daemon on every code drift, it
+  rarely lived that long and neither ever ran. Observed live: 15 orphaned `.tmp`
+  files, the oldest 99 minutes old, against a 60-minute cutoff. Maintenance now
+  runs on the first tick; session GC keeps its deferral.
+
+---
+
 ## v3.28.2 — 2026-07-09
 
 ### Fixed

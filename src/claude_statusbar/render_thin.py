@@ -119,14 +119,21 @@ def _signal_outdated_daemon(meta: dict) -> None:
     serving stale renders and won't restart on its own (its pidfile is
     valid so lazy-spawn skips it). Best-effort — any error is silently
     swallowed; the worst case is a duplicate daemon for one render tick.
+
+    `meta["pid"]` can be arbitrarily old (a session's meta outlives the daemon
+    that wrote it), so the pid may have been recycled onto an unrelated user
+    process by now. Verify it is still our daemon before signalling.
     """
     pid = meta.get("pid")
     if not isinstance(pid, int) or pid <= 1:
         return
     try:
         import signal as _signal
+        from .daemon import _process_is_our_daemon
+        if not _process_is_our_daemon(pid):
+            return
         os.kill(pid, _signal.SIGTERM)
-    except (OSError, ProcessLookupError, PermissionError):
+    except (OSError, ProcessLookupError, PermissionError, ImportError):
         pass
 
 
@@ -392,19 +399,24 @@ def render() -> int:
             # Fall through to inline.
             pass
 
-    # If the meta is stale because the daemon is running outdated code
-    # (PyPI upgrade while daemon kept running), nudge it to exit so the
-    # spawn below can bring up a fresh process. Old daemon's pidfile is
-    # still valid otherwise and `_spawn_daemon_async` would refuse. Do not
-    # signal on ordinary age-stale output; a slow shared daemon would otherwise
-    # get killed by every session it has not reached yet.
+    # If the meta is stale because the daemon is running outdated code (PyPI
+    # upgrade while the daemon kept running), nudge it to exit. Do not signal
+    # on ordinary age-stale output; a slow shared daemon would otherwise get
+    # killed by every session it has not reached yet.
+    #
+    # Crucially, do NOT try to spawn on this same tick. The old daemon is still
+    # alive for the moment it takes to handle SIGTERM, so `spawn_if_dead` would
+    # find a valid pidfile and refuse — while `_spawn_daemon_async` had already
+    # burned the 30s spawn debounce. That left every session inline-rendering
+    # for 30s after an upgrade. Skip the spawn and let the next tick (~1s) do
+    # it, once the old daemon has dropped its pidfile.
     if meta is not None and _is_outdated_daemon(meta):
         _signal_outdated_daemon(meta)
-
-    # Fallback: render inline AND kick off a daemon spawn so the next
-    # tick is fast. We don't wait for the daemon to come up — the user's
-    # status line shows the inline-rendered string this tick.
-    _spawn_daemon_async()
+    else:
+        # Fallback: render inline AND kick off a daemon spawn so the next
+        # tick is fast. We don't wait for the daemon to come up — the user's
+        # status line shows the inline-rendered string this tick.
+        _spawn_daemon_async()
     if payload is not None:
         # core.main() reads sys.stdin via parse_stdin_data(); replay the
         # bytes we already consumed so it sees the same payload Claude Code

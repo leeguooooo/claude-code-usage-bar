@@ -34,6 +34,9 @@ class PartyStatus:
     listener_pid: Optional[int] = None
     listener_alive: bool = False
     listener_stale: bool = False
+    listener_present: bool = False
+    listener_mentions_only: bool = False
+    mentioned: bool = False
     fresh: bool = True
 
 
@@ -94,6 +97,36 @@ def _pid_alive(pid: Optional[int]) -> bool:
         return False
 
 
+def _listener_mentions_only(pid: Optional[int]) -> bool:
+    """True when the live listener was started with ``--mentions-only``.
+
+    The statusline contract carries no such flag, so the only local source is
+    the process's own argv. One `ps` fork, and only when a listener is alive.
+    """
+    if pid is None or pid <= 0:
+        return False
+    try:
+        import subprocess
+        proc = subprocess.run(
+            ["ps", "-o", "command=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=0.6,
+        )
+    except Exception:
+        return False
+    return "--mentions-only" in (proc.stdout or "")
+
+
+def _is_mentioned(preview: str, name: str) -> bool:
+    """True when `preview` @-mentions `name`.
+
+    The writer caps `preview` at 48 chars, so a mention past that cut is
+    invisible here — this under-reports rather than over-reports.
+    """
+    if not preview or not name:
+        return False
+    return re.search(rf"@{re.escape(name)}(?![\w.-])", preview) is not None
+
+
 def _format_age(ts_value: Any, now_seconds: float) -> str:
     try:
         ts = float(ts_value)
@@ -140,7 +173,11 @@ def read_party_status(
     last = data.get("last_message") if isinstance(data.get("last_message"), dict) else {}
     listener = data.get("listener") if isinstance(data.get("listener"), dict) else {}
     listener_pid = _int_or_none(listener.get("pid"))
-    listener_heartbeat = _int_or_none(listener.get("heartbeat_at"))
+    # The contract field is `heartbeat_ts`; `heartbeat_at` is tolerated for
+    # older CLIs. Reading only the latter made every live listener look dead.
+    listener_heartbeat = _int_or_none(listener.get("heartbeat_ts"))
+    if listener_heartbeat is None:
+        listener_heartbeat = _int_or_none(listener.get("heartbeat_at"))
     listener_alive = _pid_alive(listener_pid) if listener else False
     listener_fresh = False
     if listener_heartbeat:
@@ -148,19 +185,26 @@ def read_party_status(
             now_seconds * 1000.0 - listener_heartbeat
         ) <= STALE_AFTER_SECONDS * 1000
 
+    listener_ok = bool(listener) and listener_alive and listener_fresh
+    preview = str(last.get("preview") or "")
+    name = str(identity.get("name") or "")
+
     return PartyStatus(
         channel=str(data.get("channel") or ""),
         server=str(data.get("server") or ""),
-        identity_name=str(identity.get("name") or ""),
+        identity_name=name,
         identity_kind=str(identity.get("kind") or "agent"),
         identity_role=str(identity.get("role") or ""),
         unread=max(0, unread),
         last_from=str(last.get("from") or ""),
-        last_preview=str(last.get("preview") or ""),
+        last_preview=preview,
         last_age=_format_age(last.get("ts"), now_seconds),
         listener_mode=str(listener.get("mode") or "") if listener else "",
         listener_pid=listener_pid,
         listener_alive=listener_alive,
         listener_stale=bool(listener) and (not listener_alive or not listener_fresh),
+        listener_present=bool(listener),
+        listener_mentions_only=_listener_mentions_only(listener_pid) if listener_ok else False,
+        mentioned=_is_mentioned(preview, name),
         fresh=fresh,
     )
