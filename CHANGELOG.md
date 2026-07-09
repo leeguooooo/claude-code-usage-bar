@@ -9,6 +9,20 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.6 — 2026-07-10
+
+### Documentation
+
+- **Clarified Claude Code vs Codex support.** The README now has an explicit
+  support matrix: Claude Code remains the full native `statusLine` integration
+  for quota/session/context/cache/activity data, while Codex support is the
+  local AgentParty bridge that shows channel, identity, listener state, unread
+  count, and last-message preview from
+  `~/.agentparty/state/<workspaceId>/statusline.json`.
+- **Updated the latest-release summary.** The top of the README now points to
+  v3.29.6 and summarizes the v3.29.5 daemon/session fixes instead of leaving an
+  older v3.28.x entry first.
+
 ## v3.29.5 — 2026-07-09
 
 ### launchd/systemd daemons were unkillable — and immune to upgrades

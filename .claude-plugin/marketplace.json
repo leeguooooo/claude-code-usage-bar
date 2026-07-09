@@ -5,8 +5,8 @@
     "email": "leeguooooo@gmail.com"
   },
   "metadata": {
-    "description": "Self-hosted marketplace for the claude-statusbar plugin. Add with `/plugin marketplace add leeguooooo/claude-code-usage-bar`, then `/plugin install claude-statusbar`. The plugin wires Claude Code statusLine + slash commands; the render engine is the `cs` CLI from PyPI. v3.29.5 fixes unkillable service-managed daemons and a pidfile deletion race; v3.29.4 fixes silent auto-upgrade failure under launchd/systemd and unifies docs on `cs upgrade`; v3.29.3 fixes the systemd respawn loop and reads the mentions_only contract field; v3.29.2 fixes a launchd respawn loop and halves warm render time; v3.29.1 fixes a daemon crash on slow renders; v3.29.0 redesigns the AgentParty block and fixes the listener-heartbeat and daemon-restart bugs.",
-    "version": "3.29.5"
+    "description": "Self-hosted marketplace for the claude-statusbar plugin. Add with `/plugin marketplace add leeguooooo/claude-code-usage-bar`, then `/plugin install claude-statusbar`. The plugin wires Claude Code statusLine + slash commands; the render engine is the `cs` CLI from PyPI. v3.29.6 clarifies Claude Code vs Codex support: Claude Code is the native statusLine integration, while Codex support is the local AgentParty bridge. v3.29.5 fixes unkillable service-managed daemons and a pidfile deletion race; v3.29.4 fixes silent auto-upgrade failure under launchd/systemd and unifies docs on `cs upgrade`; v3.29.3 fixes the systemd respawn loop and reads the mentions_only contract field; v3.29.2 fixes a launchd respawn loop and halves warm render time; v3.29.1 fixes a daemon crash on slow renders; v3.29.0 redesigns the AgentParty block and fixes the listener-heartbeat and daemon-restart bugs.",
+    "version": "3.29.6"
   },
   "plugins": [
     {

@@ -28,6 +28,7 @@ Claude Code.
 ## Contents
 - [Latest release](#latest-release)
 - [What it shows](#what-it-shows)
+- [Claude Code vs Codex support](#claude-code-vs-codex-support)
 - [Install](#install)
 - [Styles & themes](#styles--themes)
 - [Configuration](#configuration-file)
@@ -47,9 +48,13 @@ Claude Code.
 
 ## Latest release
 
-**v3.28.2** (2026-07-09) — **uv-tool upgrade fix**: `cs upgrade` now detects uv-tool Python symlinks correctly and selects `uv tool install --upgrade claude-statusbar`.
+**v3.29.6** (2026-07-10) — **support docs cleanup**: the README now states the support boundary explicitly. Claude Code is the full native `statusLine` integration; Codex support is the AgentParty local status bridge and does not include OpenAI quota/session accounting.
+
+**v3.29.5** (2026-07-09) — **service daemon and AgentParty session fixes**: `cs daemon stop` and upgrade drift-kill now recognize launchd/systemd-managed daemons, pidfile cleanup no longer deletes a newer daemon owner's pidfile, and the AgentParty block is gated on session transcript evidence so unrelated windows in the same repo do not inherit another agent's channel line.
 
 **v3.29.0** (2026-07-09) — **AgentParty block redesign + daemon-restart fixes.** The AgentParty line was unreadable (`FAINT` stacked on the dimmest grey) and always claimed `watch down`: the reader looked for `heartbeat_at` while the contract writes `heartbeat_ts`, so every live listener read as dead. Now it renders as two lines with monochrome glyphs that inherit the theme — a header that states the listening state outright, and the last message on its own line marked `●` unread / `○` read and `@` when it mentions you. Also fixes three daemon defects found while chasing "I upgraded but nothing changed": the code-drift tick burned its own 30s spawn debounce and left every session inline-rendering; `_signal_outdated_daemon` could SIGTERM a recycled PID belonging to an unrelated process; and the orphan-`.tmp` sweep + auto-update check were starved by sharing a timer seeded to daemon start (a daemon that restarts on drift never lived the 30 minutes needed to fire either).
+
+**v3.28.2** (2026-07-09) — **uv-tool upgrade fix**: `cs upgrade` now detects uv-tool Python symlinks correctly and selects `uv tool install --upgrade claude-statusbar`.
 
 **v3.28.1** (2026-07-09) — **upgrade/version UX fix**: `cs upgrade` upgrades the install channel that is actually running `cs` (`uv tool`, `pipx`, or plain `pip`), and `cs -v`, `cs -V`, `cs -version` all work like `cs --version`.
 
@@ -102,6 +107,23 @@ Claude Code.
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
 Colors default to green / yellow / red at `30%` and `70%` — both thresholds configurable.
+
+## Claude Code vs Codex support
+
+`cs` supports Claude Code and Codex in different ways. Claude Code has a native
+`statusLine` hook that streams quota/session data into `cs`; Codex does not
+provide that same Claude Code payload. Codex support therefore focuses on the
+AgentParty bridge: AgentParty writes local workspace state, and `cs` can show
+that channel/listener/unread context without making network calls.
+
+| Runtime | What `cs` can show | Data source | Setup |
+|---------|--------------------|-------------|-------|
+| Claude Code | 5h/7d quota, reset timers, model/context, prompt-cache age, session cost, project/git line, activity lines, and optional AgentParty block | Claude Code `statusLine` stdin plus local caches | `pip install claude-statusbar && cs --setup` |
+| Codex + AgentParty | AgentParty channel, identity, listener state, unread count, and last-message preview | `~/.agentparty/state/<workspaceId>/statusline.json` written by AgentParty | Join/send/watch with `party`; keep `show_party` enabled |
+| Codex without AgentParty | No Codex quota/session accounting from this package | None | Use Codex's own UI/status surfaces |
+
+The AgentParty bridge is local-only: it does not read AgentParty tokens, does
+not call `party`, and does not contact the network during render.
 
 ## Install
 
