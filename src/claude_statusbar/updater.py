@@ -112,17 +112,47 @@ def detect_install_channel(
     return "pip"
 
 
+# Where uv/pipx actually live when they're not on PATH. The daemon often runs
+# under launchd/systemd, whose PATH is the bare system default — `~/.local/bin`
+# (uv, pipx) and Homebrew are not on it. `shutil.which` alone therefore made
+# the daemon's auto-upgrade fall through to `python -m pip` — and a uv tool
+# venv ships WITHOUT pip, so the upgrade failed silently, forever.
+_TOOL_DIRS = (
+    Path.home() / ".local" / "bin",
+    Path.home() / ".cargo" / "bin",
+    Path("/opt/homebrew/bin"),
+    Path("/usr/local/bin"),
+)
+
+
+def _find_tool(name: str) -> Optional[str]:
+    """Absolute path to `name`, searching PATH first, then well-known dirs."""
+    found = shutil.which(name)
+    if found:
+        return found
+    exe = f"{name}.exe" if sys.platform == "win32" else name
+    for d in _TOOL_DIRS:
+        cand = d / exe
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
 def get_upgrade_command(
     executable: str | Path | None = None,
 ) -> list[str]:
     """Return the most appropriate self-upgrade command for this install."""
     channel = detect_install_channel(executable)
 
-    if channel == "uv" and shutil.which("uv"):
-        return ["uv", "tool", "install", "--upgrade", DIST_NAME]
+    if channel == "uv":
+        uv = _find_tool("uv")
+        if uv:
+            return [uv, "tool", "install", "--upgrade", DIST_NAME]
 
-    if channel == "pipx" and shutil.which("pipx"):
-        return ["pipx", "upgrade", DIST_NAME]
+    if channel == "pipx":
+        pipx = _find_tool("pipx")
+        if pipx:
+            return [pipx, "upgrade", DIST_NAME]
 
     return [sys.executable, "-m", "pip", "install", "--upgrade", DIST_NAME]
 
@@ -153,8 +183,9 @@ def auto_upgrade() -> bool:
     if _run_upgrade(get_upgrade_command()):
         return True
 
-    if shutil.which("pipx"):
-        if _run_upgrade(["pipx", "upgrade", DIST_NAME]):
+    pipx = _find_tool("pipx")
+    if pipx:
+        if _run_upgrade([pipx, "upgrade", DIST_NAME]):
             return True
 
     return _run_upgrade(

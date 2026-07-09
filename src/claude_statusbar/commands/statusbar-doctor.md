@@ -21,4 +21,4 @@ The output covers:
 - Current resolved `style` / `theme` / `show_*` toggles
 - Number of `/statusbar*` slash commands installed
 
-Show the user the full output as-is. If anything is flagged with `✗`, point at that line specifically and propose the obvious next step (`cs --setup` to create the statusLine entry, `pip install -U claude-statusbar` to upgrade, etc.). Don't editorialize beyond what the output already says.
+Show the user the full output as-is. If anything is flagged with `✗`, point at that line specifically and propose the obvious next step (`cs --setup` to create the statusLine entry, `cs upgrade` to upgrade — never a raw pip/uv command, `cs upgrade` picks the channel the install actually uses, etc.). Don't editorialize beyond what the output already says.

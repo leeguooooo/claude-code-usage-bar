@@ -993,3 +993,55 @@ def test_run_forever_exits_clean_when_a_daemon_already_runs(monkeypatch, capsys)
 
     assert _d.run_forever() == 0
     assert "already running (pid 4242)" in capsys.readouterr().err
+
+
+def test_cmdline_matcher_recognizes_every_spawn_shape():
+    """`cs daemon stop` and the drift-kill guard identify the daemon by its
+    process cmdline. Matching only the `claude_statusbar` module path missed
+    launchd/systemd instances, which run via the `cs` console script — those
+    daemons became unkillable (stop refused, drift-kill refused) and never
+    picked up upgrades."""
+    # lazy-spawn / cmd_start
+    assert _d._cmdline_is_our_daemon(
+        "/usr/bin/python3 -m claude_statusbar.cli daemon _run --render-interval 1.0")
+    # launchd / systemd: venv python + cs console script — no underscore form
+    assert _d._cmdline_is_our_daemon(
+        "/Users/leo/.local/share/uv/tools/claude-statusbar/bin/python3 "
+        "/Users/leo/.local/bin/cs daemon _run")
+    # plain pip install: system python + /usr/local/bin/cs
+    assert _d._cmdline_is_our_daemon("/usr/bin/python3 /usr/local/bin/cs daemon _run")
+    # NUL-separated /proc form, post-normalization
+    assert _d._cmdline_is_our_daemon("python3 /usr/local/bin/cs daemon _run ")
+    # unrelated processes must not match
+    assert not _d._cmdline_is_our_daemon("vim daemon_notes.md")
+    assert not _d._cmdline_is_our_daemon("/usr/sbin/securityd")
+    assert not _d._cmdline_is_our_daemon("python3 somethingelse.py --daemon")
+
+
+def test_release_pidfile_leaves_someone_elses_file_alone(monkeypatch, tmp_path: Path):
+    """flock locks an inode, not a path: after unlink+recreate, two daemons
+    each hold a lock on different inodes. The exiting one must not delete the
+    pidfile the current owner wrote — that made the survivor invisible to
+    stop/status/spawn_if_dead, so every render spawned another duplicate."""
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+
+    # Daemon A acquires; its handle points at inode 1.
+    assert _d._acquire_pidfile() is True
+    handle_a = _d._pidfile_handle
+
+    # The pidfile is unlinked and recreated by daemon B (new inode, new owner).
+    _d.pid_path().unlink()
+    _d.pid_path().write_text("99999", encoding="utf-8")
+
+    # Daemon A exits: must NOT delete B's file.
+    _d._pidfile_handle = handle_a
+    _d._release_pidfile()
+    assert _d.pid_path().exists(), "exiting daemon deleted the new owner's pidfile"
+    assert _d.pid_path().read_text() == "99999"
+
+
+def test_release_pidfile_still_cleans_its_own_file(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+    assert _d._acquire_pidfile() is True
+    _d._release_pidfile()
+    assert not _d.pid_path().exists()

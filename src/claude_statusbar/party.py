@@ -18,6 +18,20 @@ from typing import Any, Dict, Optional, Union
 
 STALE_AFTER_SECONDS = 10 * 60
 
+# Byte needles that mark a session as AgentParty-attached when they appear in
+# its transcript. Command invocations and the config env var only — a session
+# merely *talking about* AgentParty shouldn't light the line up. All are plain
+# ASCII, so they survive JSONL string escaping verbatim.
+_ATTACH_NEEDLES = (
+    b"party init",
+    b"party send",
+    b"party watch",
+    b"party serve",
+    b"party ask",
+    b"party digest",
+    b"AGENTPARTY_CONFIG",
+)
+
 
 @dataclass(frozen=True)
 class PartyStatus:
@@ -160,6 +174,57 @@ def _format_age(ts_value: Any, now_seconds: float) -> str:
     if delta < 86400:
         return f"{delta // 3600}h"
     return f"{delta // 86400}d"
+
+
+def session_is_attached(transcript_path: str, session_id: str) -> bool:
+    """True when THIS session has ever run an AgentParty command.
+
+    The AgentParty state cache is cwd-scoped by contract, but Claude Code
+    sessions are not: several sessions share one project directory, and only
+    some of them join a party channel (typically via a per-session
+    ``AGENTPARTY_CONFIG``). The env var never reaches the Claude Code process
+    (agents export it inside individual Bash calls), so the only
+    session-scoped evidence is the session's own transcript — a joined session
+    necessarily ran ``party init/send/watch/…`` through the Bash tool.
+
+    Scans are incremental and the verdict is sticky: a per-session marker file
+    records the byte offset already searched, so a 100 MB transcript is read
+    once, and each render after that reads only the newly appended bytes.
+    """
+    if not transcript_path or not session_id:
+        return False
+    try:
+        tsize = os.path.getsize(transcript_path)
+    except OSError:
+        return False
+
+    from .daemon import session_dir
+    marker = session_dir(session_id) / "party_scan.json"
+    state = _read_json(marker)
+    if state.get("attached"):
+        return True
+    offset = state.get("offset")
+    offset = offset if isinstance(offset, int) and 0 <= offset <= tsize else 0
+
+    attached = False
+    # Overlap by the longest needle so a match straddling two scans still hits.
+    overlap = max(len(n) for n in _ATTACH_NEEDLES) - 1
+    start = max(0, offset - overlap)
+    try:
+        with open(transcript_path, "rb") as f:
+            f.seek(start)
+            chunk = f.read()
+    except OSError:
+        return False
+    attached = any(n in chunk for n in _ATTACH_NEEDLES)
+
+    try:
+        from .cache import atomic_write_text
+        atomic_write_text(marker, json.dumps(
+            {"attached": attached, "offset": tsize}))
+    except Exception:
+        pass
+    return attached
 
 
 def read_party_status(

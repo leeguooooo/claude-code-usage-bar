@@ -32,7 +32,7 @@ def test_get_upgrade_command_prefers_uv(monkeypatch):
     cmd = updater.get_upgrade_command(
         "/Users/test/.local/share/uv/tools/claude-statusbar/bin/python"
     )
-    assert cmd == ["uv", "tool", "install", "--upgrade", "claude-statusbar"]
+    assert cmd == ["/usr/bin/uv", "tool", "install", "--upgrade", "claude-statusbar"]
 
 
 def test_get_upgrade_command_prefers_pipx(monkeypatch):
@@ -40,13 +40,38 @@ def test_get_upgrade_command_prefers_pipx(monkeypatch):
     cmd = updater.get_upgrade_command(
         "/Users/test/.local/pipx/venvs/claude-statusbar/bin/python"
     )
-    assert cmd == ["pipx", "upgrade", "claude-statusbar"]
+    assert cmd == ["/usr/bin/pipx", "upgrade", "claude-statusbar"]
 
 
 def test_get_upgrade_command_falls_back_to_pip(monkeypatch):
     monkeypatch.setattr(updater.shutil, "which", lambda name: None)
     cmd = updater.get_upgrade_command("/Users/test/miniconda3/bin/python")
     assert cmd == [updater.sys.executable, "-m", "pip", "install", "--upgrade", "claude-statusbar"]
+
+
+def test_uv_found_in_well_known_dir_when_not_on_path(monkeypatch, tmp_path):
+    """launchd/systemd run the daemon with the bare system PATH, which lacks
+    ~/.local/bin — so `shutil.which("uv")` fails there even though uv is
+    installed. The old code then fell back to `python -m pip`, and a uv tool
+    venv has NO pip: the daemon's auto-upgrade failed silently, forever.
+    Well-known tool dirs must be searched after PATH."""
+    fake_uv = tmp_path / "uv"
+    fake_uv.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(updater.shutil, "which", lambda name: None)  # launchd PATH
+    monkeypatch.setattr(updater, "_TOOL_DIRS", (tmp_path,))
+    cmd = updater.get_upgrade_command(
+        "/Users/test/.local/share/uv/tools/claude-statusbar/bin/python"
+    )
+    assert cmd == [str(fake_uv), "tool", "install", "--upgrade", "claude-statusbar"]
+
+
+def test_uv_channel_without_uv_anywhere_falls_back_to_pip(monkeypatch):
+    monkeypatch.setattr(updater.shutil, "which", lambda name: None)
+    monkeypatch.setattr(updater, "_TOOL_DIRS", ())
+    cmd = updater.get_upgrade_command(
+        "/Users/test/.local/share/uv/tools/claude-statusbar/bin/python"
+    )
+    assert cmd[0] == updater.sys.executable
 
 
 # ---------------------------------------------------------------------------

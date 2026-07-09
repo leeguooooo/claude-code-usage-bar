@@ -9,6 +9,76 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.5 — 2026-07-09
+
+### launchd/systemd daemons were unkillable — and immune to upgrades
+
+`_process_is_our_daemon` matched the module path `claude_statusbar`
+(underscore), which only appears in lazy-spawned daemons
+(`python -m claude_statusbar.cli …`). A service-managed daemon's cmdline is
+`<venv python3> /path/to/cs daemon _run` — no underscore form anywhere. So for
+every launchd/systemd instance:
+
+- `cs daemon stop` refused with a false "PID reused. Refusing to SIGTERM".
+- The upgrade drift-kill (guarded since v3.29.1) also refused — the stale
+  daemon kept serving old code after every upgrade.
+
+The matcher now recognizes all spawn shapes, keyed on the shared
+`daemon _run` invocation.
+
+### The AgentParty line showed in sessions that never joined
+
+The AgentParty cache is cwd-scoped by contract, but Claude Code sessions are
+not: several windows share one project directory and only some of them join a
+channel (typically with a per-session `AGENTPARTY_CONFIG`). Every window in
+the directory rendered whichever session's channel/identity wrote the cache
+last — dead listeners and all.
+
+The env var never reaches the Claude Code process (agents export it inside
+individual Bash calls), so the line is now gated on the only session-scoped
+evidence there is: the session's own transcript. A window shows the party
+block only after its transcript contains a party command
+(`party init/send/watch/…` or `AGENTPARTY_CONFIG`). Scans are incremental
+(byte offset per session, sticky verdict), so a large transcript is read once
+and each later render reads only the appended tail. Sessions without a
+transcript (preview, tests, bare `cs`) keep the old always-show behavior.
+
+### An exiting daemon could delete the current owner's pidfile
+
+`flock` locks an inode, not a path: after an unlink+recreate cycle, two daemons
+each hold "the" lock on different inodes. `_release_pidfile` unlinked by path
+unconditionally, so the exiting daemon deleted the pidfile the *current* owner
+had just written — making it invisible to stop/status/spawn_if_dead, so the
+next render spawned a duplicate. Observed live twice in one day (a pidfile-less
+daemon looping for 15+ minutes beside a fresh one). Release now unlinks the
+locked file only while it still points at the exiting daemon's own inode.
+
+---
+
+## v3.29.4 — 2026-07-09
+
+### The daemon's auto-upgrade silently failed under launchd/systemd
+
+launchd and systemd run the daemon with the bare system PATH, which lacks
+`~/.local/bin` — where uv and pipx actually live. `shutil.which("uv")` failed
+there, so the upgrade fell through to `python -m pip install --upgrade` — and a
+uv tool venv ships **without pip**. Net effect: for uv installs whose daemon
+runs as an OS service, the daily auto-upgrade has never worked. Tool discovery
+now searches well-known directories (`~/.local/bin`, `~/.cargo/bin`, Homebrew)
+after PATH.
+
+### `cs upgrade` is now the one documented upgrade path
+
+Users kept being told (by READMEs and by agents guessing) to run
+`uv tool install …` — and many of them don't have uv, because they installed
+via pip. `cs upgrade` has picked the right channel since 3.28.1; now every
+surface says so: the README's Upgrading section, the claude-statusbar skill's
+decision tree (with an explicit "never guess a package-manager command" note),
+its trigger words (`upgrade`/`update`/`升级`), and `/statusbar-doctor`'s
+follow-up suggestions.
+
+---
+
 ## v3.29.3 — 2026-07-09
 
 ### The systemd unit had the same respawn loop v3.29.2 fixed on launchd

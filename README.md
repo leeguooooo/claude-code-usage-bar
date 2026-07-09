@@ -556,7 +556,7 @@ function formatCountdown(s):
 
 **Cache-age segment shows `cache 0s` and never moves** — `refreshInterval` is unset; Claude Code only re-invokes the statusLine on each user/assistant turn. Set `"refreshInterval": 1` in settings.json. For 1Hz refresh you'll also want `cs --setup --fast` so the per-second invocation stays cheap.
 
-**`cs --setup --fast` then daemon shows wrong rate-limits** — Fixed in v3.2.1. Upgrade with `pip install -U claude-statusbar`.
+**`cs --setup --fast` then daemon shows wrong rate-limits** — Fixed in v3.2.1. Upgrade with `cs upgrade`.
 
 **Auto-update is annoying / blocked** — `export CLAUDE_STATUSBAR_NO_UPDATE=1` in your shell rc.
 
@@ -564,13 +564,17 @@ For anything else: open a [GitHub issue](https://github.com/leeguooooo/claude-co
 
 ## Upgrading
 
-Auto-updates once per day from PyPI. To upgrade manually:
+Auto-updates once per day from PyPI. To upgrade manually, one command works for
+every install (pip, pipx, or uv — it detects which one is actually running `cs`
+and uses that, so you never need to know or guess):
 
 ```bash
-pip install -U claude-statusbar
-# or
-uv tool upgrade claude-statusbar
+cs upgrade
 ```
+
+Don't reach for `uv tool install`/`pipx upgrade` by hand — if you installed via
+`pip`, you may not even have those tools, and running the wrong one can leave
+you with two parallel installs. `cs upgrade` picks the right channel for you.
 
 To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
 

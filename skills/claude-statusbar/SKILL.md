@@ -1,6 +1,6 @@
 ---
 name: claude-statusbar
-description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age, or toggle the AgentParty/Codex bridge line. Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, AgentParty, Codex, show_party, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, or asks to install / configure / diagnose / customize the bottom status line in Claude Code or Codex/AgentParty workflows.
+description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install, upgrade (`cs upgrade` — the only supported upgrade path), or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age, or toggle the AgentParty/Codex bridge line. Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, AgentParty, Codex, show_party, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, or asks to install / upgrade / update / 升级 / configure / diagnose / customize the bottom status line in Claude Code or Codex/AgentParty workflows.
 ---
 
 # claude-statusbar control skill
@@ -29,6 +29,7 @@ give a short confirmation (one line, no lecture).
 | Diagnose problem | `cs doctor` |
 | Wipe config | `cs config reset` |
 | Install / first-time setup | `cs --setup` |
+| Upgrade / update to latest version | `cs upgrade` — NEVER guess `uv tool install` / `pip install -U` / `pipx upgrade`: it detects the install channel that is actually running `cs` and picks the right one (many users don't have uv at all) |
 | Enable fast mode (daemon) | `cs --setup --fast` |
 | Disable fast mode | `cs daemon stop` then re-run `cs --setup` |
 | Toggle session cost display | `cs config set show_cost true\|false` |

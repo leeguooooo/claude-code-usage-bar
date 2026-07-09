@@ -232,12 +232,27 @@ def _release_pidfile():
         msvcrt.locking(_pidfile_handle.fileno(), msvcrt.LK_UNLCK, 1)
     except (ImportError, OSError, ValueError):
         pass
+    # flock locks an INODE, not a path: after an unlink+recreate cycle two
+    # daemons can each hold "the" lock on different inodes. Unlink the locked
+    # path only if it still points at OUR inode — an exiting daemon otherwise
+    # deletes the pidfile the *current* daemon just wrote, making it invisible
+    # to stop/status/spawn_if_dead, so the next render spawns a duplicate.
+    # The guard applies only to the file the handle actually refers to
+    # (daemon.pid on POSIX, daemon.lock on Windows); the sibling keeps the
+    # old unconditional cleanup.
+    try:
+        ours = os.fstat(_pidfile_handle.fileno()).st_ino
+        own_name = Path(_pidfile_handle.name).name
+    except (OSError, ValueError, AttributeError):
+        ours, own_name = None, None
     try:
         _pidfile_handle.close()
     except OSError:
         pass
     for p in (pid_path(), lock_path()):
         try:
+            if ours is not None and p.name == own_name and p.stat().st_ino != ours:
+                continue  # someone else's file now — leave it alone
             p.unlink()
         except OSError:
             pass
@@ -307,6 +322,27 @@ def _is_alive_windows(pid: int, kernel32=None) -> bool:
         kernel32.CloseHandle(handle)
 
 
+def _cmdline_is_our_daemon(cmdline: str) -> bool:
+    """Match every way our daemon can appear in a process list.
+
+    - lazy-spawn / cmd_start: `python -m claude_statusbar.cli daemon _run ...`
+      (underscore module path)
+    - launchd / systemd unit: `<venv python3> /path/to/cs daemon _run`
+      (NO underscore anywhere — matching only `claude_statusbar` made every
+      service-managed daemon read as "not ours", so `cs daemon stop` refused
+      to stop it and the drift-kill guard refused to upgrade-restart it: an
+      unkillable stale daemon).
+
+    `daemon _run` is the invocation both spawn paths share; `_run` is an
+    internal subcommand no other tool passes.
+    """
+    return ("daemon" in cmdline) and (
+        "claude_statusbar" in cmdline
+        or "claude-statusbar" in cmdline
+        or "daemon _run" in cmdline
+    )
+
+
 def _process_is_our_daemon(pid: int) -> bool:
     """Verify the PID actually belongs to *our* daemon, not a recycled PID.
 
@@ -320,8 +356,10 @@ def _process_is_our_daemon(pid: int) -> bool:
     proc_path = f"/proc/{pid}/cmdline"
     try:
         with open(proc_path, "rb") as f:
-            cmdline = f.read().decode("utf-8", errors="replace")
-        return "claude_statusbar" in cmdline and "daemon" in cmdline
+            # /proc cmdline is NUL-separated; normalize so the space-joined
+            # "daemon _run" pattern matches too.
+            cmdline = f.read().decode("utf-8", errors="replace").replace("\x00", " ")
+        return _cmdline_is_our_daemon(cmdline)
     except OSError:
         pass
     # Non-Linux fallback.
@@ -335,7 +373,7 @@ def _process_is_our_daemon(pid: int) -> bool:
         )
         if out.returncode != 0:
             return False
-        return "claude_statusbar" in out.stdout and "daemon" in out.stdout
+        return _cmdline_is_our_daemon(out.stdout)
     except (OSError, subprocess.TimeoutExpired):
         return False
 

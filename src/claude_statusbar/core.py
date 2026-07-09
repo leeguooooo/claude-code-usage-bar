@@ -1143,14 +1143,26 @@ def main(json_output: bool = False,
             identity_kwargs["identity_behind"] = behind
     # Optional AgentParty line (#54): local-only cwd-scoped status cache. This
     # never imports or shells out to AgentParty and never reads tokens.
+    #
+    # Session gate: the cache is cwd-scoped, but sessions sharing a project
+    # dir don't all join AgentParty — without the gate, every window showed
+    # whichever session's channel/identity wrote the cache last (dead
+    # listeners included). Only sessions whose own transcript shows a party
+    # command get the line; when no transcript is available (preview, tests,
+    # bare `cs`), keep the old always-show behavior.
     party_kwargs = {}
     if cfg.show_party:
         try:
-            from .party import read_party_status
-            _party_cwd = str(stdin_data.get('workspace_current_dir') or os.getcwd())
-            _party = read_party_status(_party_cwd)
-            if _party is not None:
-                party_kwargs = {"party": _party}
+            from .party import read_party_status, session_is_attached
+            _transcript = str(stdin_data.get('transcript_path') or '')
+            _sid = str(stdin_data.get('session_id') or '')
+            _gated = bool(_transcript and _sid) and not session_is_attached(
+                _transcript, _sid)
+            if not _gated:
+                _party_cwd = str(stdin_data.get('workspace_current_dir') or os.getcwd())
+                _party = read_party_status(_party_cwd)
+                if _party is not None:
+                    party_kwargs = {"party": _party}
         except Exception:
             party_kwargs = {}
     # Optional working-directory segment (#30): workspace.current_dir (falling

@@ -274,3 +274,59 @@ def test_mentions_only_prefers_contract_field_over_ps(tmp_path, monkeypatch):
     (state_dir / "statusline.json").write_text(json.dumps(base), encoding="utf-8")
     status = read_party_status(cwd, now=now, home=tmp_path)
     assert status.listener_mentions_only is False
+
+
+def test_session_attachment_gate(tmp_path, monkeypatch):
+    """The AgentParty cache is cwd-scoped, but sessions sharing a project dir
+    don't all join a channel. A session is attached only when its OWN
+    transcript shows a party command; the verdict is sticky and later scans
+    read only newly appended bytes."""
+    from claude_statusbar import party
+    from claude_statusbar import daemon as _d
+
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+
+    t = tmp_path / "transcript.jsonl"
+    t.write_text(json.dumps({"type": "user", "text": "hello world"}) + "\n",
+                 encoding="utf-8")
+    # Unrelated session: no party commands anywhere.
+    assert party.session_is_attached(str(t), "sid-a") is False
+
+    # Talking ABOUT AgentParty must not attach.
+    t.write_text(json.dumps({"type": "user",
+                             "text": "what is agentparty.leeguoo.com?"}) + "\n",
+                 encoding="utf-8")
+    assert party.session_is_attached(str(t), "sid-b") is False
+
+    # Running a party command attaches — appended AFTER a first scan, so this
+    # also proves the incremental tail-scan sees new bytes.
+    assert party.session_is_attached(str(t), "sid-c") is False
+    with t.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "tool_use",
+                            "command": "party send hi --channel dev"}) + "\n")
+    assert party.session_is_attached(str(t), "sid-c") is True
+    # Sticky: even if the transcript is later truncated, the session stays
+    # attached without rescanning.
+    t.write_text("", encoding="utf-8")
+    assert party.session_is_attached(str(t), "sid-c") is True
+
+
+def test_attachment_gate_handles_needle_straddling_scans(tmp_path, monkeypatch):
+    """A needle split across two incremental scans must still match."""
+    from claude_statusbar import party
+    from claude_statusbar import daemon as _d
+
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
+    t = tmp_path / "t.jsonl"
+    t.write_bytes(b'{"cmd": "party wa')          # first half
+    assert party.session_is_attached(str(t), "sid-x") is False
+    with t.open("ab") as f:
+        f.write(b'tch seamail"}\n')              # second half completes "party watch"
+    assert party.session_is_attached(str(t), "sid-x") is True
+
+
+def test_missing_transcript_is_not_attached(tmp_path, monkeypatch):
+    from claude_statusbar import party
+    assert party.session_is_attached("/nope/nothing.jsonl", "sid") is False
+    assert party.session_is_attached("", "sid") is False
+    assert party.session_is_attached("/tmp/x", "") is False
