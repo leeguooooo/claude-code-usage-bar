@@ -47,7 +47,7 @@ def test_systemd_unit_structure():
     assert "[Install]" in body
     assert "ExecStart=/usr/local/bin/cs daemon _run" in body
     # Must auto-restart on crash.
-    assert "Restart=always" in body
+    assert "Restart=on-failure" in body
     # WantedBy=default.target so it runs at user-login under systemd.
     assert "WantedBy=default.target" in body
 
@@ -124,3 +124,13 @@ def test_launchd_keepalive_only_bounces_crashes():
     assert "<false/>" in keepalive.split("</dict>", 1)[0]
     # A bare <true/> immediately after the key is exactly the bug.
     assert not keepalive.lstrip().startswith("<true/>")
+
+
+def test_systemd_restart_only_on_failure():
+    """Same class of bug as the launchd KeepAlive one: `Restart=always`
+    relaunches even a clean exit, so systemd's instance looped every
+    RestartSec whenever a lazy-spawned daemon held the pidfile, and
+    `cs daemon stop` never stuck (clean exit, immediately relaunched)."""
+    body = service._build_systemd_unit("/usr/local/bin/cs")
+    assert "Restart=on-failure" in body
+    assert "Restart=always" not in body

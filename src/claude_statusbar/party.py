@@ -103,10 +103,13 @@ _MENTIONS_ONLY_CACHE: Dict[int, bool] = {}
 def _listener_mentions_only(pid: Optional[int]) -> bool:
     """True when the live listener was started with ``--mentions-only``.
 
-    The statusline contract carries no such flag, so the only local source is
+    Fallback for AgentParty CLIs older than 0.2.79, whose statusline contract
+    did not carry ``listener.mentions_only`` — the only local source then is
     the process's own argv. A process's argv never changes, so the `ps` fork is
     memoised per pid: the daemon renders about once a second and the fork costs
-    ~4ms, which was roughly half of a warm render.
+    ~4ms, which was roughly half of a warm render. (The memo is keyed by pid,
+    so a recycled pid can serve a stale answer until the cache clears — one
+    more reason the contract field, read in `read_party_status`, wins.)
     """
     if pid is None or pid <= 0:
         return False
@@ -217,7 +220,13 @@ def read_party_status(
         listener_alive=listener_alive,
         listener_stale=bool(listener) and (not listener_alive or not listener_fresh),
         listener_present=bool(listener),
-        listener_mentions_only=_listener_mentions_only(listener_pid) if listener_ok else False,
+        # Contract field (agentparty >= 0.2.79) wins; fall back to probing the
+        # listener's argv for older CLIs that don't write it.
+        listener_mentions_only=(
+            bool(listener.get("mentions_only"))
+            if "mentions_only" in listener
+            else (_listener_mentions_only(listener_pid) if listener_ok else False)
+        ),
         mentioned=_is_mentioned(preview, name),
         fresh=fresh,
     )

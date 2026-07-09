@@ -9,6 +9,28 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.3 — 2026-07-09
+
+### The systemd unit had the same respawn loop v3.29.2 fixed on launchd
+
+v3.29.2 changed the launchd plist to `KeepAlive: {SuccessfulExit: false}` but
+left the systemd user unit at `Restart=always` — which relaunches even a clean
+exit. On Linux, whenever a lazy-spawned daemon held the pidfile, systemd's own
+instance exited 0 and was rerun every `RestartSec=5`, forever (and v3.29.2's
+exit-0 change made the loop *silent*). `cs daemon stop` also never stuck: clean
+exit, immediate relaunch. Now `Restart=on-failure` — crashes still bounce.
+Linux installs need `cs daemon install` re-run.
+
+### `mentions_only` now comes from the AgentParty contract, not `ps`
+
+AgentParty 0.2.79 writes `listener.mentions_only` into `statusline.json`
+(contract change shipped alongside this release). The statusbar reads it
+verbatim; the `ps` argv probe remains only as a fallback for older CLIs. This
+removes the last per-render fork on up-to-date installs and closes the
+pid-recycling staleness the memoised probe could serve.
+
+---
+
 ## v3.29.2 — 2026-07-09
 
 ### launchd was respawning a redundant daemon every 10 seconds

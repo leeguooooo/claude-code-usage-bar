@@ -237,3 +237,40 @@ def test_mentions_only_probe_failure_is_not_cached(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
     assert party._listener_mentions_only(555) is True
     party._MENTIONS_ONLY_CACHE.clear()
+
+
+def test_mentions_only_prefers_contract_field_over_ps(tmp_path, monkeypatch):
+    """agentparty >= 0.2.79 writes `listener.mentions_only` into the cache.
+    When present it must be used verbatim and the `ps` argv probe must not
+    fork at all — the probe stays only as a fallback for older CLIs."""
+    import os
+    import subprocess
+    from claude_statusbar import party
+
+    def _no_fork(*a, **k):
+        raise AssertionError("ps must not be forked when the contract field is present")
+    monkeypatch.setattr(subprocess, "run", _no_fork)
+
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    state_dir = tmp_path / "state" / workspace_id(cwd)
+    state_dir.mkdir(parents=True)
+    now = 1_800_000_000.0
+    base = {
+        "updated_at": int(now * 1000),
+        "channel": "seamail",
+        "identity": {"name": "leo", "kind": "agent"},
+        "listener": {"mode": "watch", "pid": os.getpid(),
+                     "heartbeat_ts": int(now * 1000), "mentions_only": True},
+    }
+    (state_dir / "statusline.json").write_text(json.dumps(base), encoding="utf-8")
+    status = read_party_status(cwd, now=now, home=tmp_path)
+    assert status.listener_mentions_only is True
+
+    # Field explicitly absent-of-mentions semantics: contract omits it when
+    # listening to everything — but a hypothetical false must also be honoured.
+    base["listener"] = {"mode": "watch", "pid": os.getpid(),
+                        "heartbeat_ts": int(now * 1000), "mentions_only": False}
+    (state_dir / "statusline.json").write_text(json.dumps(base), encoding="utf-8")
+    status = read_party_status(cwd, now=now, home=tmp_path)
+    assert status.listener_mentions_only is False

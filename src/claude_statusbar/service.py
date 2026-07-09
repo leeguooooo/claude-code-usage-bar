@@ -205,7 +205,15 @@ def _macos_status() -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 def _build_systemd_unit(cs_path: str) -> str:
     """systemd user unit. ExecStart is shell-quoted so paths with spaces
-    or unit-special characters survive systemd's parser."""
+    or unit-special characters survive systemd's parser.
+
+    `Restart=on-failure`, not `always`: same reasoning as launchd's
+    `KeepAlive={SuccessfulExit: false}`. When a lazy-spawned daemon already
+    holds the pidfile, systemd's own instance exits 0 ("a daemon is running,
+    nothing to do") and must be left alone — `always` re-ran it every
+    RestartSec forever, and also undid `cs daemon stop` (clean exit,
+    immediately relaunched). A crash still restarts.
+    """
     cs_quoted = shlex.quote(cs_path)
     return f"""[Unit]
 Description=claude-statusbar render daemon
@@ -214,7 +222,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart={cs_quoted} daemon _run
-Restart=always
+Restart=on-failure
 RestartSec=5
 StandardOutput=append:%h/.cache/claude-statusbar/daemon.stdout.log
 StandardError=append:%h/.cache/claude-statusbar/daemon.stderr.log
