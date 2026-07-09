@@ -615,10 +615,15 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
                 last_gc = t0
             elapsed = time.time() - t0
             sleep_for = max(0.0, render_interval - elapsed)
-            # Sleep in small chunks so signals are responsive.
+            # Sleep in small chunks so signals are responsive. Clamp at 0: the
+            # loop guard and the `min()` each call time.time() separately, so
+            # the clock advances between them and the remainder can go negative
+            # — time.sleep() then raises ValueError and kills the daemon. That
+            # fires whenever a tick overruns render_interval (sleep_for == 0,
+            # end == now), which is exactly what a slow render does.
             end = time.time() + sleep_for
             while _running and time.time() < end:
-                time.sleep(min(0.2, end - time.time()))
+                time.sleep(max(0.0, min(0.2, end - time.time())))
         _log("daemon shutting down")
         return 0
     finally:

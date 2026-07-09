@@ -9,6 +9,31 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.1 — 2026-07-09
+
+### The daemon was crash-looping on slow renders
+
+`run_forever`'s sleep loop read the clock twice:
+
+```python
+end = time.time() + sleep_for
+while _running and time.time() < end:
+    time.sleep(min(0.2, end - time.time()))   # <- second read
+```
+
+If the process was descheduled between the guard and the subtraction, the
+remainder had already elapsed, `time.sleep()` got a negative number and raised
+`ValueError: sleep length must be non-negative`. The daemon died. Any render
+slower than the tick interval — the `render timed out after 1s` lines in
+`daemon.log` — made the window wide enough to hit routinely.
+
+This is the root cause behind v3.29.0's third fix. The orphan-`.tmp` sweep and
+the auto-update check were not merely starved by sharing a 30-minute timer; the
+daemon was being killed long before it could reach 30 minutes, then restarted by
+launchd. The remainder is now clamped at zero.
+
+---
+
 ## v3.29.0 — 2026-07-09
 
 ### AgentParty block redesign

@@ -916,3 +916,56 @@ def test_maintenance_runs_on_the_first_tick(monkeypatch, tmp_path: Path):
     assert "update_check" in calls, "update check must not wait 30 minutes"
     # Session GC keeps its deferral — it can race a mid-restart Claude Code window.
     assert "session_gc" not in calls
+
+
+def test_clock_advancing_between_guard_and_sleep_does_not_crash(monkeypatch):
+    """The sleep remainder must be clamped at 0.
+
+    `while _running and time.time() < end` and `min(0.2, end - time.time())`
+    read the clock separately. When the process is descheduled between the two
+    reads, the guard passes on a remainder that is already spent by the time
+    `min()` subtracts — so `time.sleep()` received a negative value and raised
+    `ValueError: sleep length must be non-negative`, killing the daemon. That is
+    why it never survived the 30 minutes its GC and update check waited for.
+
+    A fake clock steps past `end` exactly once, between the two reads: the real
+    race, made deterministic.
+    """
+    monkeypatch.setattr(_d, "_acquire_pidfile", lambda: True)
+    monkeypatch.setattr(_d, "_release_pidfile", lambda: None, raising=False)
+    monkeypatch.setattr(_d, "_log", lambda *a, **k: None)
+    monkeypatch.setattr(_d.signal, "signal", lambda *a, **k: None)
+    monkeypatch.setattr(_d, "_gc_orphan_tmp_files", lambda: None)
+    monkeypatch.setattr(_d, "_gc_old_sessions", lambda: None)
+    monkeypatch.setattr(_d, "_render_all_sessions", lambda: None)
+
+    import claude_statusbar.core as core
+    monkeypatch.setattr(core, "check_for_updates", lambda: None)
+
+    slept = []
+
+    class _Clock:
+        # Reads settle at 100.0 through `end = 100.0 + 0.5`. The loop guard then
+        # reads 100.4 (< end, passes); the very next read — inside min() — is
+        # 100.6, leaving a remainder of -0.1.
+        _seq = [100.0, 100.0, 100.0, 100.0, 100.0, 100.4, 100.6]
+
+        def __init__(self):
+            self.i = 0
+
+        def time(self):
+            v = self._seq[min(self.i, len(self._seq) - 1)]
+            self.i += 1
+            return v
+
+        def sleep(self, n):
+            slept.append(n)
+            if n < 0:
+                raise ValueError("sleep length must be non-negative")
+            _d._running = False  # one pass through the sleep loop is enough
+
+    monkeypatch.setattr(_d, "time", _Clock())
+
+    assert _d.run_forever(render_interval=0.5) == 0
+    assert slept, "the sleep loop never ran — the fake clock never entered it"
+    assert all(n >= 0 for n in slept), f"negative sleep passed to time.sleep: {slept}"
