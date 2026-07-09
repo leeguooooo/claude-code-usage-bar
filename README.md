@@ -353,6 +353,7 @@ cs config set style hairline    # persist style → ~/.claude/claude-statusbar.j
 cs config set theme linen       # persist theme
 cs config set show_cost true    # session $ cost segment
 cs config set show_cache_age false  # hide prompt-cache age segment
+cs config set show_party false  # hide local AgentParty channel/unread line
 cs config set show_tools true   # activity line: active tool + completed rollup
 cs config set show_agents true  # bottom line(s): running subagents + elapsed
 cs config set show_duration true # identity line: ⏱ session duration
@@ -394,6 +395,21 @@ cs --no-auto-update             # skip the per-day PyPI version check
 ```
 
 `--plan` still exists for older scripts, but is deprecated and no longer changes the rendered output.
+
+### AgentParty line
+
+When AgentParty has initialized the same workspace, `cs` adds a local-only line
+under the project identity, for example:
+
+```text
+🎈 #agentparty · 🤖 xdream-agent · 👂serve · 3 unread · bob: shipped the auth patch 2m
+```
+
+The statusbar only reads `~/.agentparty/state/<workspaceId>/statusline.json`.
+It does not call the AgentParty CLI, read tokens, or make network requests. If
+the cache is older than 10 minutes, or the recorded listener pid is gone, the
+line degrades with `stale` / `down` instead of pretending the listener is live.
+Turn it off with `cs config set show_party false`.
 
 ### Environment variables
 

@@ -77,6 +77,10 @@ import re as _re
 _ANSI_RE = _re.compile(r"\033\[[0-9;]*m")
 def _strip(s: str) -> str: return _ANSI_RE.sub("", s)
 
+
+def _attr(obj, name: str, default=""):
+    return getattr(obj, name, default)
+
 # Density → padding string, shared by all renderers that support it.
 DENSITY_PAD = {"compact": "", "regular": " ", "cozy": "  "}
 
@@ -556,6 +560,48 @@ def render_activity_line(activity, *, theme: Theme, use_color: bool = True,
     return line
 
 
+def render_party_line(party, *, theme: Theme, use_color: bool = True) -> str:
+    """Render the optional AgentParty line from local cached state."""
+    if party is None:
+        return ""
+    channel = str(_attr(party, "channel", "") or "").strip()
+    identity = str(_attr(party, "identity_name", "") or "").strip()
+    kind = str(_attr(party, "identity_kind", "agent") or "agent").strip()
+    unread = int(_attr(party, "unread", 0) or 0)
+    listener_mode = str(_attr(party, "listener_mode", "") or "").strip()
+    last_from = str(_attr(party, "last_from", "") or "").strip()
+    last_preview = str(_attr(party, "last_preview", "") or "").strip()
+    last_age = str(_attr(party, "last_age", "") or "").strip()
+    fresh = bool(_attr(party, "fresh", True))
+    listener_stale = bool(_attr(party, "listener_stale", False))
+    listener_alive = bool(_attr(party, "listener_alive", False))
+
+    if not any((channel, identity, unread, listener_mode, last_preview)):
+        return ""
+
+    icon = "👤" if kind == "human" else "🤖"
+    parts = [f"🎈 {channel}" if channel else "🎈 AgentParty"]
+    if identity:
+        parts.append(f"{icon} {identity}")
+    if listener_mode:
+        suffix = " down" if listener_stale or not listener_alive else ""
+        parts.append(f"👂{listener_mode}{suffix}")
+    if unread > 0:
+        parts.append(f"{unread} unread")
+    if last_preview:
+        who = f"{last_from}: " if last_from else ""
+        age = f" {last_age}" if last_age else ""
+        parts.append(f"{who}{last_preview}{age}")
+    if not fresh:
+        parts.append("stale")
+
+    line = " · ".join(parts)
+    if not use_color:
+        return line
+    color = theme.edge if (not fresh or listener_stale) else theme.mute
+    return f"{FAINT}{_fg(color)}{line}{RESET}"
+
+
 def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:
     """One line per running subagent: `◐ <name>[<model>] <description> <elapsed>`.
 
@@ -741,6 +787,7 @@ def render(style: str, **kwargs) -> str:
     kwargs.pop("mode_phase", None)   # accepted for back-compat; gradient is static
     activity = kwargs.pop("activity", None)
     activity_opts = kwargs.pop("activity_opts", None)
+    party = kwargs.pop("party", None)
     theme = kwargs.get("theme") or get_theme("graphite")
     use_color = kwargs.get("use_color", True)
 
@@ -765,6 +812,10 @@ def render(style: str, **kwargs) -> str:
                    f"{_fg(theme.pill_ink)}{cwd_text}{RESET}")
         else:
             out = out + "\n" + f"⤷ {cwd_text}"
+
+    party_line = render_party_line(party, theme=theme, use_color=use_color)
+    if party_line:
+        out = out + "\n" + party_line
 
     # Dedicated egress-IP risk warning — appears only above the risk threshold
     # (ip_risk.SHOW_THRESHOLD), amber for suspicious, red for bad. May be

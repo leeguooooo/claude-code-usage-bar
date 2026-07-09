@@ -47,6 +47,9 @@ class StatusbarConfig:
     balance_bar: bool = True
     show_cache_age: bool = True
     show_project_branch: bool = True
+    # Local AgentParty attachment line. Reads only ~/.agentparty state for the
+    # current workspace; no network and no token access.
+    show_party: bool = True
     # Working-directory segment (#30): workspace.current_dir from statusLine
     # stdin (falls back to cwd), rendered on the identity line — or its own
     # minimal line when show_project_branch is off. Opt-in: the bar is
@@ -133,6 +136,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         balance_bar=_to_bool(raw.get("balance_bar", True)),
         show_cache_age=_to_bool(raw.get("show_cache_age", True)),
         show_project_branch=_to_bool(raw.get("show_project_branch", True)),
+        show_party=_to_bool(raw.get("show_party", True)),
         show_cwd=_to_bool(raw.get("show_cwd", False)),
         cwd_style=str(raw.get("cwd_style", DEFAULT_CWD_STYLE)),
         show_todos=_to_bool(raw.get("show_todos", True)),
@@ -171,7 +175,7 @@ VALID_KEYS = {
     "style", "theme", "density", "auto_compact_width",
     "show_weekly", "show_language", "show_cost", "show_balance", "balance_bar",
     "show_cache_age",
-    "show_project_branch",
+    "show_project_branch", "show_party",
     "show_cwd", "cwd_style",
     "show_todos", "show_tools", "show_tool_rollup", "show_agents",
     "show_ip_risk", "show_fp_risk",
@@ -186,7 +190,7 @@ _VALID_API_MODE = {"auto", "on", "off"}
 _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_balance",
               "balance_bar",
               "show_cache_age",
-              "show_project_branch",
+              "show_project_branch", "show_party",
               "show_cwd",
               "show_todos", "show_tools", "show_tool_rollup", "show_agents",
               "show_ip_risk", "show_fp_risk",

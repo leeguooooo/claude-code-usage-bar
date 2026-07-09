@@ -1141,6 +1141,18 @@ def main(json_output: bool = False,
             ahead, behind = read_ahead_behind(info.toplevel)
             identity_kwargs["identity_ahead"] = ahead
             identity_kwargs["identity_behind"] = behind
+    # Optional AgentParty line (#54): local-only cwd-scoped status cache. This
+    # never imports or shells out to AgentParty and never reads tokens.
+    party_kwargs = {}
+    if cfg.show_party:
+        try:
+            from .party import read_party_status
+            _party_cwd = str(stdin_data.get('workspace_current_dir') or os.getcwd())
+            _party = read_party_status(_party_cwd)
+            if _party is not None:
+                party_kwargs = {"party": _party}
+        except Exception:
+            party_kwargs = {}
     # Optional working-directory segment (#30): workspace.current_dir (falling
     # back to cwd — parse_stdin_data flattens both into workspace_current_dir).
     # Zero extra I/O: the data is already in the statusLine stdin. Rides the
@@ -1288,7 +1300,7 @@ def main(json_output: bool = False,
                     balance_text=balance_text,
                     balance_pct=balance_pct,
                     balance_amount=balance_amount,
-                    **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                    **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                     **activity_kwargs,
                 ))
         elif has_official:
@@ -1410,7 +1422,7 @@ def main(json_output: bool = False,
                     shimmer_phase=shimmer_phase,
                     **projection_kwargs,
                     **forecast_kwargs,
-                    **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                    **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                     **activity_kwargs,
                 ))
         else:
@@ -1466,7 +1478,7 @@ def main(json_output: bool = False,
                         ctx_pct=ctx_pct,
                         shimmer_phase=shimmer_phase,
                         quota_stale=quota_stale,
-                        **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                        **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                         **activity_kwargs,
                     ))
             else:
@@ -1498,7 +1510,7 @@ def main(json_output: bool = False,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
                 density=cfg.density, show_weekly=cfg.show_weekly,
-                **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
             ))
 
 if __name__ == '__main__':
