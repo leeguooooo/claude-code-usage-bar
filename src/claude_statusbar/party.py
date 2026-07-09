@@ -97,14 +97,22 @@ def _pid_alive(pid: Optional[int]) -> bool:
         return False
 
 
+_MENTIONS_ONLY_CACHE: Dict[int, bool] = {}
+
+
 def _listener_mentions_only(pid: Optional[int]) -> bool:
     """True when the live listener was started with ``--mentions-only``.
 
     The statusline contract carries no such flag, so the only local source is
-    the process's own argv. One `ps` fork, and only when a listener is alive.
+    the process's own argv. A process's argv never changes, so the `ps` fork is
+    memoised per pid: the daemon renders about once a second and the fork costs
+    ~4ms, which was roughly half of a warm render.
     """
     if pid is None or pid <= 0:
         return False
+    cached = _MENTIONS_ONLY_CACHE.get(pid)
+    if cached is not None:
+        return cached
     try:
         import subprocess
         proc = subprocess.run(
@@ -112,8 +120,13 @@ def _listener_mentions_only(pid: Optional[int]) -> bool:
             capture_output=True, text=True, timeout=0.6,
         )
     except Exception:
-        return False
-    return "--mentions-only" in (proc.stdout or "")
+        return False  # not cached: a transient failure should be retried
+    result = "--mentions-only" in (proc.stdout or "")
+    # Bound the map — a long-lived daemon would otherwise accumulate dead pids.
+    if len(_MENTIONS_ONLY_CACHE) > 64:
+        _MENTIONS_ONLY_CACHE.clear()
+    _MENTIONS_ONLY_CACHE[pid] = result
+    return result
 
 
 def _is_mentioned(preview: str, name: str) -> bool:

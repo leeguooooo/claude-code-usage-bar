@@ -188,3 +188,52 @@ def test_show_party_config_default_and_set(tmp_path):
     assert "show_party" in _BOOL_KEYS
     cfg = set_value("show_party", "off", path=p)
     assert cfg.show_party is False
+
+
+def test_mentions_only_probe_is_memoised_per_pid(monkeypatch):
+    """The `ps` fork costs ~4ms — about half a warm render. A pid's argv never
+    changes, so probe it once."""
+    from claude_statusbar import party
+
+    party._MENTIONS_ONLY_CACHE.clear()
+    calls = []
+
+    class _Proc:
+        stdout = "party watch seamail --mentions-only"
+
+    def _fake_run(*a, **k):
+        calls.append(a)
+        return _Proc()
+
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    assert party._listener_mentions_only(4242) is True
+    assert party._listener_mentions_only(4242) is True
+    assert party._listener_mentions_only(4242) is True
+    assert len(calls) == 1, f"forked ps {len(calls)}x for one pid"
+
+    # A different pid must be probed on its own.
+    assert party._listener_mentions_only(4243) is True
+    assert len(calls) == 2
+    party._MENTIONS_ONLY_CACHE.clear()
+
+
+def test_mentions_only_probe_failure_is_not_cached(monkeypatch):
+    """A transient ps failure must not pin `False` for the pid's lifetime."""
+    from claude_statusbar import party
+
+    party._MENTIONS_ONLY_CACHE.clear()
+    import subprocess
+
+    def _boom(*a, **k):
+        raise OSError("no fork for you")
+    monkeypatch.setattr(subprocess, "run", _boom)
+    assert party._listener_mentions_only(555) is False
+    assert 555 not in party._MENTIONS_ONLY_CACHE
+
+    class _Proc:
+        stdout = "party watch c --mentions-only"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+    assert party._listener_mentions_only(555) is True
+    party._MENTIONS_ONLY_CACHE.clear()

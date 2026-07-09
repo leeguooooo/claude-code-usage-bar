@@ -555,7 +555,12 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
         sys.stderr.write(
             f"daemon already running (pid {existing}); use `cs daemon stop` first\n"
         )
-        return 1
+        # Exit 0, not 1: a daemon *is* running, so this process has nothing to
+        # do and its purpose is served. Under launchd's
+        # `KeepAlive={SuccessfulExit: false}` a clean exit stops the respawn;
+        # returning 1 here made launchd relaunch every ThrottleInterval for as
+        # long as a lazy-spawned daemon held the pidfile.
+        return 0
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)

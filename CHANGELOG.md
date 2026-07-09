@@ -9,6 +9,41 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.2 — 2026-07-09
+
+### launchd was respawning a redundant daemon every 10 seconds
+
+The LaunchAgent shipped `KeepAlive: true`, which restarts the job on *any*
+exit. Whenever the thin client's lazy-spawn already owned the pidfile,
+launchd's own `cs daemon _run` found it taken, printed `daemon already
+running`, exited 1, and was relaunched `ThrottleInterval` seconds later —
+forever. A live `daemon.stderr.log` had **47429** such lines.
+
+`run_forever` now exits **0** when another daemon holds the pidfile (a daemon
+is running; this process's purpose is served), and the plist uses
+`KeepAlive: {SuccessfulExit: false}` so a clean exit ends the respawn while a
+real crash still bounces the daemon.
+
+Existing installs need `cs daemon install` re-run to pick up the new plist.
+
+### The test suite was writing into the user's real daemon log
+
+`test_render_payload_signal_alarm_aborts_slow_render` sets `RENDER_TIMEOUT_S`
+to 1 and lets a render time out, but `_log()` writes to the real
+`~/.cache/claude-statusbar/daemon.log`. Every `pytest` run appended a
+`render timed out after 1s` line there; **260** had accumulated, and they
+masked the daemon's genuine timeouts (logged as `after 12s`, none since
+2026-06-03). Diagnosing a "slow render" from that log meant reading test
+output as production signal. The test now stubs `_log`.
+
+### Warm renders are ~2.5x faster
+
+v3.29.0's `--mentions-only` probe forked `ps` on **every** render — about 4ms
+of a 6ms warm render. A process's argv never changes, so it is memoised per
+pid. Warm render: ~6.1ms → ~2.4ms.
+
+---
+
 ## v3.29.1 — 2026-07-09
 
 ### The daemon was crash-looping on slow renders

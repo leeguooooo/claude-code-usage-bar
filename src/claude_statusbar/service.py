@@ -82,8 +82,16 @@ def _resolve_cs() -> str:
 # macOS launchd
 # ---------------------------------------------------------------------------
 def _build_launchd_plist(cs_path: str) -> str:
-    """plist body for launchd. KeepAlive bounces a crashed daemon
+    """plist body for launchd. KeepAlive bounces a *crashed* daemon
     automatically, RunAtLoad covers cold boots.
+
+    `KeepAlive` is `{SuccessfulExit: false}`, not plain `true`. Plain `true`
+    restarts the job whatever its exit status, so whenever the thin client's
+    lazy-spawn already owned the pidfile, launchd's own instance exited
+    "daemon already running", was restarted `ThrottleInterval` seconds later,
+    and looped forever — 47429 such lines had piled up in one user's
+    daemon.stderr.log. A clean exit now means "a daemon is running, nothing to
+    do" and launchd leaves it alone; a crash still bounces.
 
     All path fields are XML-escaped — a $HOME containing `&`, `<`, or `>`
     (rare but possible) would otherwise produce malformed plist XML that
@@ -106,7 +114,10 @@ def _build_launchd_plist(cs_path: str) -> str:
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
     <key>ThrottleInterval</key>
     <integer>10</integer>
     <key>StandardOutPath</key>

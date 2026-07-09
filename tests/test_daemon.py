@@ -701,7 +701,10 @@ def test_running_global_is_reset_per_run_forever_call(monkeypatch, tmp_path: Pat
     # actually entering the sleep loop. We're only checking the reset.
     monkeypatch.setattr(_d, "_acquire_pidfile", lambda: False)
     rc = _d.run_forever(render_interval=0.01)
-    assert rc == 1  # acquire failed
+    # 0, not 1: another daemon already holds the pidfile, so this process has
+    # nothing to do and says so cleanly. See
+    # test_run_forever_exits_clean_when_a_daemon_already_runs.
+    assert rc == 0
     assert _d._running is True, (
         "run_forever() must reset _running=True at entry; otherwise the next "
         "in-process daemon start exits before doing any work"
@@ -774,6 +777,13 @@ def test_render_payload_signal_alarm_aborts_slow_render(monkeypatch):
 
     import claude_statusbar.core as core_mod
     import time as _time
+
+    # `_log` writes to the real ~/.cache/claude-statusbar/daemon.log. Without
+    # this, the timeout below appends `render timed out after 1s` to the user's
+    # production log on every test run — 260 such lines had accumulated there,
+    # indistinguishable from (and drowning out) the daemon's genuine 12s
+    # timeouts, which last fired over a month earlier.
+    monkeypatch.setattr(_d, "_log", lambda *a, **k: None)
 
     # Shorten timeout so the test runs in ~1s.
     monkeypatch.setattr(_d, "RENDER_TIMEOUT_S", 1)
@@ -969,3 +979,17 @@ def test_clock_advancing_between_guard_and_sleep_does_not_crash(monkeypatch):
     assert _d.run_forever(render_interval=0.5) == 0
     assert slept, "the sleep loop never ran — the fake clock never entered it"
     assert all(n >= 0 for n in slept), f"negative sleep passed to time.sleep: {slept}"
+
+
+def test_run_forever_exits_clean_when_a_daemon_already_runs(monkeypatch, capsys):
+    """A live daemon means this process's job is already done — exit 0.
+
+    Exit 1 told launchd's `KeepAlive` the job had failed, so it relaunched every
+    ThrottleInterval for as long as the lazy-spawned daemon held the pidfile.
+    """
+    monkeypatch.setattr(_d, "_acquire_pidfile", lambda: False)
+    monkeypatch.setattr(_d, "read_pidfile", lambda: 4242)
+    monkeypatch.setattr(_d, "_release_pidfile", lambda: None, raising=False)
+
+    assert _d.run_forever() == 0
+    assert "already running (pid 4242)" in capsys.readouterr().err
