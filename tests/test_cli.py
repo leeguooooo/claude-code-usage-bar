@@ -1,6 +1,31 @@
 import sys
 
+import pytest
+
 import claude_statusbar.cli as cli
+
+
+def test_version_aliases(monkeypatch, capsys):
+    for flag in ("--version", "-V", "-v", "-version"):
+        monkeypatch.setattr(sys, "argv", ["cs", flag])
+        with pytest.raises(SystemExit) as exc:
+            cli.main()
+        assert exc.value.code == 0
+        assert "cs " in capsys.readouterr().out
+
+
+def test_upgrade_subcommand_runs_foreground_upgrade(monkeypatch, capsys):
+    import claude_statusbar.updater as updater
+
+    monkeypatch.setattr(
+        updater,
+        "upgrade_current_install",
+        lambda: (True, "Upgraded claude-statusbar from v3.26.0 to v3.28.0"),
+    )
+    monkeypatch.setattr(sys, "argv", ["cs", "upgrade"])
+
+    assert cli.main() == 0
+    assert "v3.26.0 to v3.28.0" in capsys.readouterr().out
 
 
 def test_cli_passes_thresholds(monkeypatch):

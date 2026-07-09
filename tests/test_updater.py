@@ -6,6 +6,17 @@ def test_detect_install_channel_uv():
     assert updater.detect_install_channel(path) == "uv"
 
 
+def test_detect_install_channel_uv_tool_python_symlink(tmp_path):
+    real_python = tmp_path / ".local/share/uv/python/cpython-3.13/bin/python3.13"
+    tool_python = tmp_path / ".local/share/uv/tools/claude-statusbar/bin/python3"
+    real_python.parent.mkdir(parents=True)
+    tool_python.parent.mkdir(parents=True)
+    real_python.write_text("", encoding="utf-8")
+    tool_python.symlink_to(real_python)
+
+    assert updater.detect_install_channel(tool_python) == "uv"
+
+
 def test_detect_install_channel_pipx():
     path = "/Users/test/.local/pipx/venvs/claude-statusbar/bin/python"
     assert updater.detect_install_channel(path) == "pipx"
@@ -97,3 +108,18 @@ def test_auto_upgrade_falls_through_to_pip(monkeypatch):
     # Must have attempted pip after the others failed
     assert any("python" in c or c == "pip" or "/python" in c for c in calls), \
         f"auto_upgrade did not fall through to pip: {calls}"
+
+
+def test_upgrade_current_install_reports_manual_command(monkeypatch):
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.26.0")
+    monkeypatch.setattr(
+        updater,
+        "get_upgrade_command",
+        lambda: ["uv", "tool", "install", "--upgrade", "claude-statusbar"],
+    )
+    monkeypatch.setattr(updater, "_run_upgrade", lambda cmd: False)
+
+    ok, msg = updater.upgrade_current_install()
+
+    assert ok is False
+    assert "uv tool install --upgrade claude-statusbar" in msg

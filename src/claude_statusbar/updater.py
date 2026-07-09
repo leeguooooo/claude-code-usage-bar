@@ -92,14 +92,22 @@ def detect_install_channel(
     executable: str | Path | None = None,
 ) -> str:
     """Infer how claude-statusbar is currently installed."""
-    resolved = Path(executable or sys.executable).expanduser().resolve()
-    parts = resolved.parts
+    raw = Path(executable or sys.executable).expanduser()
+    candidates = [raw]
+    if executable is None:
+        candidates.append(Path(sys.prefix).expanduser())
+    try:
+        candidates.append(raw.resolve())
+    except OSError:
+        pass
 
-    if "uv" in parts and "tools" in parts and DIST_NAME in parts:
-        return "uv"
+    for path in candidates:
+        parts = path.parts
+        if "uv" in parts and "tools" in parts and DIST_NAME in parts:
+            return "uv"
 
-    if "pipx" in parts and "venvs" in parts and DIST_NAME in parts:
-        return "pipx"
+        if "pipx" in parts and "venvs" in parts and DIST_NAME in parts:
+            return "pipx"
 
     return "pip"
 
@@ -152,6 +160,19 @@ def auto_upgrade() -> bool:
     return _run_upgrade(
         [sys.executable, "-m", "pip", "install", "--upgrade", DIST_NAME]
     )
+
+
+def upgrade_current_install() -> Tuple[bool, str]:
+    """Upgrade the environment that is actually running this CLI."""
+    current = get_current_version()
+    cmd = get_upgrade_command()
+
+    if _run_upgrade(cmd):
+        refreshed = get_current_version()
+        return True, f"Upgraded {DIST_NAME} from v{current} to v{refreshed}"
+
+    rendered_cmd = " ".join(cmd)
+    return False, f"Upgrade failed. Run manually: {rendered_cmd}"
 
 
 def spawn_background_upgrade_check() -> None:

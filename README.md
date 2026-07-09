@@ -47,6 +47,10 @@ Claude Code.
 
 ## Latest release
 
+**v3.28.2** (2026-07-09) — **uv-tool upgrade fix**: `cs upgrade` now detects uv-tool Python symlinks correctly and selects `uv tool install --upgrade claude-statusbar`.
+
+**v3.28.1** (2026-07-09) — **upgrade/version UX fix**: `cs upgrade` upgrades the install channel that is actually running `cs` (`uv tool`, `pipx`, or plain `pip`), and `cs -v`, `cs -V`, `cs -version` all work like `cs --version`.
+
 **v3.28.0** (2026-07-09) — **AgentParty / Codex bridge line** (`show_party`, default on): when the same workspace has AgentParty local status, `cs` appends `🎈 #channel · 🤖/👤 name · 👂watch/serve · unread · last message` under the project line. This is local-only (`~/.agentparty/state/<workspaceId>/statusline.json`), uses the same cwd-scoped workspace id fixtures as AgentParty, and marks stale/down listener state instead of pretending it is live.
 
 **v3.27.0** (2026-07-03) — **IP-risk detection aligned with ip-check**: China-cloud provider detection and ban-risk threshold handling now match the ip-check.leeguoo.com classifier.

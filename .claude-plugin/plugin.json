@@ -1,7 +1,7 @@
 {
   "name": "claude-statusbar",
-  "description": "Lightweight Claude Code status-line monitor with switchable styles, themes, slash commands, and a local AgentParty bridge for Codex workflows. v3.28.0 adds show_party (default on): when AgentParty has initialized the current workspace, cs appends a local-only line with channel, human/agent identity, watch/serve listener state, unread count, and last-message preview by reading ~/.agentparty/state/<workspaceId>/statusline.json. Claude Code remains the full native statusLine data source for quota/session fields; Codex support is the local AgentParty presence bridge and never calls AgentParty, reads tokens, or makes network requests. Requires the cs CLI from PyPI (pip install claude-statusbar or uv tool install claude-statusbar).",
-  "version": "3.28.0",
+  "description": "Lightweight Claude Code status-line monitor with switchable styles, themes, slash commands, and a local AgentParty bridge for Codex workflows. v3.28.2 fixes `cs upgrade` channel detection for uv-tool Python symlinks; v3.28.1 added `cs upgrade` plus -v/-V/-version aliases. Claude Code remains the full native statusLine data source for quota/session fields; Codex support is the local AgentParty presence bridge and never calls AgentParty, reads tokens, or makes network requests. Requires the cs CLI from PyPI (pip install claude-statusbar or uv tool install claude-statusbar).",
+  "version": "3.28.2",
   "author": {
     "name": "leeguooooo",
     "email": "leeguooooo@gmail.com"

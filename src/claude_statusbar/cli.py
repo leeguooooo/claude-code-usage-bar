@@ -12,6 +12,20 @@ import os
 import argparse
 
 
+VERSION_FLAGS = ("--version", "-V", "-v", "-version")
+SUBCOMMANDS = (
+    "config",
+    "themes",
+    "styles",
+    "preview",
+    "install-commands",
+    "install-skill",
+    "doctor",
+    "daemon",
+    "upgrade",
+)
+
+
 def _run_config_subcommand(rest):
     """Handle `cs config <action> [args...]`. Returns exit code."""
     from . import config as cfg_mod
@@ -174,6 +188,14 @@ def _run_daemon_subcommand(rest):
     return 2
 
 
+def _run_upgrade_subcommand():
+    """Handle `cs upgrade`. Returns exit code."""
+    from .updater import upgrade_current_install
+    ok, message = upgrade_current_install()
+    print(message)
+    return 0 if ok else 1
+
+
 def main():
     """Main CLI entry point"""
     # Render fast-path: `cs render` is what Claude Code calls 60×/min when
@@ -185,11 +207,13 @@ def main():
         return render()
 
     # Subcommands hijack argv before argparse so they coexist with flags.
-    if len(sys.argv) >= 2 and sys.argv[1] in ("config", "themes", "styles", "preview", "install-commands", "install-skill", "doctor", "daemon"):
+    if len(sys.argv) >= 2 and sys.argv[1] in SUBCOMMANDS:
         sub = sys.argv[1]
         rest = sys.argv[2:]
         if sub == "daemon":
             return _run_daemon_subcommand(rest)
+        if sub == "upgrade":
+            return _run_upgrade_subcommand()
         if sub == "config":
             return _run_config_subcommand(rest)
         if sub == "themes":
@@ -294,6 +318,7 @@ Examples:
   cs styles                     # List available styles
   cs preview                    # Render every style × theme together
   cs install-commands           # Install /statusbar slash commands
+  cs upgrade                    # Upgrade this cs installation
   cs --json-output              # Machine-readable JSON
 
 Integration:
@@ -304,11 +329,11 @@ Integration:
 
     # `from . import __version__` triggers importlib.metadata, which pulls
     # email.message + zipfile + ~20ms of cumulative imports on every render.
-    # Only register the action when the user actually asked for --version.
-    if "--version" in sys.argv[1:]:
+    # Only register the action when the user actually asked for a version.
+    if any(flag in sys.argv[1:] for flag in VERSION_FLAGS):
         from . import __version__ as _ver
         parser.add_argument(
-            "--version", action="version", version=f"%(prog)s {_ver}"
+            *VERSION_FLAGS, action="version", version=f"%(prog)s {_ver}"
         )
 
     parser.add_argument(

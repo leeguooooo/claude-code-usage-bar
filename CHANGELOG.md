@@ -9,6 +9,25 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.28.2 — 2026-07-09
+
+### Fixed
+- **`cs upgrade` detects uv-tool installs correctly.** uv tool environments
+  symlink `bin/python3` to the shared uv Python install; the upgrade detector now
+  checks the original executable path and environment prefix before falling back
+  to the resolved Python path, so `cs upgrade` selects
+  `uv tool install --upgrade claude-statusbar` instead of a non-working venv pip.
+
+## v3.28.1 — 2026-07-09
+
+### Added
+- **Foreground upgrade command.** `cs upgrade` now upgrades the install channel
+  that is actually running `cs` (`uv tool`, `pipx`, or plain `pip`), which avoids
+  the confusing case where `pip install -U claude-statusbar` updates a different
+  Python environment than the `cs` shim on `PATH`.
+- **Version aliases.** `cs -v`, `cs -V`, and `cs -version` now behave like
+  `cs --version`.
+
 ## v3.28.0 — 2026-07-09
 
 ### Added
