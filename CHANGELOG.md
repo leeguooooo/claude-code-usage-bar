@@ -9,7 +9,7 @@ For a quick overview of the latest release, see the
 
 ---
 
-## v3.29.6 — 2026-07-10
+## v3.29.7 — 2026-07-10
 
 ### Documentation
 
