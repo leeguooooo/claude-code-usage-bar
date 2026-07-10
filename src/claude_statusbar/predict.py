@@ -983,6 +983,26 @@ def record_projection_snapshot(store: Dict[str, Any], window: str, observed_at: 
             break
     snaps.append(snap)
     del snaps[:-MAX_PROJECTION_SNAPSHOTS]
+    # One-shot migration for stores written before throttling existed: a
+    # legacy list holds ~1000 entries at 0.4s spacing, and at one append per
+    # minute they'd take ~8 hours to age out — keeping the file fat the whole
+    # time. Re-decimate in place whenever the grid is violated.
+    last_by_window: Dict[str, float] = {}
+    kept = []
+    for entry in snaps:
+        if not isinstance(entry, dict):
+            continue
+        w = str(entry.get("window") or "")
+        at = _coerce(entry.get("observed_at"))
+        if at is None:
+            continue
+        prev_at = last_by_window.get(w)
+        if prev_at is not None and at - prev_at < SNAPSHOT_MIN_GAP_S:
+            continue
+        last_by_window[w] = at
+        kept.append(entry)
+    if len(kept) != len(snaps):
+        snaps[:] = kept
     return store
 
 

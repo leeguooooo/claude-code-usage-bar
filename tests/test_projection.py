@@ -730,3 +730,22 @@ def test_smoothing_approaches_fast_when_depleting():
                                      t0 + 60, {"projected_pct": 100.0, "updated_at": t0})
     # Downward keeps the slow tau: barely moved in 60s.
     assert down["projected_pct"] > 92.0, down
+
+
+def test_legacy_dense_snapshots_are_redecimated_on_append():
+    """Stores written before throttling hold ~1000 entries at 0.4s spacing;
+    at one append per minute they'd stay fat for ~8 hours. One append
+    re-decimates the whole list to the 60s grid."""
+    store = predict.empty_projection_store()
+    t0 = 1_800_000_000.0
+    store["snapshots"] = [
+        {"window": "five_hour", "observed_at": t0 + i * 0.4, "used_pct": 50.0,
+         "resets_at": t0 + 7200, "model": "projection_v1", "projected_pct": 80.0}
+        for i in range(900)
+    ]
+    predict.record_projection_snapshot(store, "five_hour", t0 + 3600, 60.0,
+                                       t0 + 7200, 85.0)
+    snaps = store["snapshots"]
+    assert len(snaps) <= 8, f"legacy density survived: {len(snaps)} entries"
+    times = [s["observed_at"] for s in snaps]
+    assert all(b - a >= predict.SNAPSHOT_MIN_GAP_S for a, b in zip(times, times[1:]))
