@@ -589,12 +589,13 @@ def format_status_line(
     dim_5h += colorize(f"⏰{reset_time}{countdown_emoji}", color_5h, use_color)
     if projection_5h:
         dim_5h += " " + _render_projection(projection_5h, theme, use_color)
-    # The legacy average-pace forecast (`⚠~25m`) answers the same question as
-    # the projection chip's depletion ETA (`→100%·33m`) with a cruder
-    # estimator — showing both puts two disagreeing countdowns side by side.
-    # The blended-rate ETA wins whenever it's present; the ⚠ chip remains the
-    # fallback for windows whose projection carries no ETA.
-    if forecast_5h and "·" not in projection_5h:
+    # The legacy average-pace forecast (`⚠~25m`) and the projection chip are
+    # two models of the same window. Showing both invites contradictions —
+    # live: `→98% ⚠~25m`, "you'll end under the cap" next to "empty in 25
+    # minutes". Whenever a usable projection exists it wins outright; the ⚠
+    # chip renders only when there is NO projection to disagree with
+    # (projection off, or the early-window `→--` placeholder).
+    if forecast_5h and projection_pct(projection_5h) is None:
         dim_5h += " " + _render_forecast(forecast_5h, theme, use_color)
     parts = [dim_5h]
 
@@ -605,7 +606,7 @@ def format_status_line(
         dim_7d += colorize(f"⏰{reset_time_7d}", color_7d, use_color)
     if projection_7d:
         dim_7d += " " + _render_projection(projection_7d, theme, use_color)
-    if forecast_7d and "·" not in projection_7d:
+    if forecast_7d and projection_pct(projection_7d) is None:
         dim_7d += " " + _render_forecast(forecast_7d, theme, use_color)
     parts.append(dim_7d)
 

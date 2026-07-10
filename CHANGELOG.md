@@ -9,6 +9,20 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.10 — 2026-07-10
+
+### The legacy ⚠ chip is silenced by ANY projection, not just one with an ETA
+
+v3.29.8's dedup gate only hid the legacy average-pace countdown when the
+projection chip carried a depletion ETA. That left the contradictory case
+live: `→98% ⚠~25m` — the better model saying "you'll end under the cap"
+right next to the cruder one screaming "empty in 25 minutes". Whenever a
+usable projection exists it now wins outright; the ⚠ chip renders only when
+there is no projection to disagree with (projection disabled, or the
+early-window `→--` placeholder).
+
+---
+
 ## v3.29.9 — 2026-07-10
 
 ### Projection algorithm review — four fixes

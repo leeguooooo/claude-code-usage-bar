@@ -37,7 +37,11 @@ def test_color_mode_chip_is_clean_when_off():
     assert "\x1b" not in out
 
 
-def test_projection_after_reset_before_eta():
+def test_projection_renders_after_reset_and_silences_legacy_eta():
+    """The projection sits after the reset countdown. The legacy average-pace
+    chip must NOT render next to it: `→92% ⚠~40m` reads "ends under the cap"
+    beside "empty in 40 minutes" — two models contradicting each other on one
+    line (seen live as `→98% ⚠~25m`)."""
     out = format_status_line(
         msgs_pct=80,
         tkns_pct=None,
@@ -51,7 +55,7 @@ def test_projection_after_reset_before_eta():
         forecast_5h="~40m",
     )
     assert out.index("→92%") > out.index("1h28m")
-    assert out.index("→92%") < out.index("~40m")
+    assert "~40m" not in out
 
 
 def test_projection_after_7d_reset():

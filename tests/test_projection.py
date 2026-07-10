@@ -666,8 +666,19 @@ def test_legacy_forecast_chip_yields_to_projection_eta():
     both = format_status_line(projection_5h="→100%·33m", forecast_5h="~25m", **kw)
     assert "·33m" in both and "~25m" not in both
 
-    only_legacy = format_status_line(projection_5h="→100%", forecast_5h="~25m", **kw)
+    # ANY usable projection silences the legacy chip — `→98% ⚠~25m` (seen
+    # live) had the better model saying "ends under the cap" next to the
+    # cruder one screaming "empty in 25m".
+    contradiction = format_status_line(projection_5h="→98%", forecast_5h="~25m", **kw)
+    assert "~25m" not in contradiction
+    at_cap_no_eta = format_status_line(projection_5h="→100%", forecast_5h="~25m", **kw)
+    assert "~25m" not in at_cap_no_eta
+
+    # No projection at all (off, or early-window placeholder) → legacy fallback.
+    only_legacy = format_status_line(projection_5h="", forecast_5h="~25m", **kw)
     assert "~25m" in only_legacy
+    placeholder = format_status_line(projection_5h="→--", forecast_5h="~25m", **kw)
+    assert "~25m" in placeholder
 
 
 def test_snapshots_are_throttled_per_window():
