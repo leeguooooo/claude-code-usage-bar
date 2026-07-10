@@ -828,6 +828,15 @@ def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: fl
 def project_5h(current_used: float, resets_at: float, now: float,
                samples: List[Dict[str, Any]],
                since: Optional[float] = None) -> float:
+    return min(100.0, _project_5h_raw(current_used, resets_at, now, samples,
+                                      since=since))
+
+
+def _project_5h_raw(current_used: float, resets_at: float, now: float,
+                    samples: List[Dict[str, Any]],
+                    since: Optional[float] = None) -> float:
+    """Unclamped twin of project_5h — may exceed 100. The overshoot is what
+    the depletion ETA is computed from; display paths clamp at format time."""
     used = float(current_used)
     ttr = max(0.0, float(resets_at) - float(now))
     window_avg = project_window(used, ttr, WINDOW_LEN_S["five_hour"])
@@ -862,12 +871,20 @@ def project_5h(current_used: float, resets_at: float, now: float,
     weights.append(0.15 if recent is not None else 0.25)
     total_w = sum(weights)
     blended = sum(r * w for r, w in zip(rates, weights)) / total_w if total_w else 0.0
-    return max(used, min(100.0, used + blended * ttr))
+    return max(used, used + blended * ttr)
 
 
 def project_7d(current_used: float, resets_at: float, now: float,
                samples: List[Dict[str, Any]],
                since: Optional[float] = None) -> float:
+    return min(100.0, _project_7d_raw(current_used, resets_at, now, samples,
+                                      since=since))
+
+
+def _project_7d_raw(current_used: float, resets_at: float, now: float,
+                    samples: List[Dict[str, Any]],
+                    since: Optional[float] = None) -> float:
+    """Unclamped twin of project_7d — see _project_5h_raw."""
     used = float(current_used)
     learned = learn_bucket_rates(samples, window="seven_day")
     future = integrate_future_buckets(float(now), float(resets_at), learned)
@@ -888,7 +905,7 @@ def project_7d(current_used: float, resets_at: float, now: float,
     sanity = 0.0
     if window_avg is not None:
         sanity = max(0.0, window_avg[0] - used) * 0.10
-    return max(used, min(100.0, used + future + sanity))
+    return max(used, used + future + sanity)
 
 
 def smooth_projection(window: str, raw: float, current_used: float,
@@ -969,6 +986,34 @@ def _format_projection_pct(value: float) -> str:
     return f"→{max(0.0, min(100.0, float(value))):.0f}%"
 
 
+def _format_eta(seconds: float) -> str:
+    s = max(0, int(seconds))
+    if s < 60:
+        return "<1m"
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        h, m = divmod(s // 60, 60)
+        return f"{h}h{m:02d}m" if m else f"{h}h"
+    return f"{s // 86400}d{(s % 86400) // 3600}h"
+
+
+def _depletion_eta_seconds(used: float, ttr: float, raw_unclamped: float):
+    """Seconds until usage hits 100%, from the unclamped linear projection.
+
+    `raw = used + rate*ttr` → time-to-100 = ttr*(100-used)/(raw-used). Only
+    meaningful when the projection actually overshoots the cap; returns None
+    otherwise (won't deplete before reset).
+    """
+    try:
+        if raw_unclamped <= 100.0 or raw_unclamped <= used or ttr <= 0 or used >= 100.0:
+            return None
+        eta = ttr * (100.0 - used) / (raw_unclamped - used)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+    return eta if eta < ttr else None
+
+
 def _projection_result_key(u5, r5, u7, r7) -> Optional[Tuple[str, str, float, float, float, float]]:
     try:
         return (
@@ -1020,11 +1065,12 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
         return DEBUG_PLACEHOLDER
 
     samples = _samples_for_reset(store.get(window, []), reset)
-    raw = (
-        project_5h(used, reset, now, samples, since=since)
+    raw_unclamped = (
+        _project_5h_raw(used, reset, now, samples, since=since)
         if window == "five_hour"
-        else project_7d(used, reset, now, samples, since=since)
+        else _project_7d_raw(used, reset, now, samples, since=since)
     )
+    raw = min(100.0, raw_unclamped)
     display = store.setdefault("display", {})
     previous = display.get(window) if isinstance(display.get(window), dict) else None
     if previous is not None and _coerce(previous.get("resets_at")) != reset:
@@ -1041,7 +1087,16 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
     # Always show the projection — even when it ≈ current usage (e.g. near reset,
     # or a flat window). `→47%` next to `47%` is honest ("you'll end about here"),
     # and hiding it just made the segment vanish unexpectedly.
-    return _format_projection_pct(proj)
+    #
+    # When the pace overshoots the cap, "→100%" alone buries the useful half of
+    # the prediction: WHEN the quota runs out. Append the depletion ETA —
+    # `→100%·1h12m` reads "headed to the cap, empty in about an hour".
+    chip = _format_projection_pct(proj)
+    if proj >= 99.5:
+        eta = _depletion_eta_seconds(used, ttr, raw_unclamped)
+        if eta is not None:
+            chip += f"·{_format_eta(eta)}"
+    return chip
 
 
 def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):

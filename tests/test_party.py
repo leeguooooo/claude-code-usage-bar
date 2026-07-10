@@ -190,15 +190,16 @@ def test_show_party_config_default_and_set(tmp_path):
     assert cfg.show_party is False
 
 
-def test_mentions_only_probe_is_memoised_per_pid(monkeypatch):
+def test_argv_probe_is_memoised_per_pid(monkeypatch):
     """The `ps` fork costs ~4ms — about half a warm render. A pid's argv never
-    changes, so probe it once."""
+    changes, so probe it once and derive both mentions-only and is-party."""
     from claude_statusbar import party
 
-    party._MENTIONS_ONLY_CACHE.clear()
+    party._ARGV_CACHE.clear()
     calls = []
 
     class _Proc:
+        returncode = 0
         stdout = "party watch seamail --mentions-only"
 
     def _fake_run(*a, **k):
@@ -210,33 +211,117 @@ def test_mentions_only_probe_is_memoised_per_pid(monkeypatch):
 
     assert party._listener_mentions_only(4242) is True
     assert party._listener_mentions_only(4242) is True
-    assert party._listener_mentions_only(4242) is True
+    assert party._argv_is_party(party._listener_argv(4242)) is True
     assert len(calls) == 1, f"forked ps {len(calls)}x for one pid"
 
     # A different pid must be probed on its own.
     assert party._listener_mentions_only(4243) is True
     assert len(calls) == 2
-    party._MENTIONS_ONLY_CACHE.clear()
+    party._ARGV_CACHE.clear()
 
 
-def test_mentions_only_probe_failure_is_not_cached(monkeypatch):
-    """A transient ps failure must not pin `False` for the pid's lifetime."""
+def test_argv_probe_failure_is_not_cached(monkeypatch):
+    """A transient ps failure must not pin an answer for the pid's lifetime."""
     from claude_statusbar import party
 
-    party._MENTIONS_ONLY_CACHE.clear()
+    party._ARGV_CACHE.clear()
     import subprocess
 
     def _boom(*a, **k):
         raise OSError("no fork for you")
     monkeypatch.setattr(subprocess, "run", _boom)
-    assert party._listener_mentions_only(555) is False
-    assert 555 not in party._MENTIONS_ONLY_CACHE
+    assert party._listener_argv(555) is None
+    assert 555 not in party._ARGV_CACHE
 
     class _Proc:
+        returncode = 0
         stdout = "party watch c --mentions-only"
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
     assert party._listener_mentions_only(555) is True
-    party._MENTIONS_ONLY_CACHE.clear()
+    party._ARGV_CACHE.clear()
+
+
+def test_argv_is_party_matcher():
+    from claude_statusbar.party import _argv_is_party
+    assert _argv_is_party("party watch seamail --mentions-only")
+    assert _argv_is_party("/Users/leo/.local/bin/party serve dev")
+    assert _argv_is_party("bun /x/party watch c")
+    assert not _argv_is_party("python3 third_party_tool.py")
+    assert not _argv_is_party("vim party-notes.md")   # no space/slash boundary after
+    assert not _argv_is_party("compartymaker --run")
+
+
+def test_alive_party_process_with_stale_heartbeat_is_still_listening(tmp_path, monkeypatch):
+    """CLIs older than 0.2.80 heartbeat only on traffic — a quiet channel left
+    heartbeat_ts stale and a healthy connected listener rendered as
+    "⊘ listener down" (seen live: a serve alive with a 32-minute-old
+    heartbeat). An alive, verifiably-party process is listening, whatever the
+    heartbeat age."""
+    import os
+    from claude_statusbar import party
+
+    party._ARGV_CACHE.clear()
+    import subprocess
+
+    class _Proc:
+        returncode = 0
+        stdout = "party serve zego-p-room --on-mention x"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    state_dir = tmp_path / "state" / workspace_id(cwd)
+    state_dir.mkdir(parents=True)
+    now = 1_800_000_000.0
+    (state_dir / "statusline.json").write_text(json.dumps({
+        "updated_at": int(now * 1000),
+        "channel": "zego-p-room",
+        "identity": {"name": "super-admin-1", "kind": "agent"},
+        "listener": {"mode": "serve", "pid": os.getpid(),
+                     "heartbeat_ts": int((now - 32 * 60) * 1000)},  # 32min stale
+    }), encoding="utf-8")
+
+    status = read_party_status(cwd, now=now, home=tmp_path)
+    assert status.listener_alive is True
+    assert status.listener_stale is False
+    line = render_party_line(status, theme=get_theme("graphite"), use_color=False)
+    assert "◉ serving" in line
+    assert "down" not in line
+    party._ARGV_CACHE.clear()
+
+
+def test_recycled_pid_with_stale_heartbeat_is_down(tmp_path, monkeypatch):
+    """Alive pid + stale heartbeat + argv is NOT a party process → the pid was
+    recycled; the listener is genuinely gone."""
+    import os
+    from claude_statusbar import party
+
+    party._ARGV_CACHE.clear()
+    import subprocess
+
+    class _Proc:
+        returncode = 0
+        stdout = "/usr/bin/vim notes.md"
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    state_dir = tmp_path / "state" / workspace_id(cwd)
+    state_dir.mkdir(parents=True)
+    now = 1_800_000_000.0
+    (state_dir / "statusline.json").write_text(json.dumps({
+        "updated_at": int(now * 1000),
+        "channel": "dev",
+        "identity": {"name": "x", "kind": "agent"},
+        "listener": {"mode": "watch", "pid": os.getpid(),
+                     "heartbeat_ts": int((now - 32 * 60) * 1000)},
+    }), encoding="utf-8")
+
+    status = read_party_status(cwd, now=now, home=tmp_path)
+    assert status.listener_stale is True
+    line = render_party_line(status, theme=get_theme("graphite"), use_color=False)
+    assert "⊘ listener down" in line
+    party._ARGV_CACHE.clear()
 
 
 def test_mentions_only_prefers_contract_field_over_ps(tmp_path, monkeypatch):

@@ -111,23 +111,21 @@ def _pid_alive(pid: Optional[int]) -> bool:
         return False
 
 
-_MENTIONS_ONLY_CACHE: Dict[int, bool] = {}
+_ARGV_CACHE: Dict[int, str] = {}
 
 
-def _listener_mentions_only(pid: Optional[int]) -> bool:
-    """True when the live listener was started with ``--mentions-only``.
+def _listener_argv(pid: Optional[int]) -> Optional[str]:
+    """The process's command line, or None when it can't be read.
 
-    Fallback for AgentParty CLIs older than 0.2.79, whose statusline contract
-    did not carry ``listener.mentions_only`` — the only local source then is
-    the process's own argv. A process's argv never changes, so the `ps` fork is
-    memoised per pid: the daemon renders about once a second and the fork costs
-    ~4ms, which was roughly half of a warm render. (The memo is keyed by pid,
-    so a recycled pid can serve a stale answer until the cache clears — one
-    more reason the contract field, read in `read_party_status`, wins.)
+    An argv never changes for a given process, so the `ps` fork is memoised
+    per pid (~4ms per fork — half a warm render). A transient failure is NOT
+    cached, so it gets retried. (The memo is keyed by pid, so a recycled pid
+    can serve a stale answer until the cache clears — which is why contract
+    fields, when present, always win over argv probing.)
     """
     if pid is None or pid <= 0:
-        return False
-    cached = _MENTIONS_ONLY_CACHE.get(pid)
+        return None
+    cached = _ARGV_CACHE.get(pid)
     if cached is not None:
         return cached
     try:
@@ -136,14 +134,29 @@ def _listener_mentions_only(pid: Optional[int]) -> bool:
             ["ps", "-o", "command=", "-p", str(pid)],
             capture_output=True, text=True, timeout=0.6,
         )
+        if proc.returncode != 0:
+            return None
     except Exception:
-        return False  # not cached: a transient failure should be retried
-    result = "--mentions-only" in (proc.stdout or "")
+        return None
+    argv = (proc.stdout or "").strip()
+    if not argv:
+        return None
     # Bound the map — a long-lived daemon would otherwise accumulate dead pids.
-    if len(_MENTIONS_ONLY_CACHE) > 64:
-        _MENTIONS_ONLY_CACHE.clear()
-    _MENTIONS_ONLY_CACHE[pid] = result
-    return result
+    if len(_ARGV_CACHE) > 64:
+        _ARGV_CACHE.clear()
+    _ARGV_CACHE[pid] = argv
+    return argv
+
+
+def _argv_is_party(argv: str) -> bool:
+    """True when the command line looks like an AgentParty listener."""
+    return re.search(r"(^|/| )party($| )", argv) is not None
+
+
+def _listener_mentions_only(pid: Optional[int]) -> bool:
+    """Fallback for AgentParty CLIs older than 0.2.79 — see _listener_argv."""
+    argv = _listener_argv(pid)
+    return argv is not None and "--mentions-only" in argv
 
 
 def _is_mentioned(preview: str, name: str) -> bool:
@@ -266,7 +279,22 @@ def read_party_status(
             now_seconds * 1000.0 - listener_heartbeat
         ) <= STALE_AFTER_SECONDS * 1000
 
-    listener_ok = bool(listener) and listener_alive and listener_fresh
+    # Heartbeats only tick with traffic on CLIs older than 0.2.80, so a quiet
+    # channel left heartbeat_ts stale and a healthily connected listener
+    # rendered as "down". The process itself is the better witness: alive AND
+    # verifiably a party process → live, whatever the heartbeat age. If argv
+    # can't be read (ps failure), fall back to the heartbeat. A recycled pid
+    # reads as not-party → down, as it should.
+    listener_live = False
+    if listener and listener_alive:
+        if listener_fresh:
+            listener_live = True
+        else:
+            argv = _listener_argv(listener_pid)
+            listener_live = (_argv_is_party(argv) if argv is not None
+                             else False)
+
+    listener_ok = listener_live
     preview = str(last.get("preview") or "")
     name = str(identity.get("name") or "")
 
@@ -283,7 +311,7 @@ def read_party_status(
         listener_mode=str(listener.get("mode") or "") if listener else "",
         listener_pid=listener_pid,
         listener_alive=listener_alive,
-        listener_stale=bool(listener) and (not listener_alive or not listener_fresh),
+        listener_stale=bool(listener) and not listener_live,
         listener_present=bool(listener),
         # Contract field (agentparty >= 0.2.79) wins; fall back to probing the
         # listener's argv for older CLIs that don't write it.

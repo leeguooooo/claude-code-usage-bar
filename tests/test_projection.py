@@ -596,3 +596,59 @@ def test_early_zero_tick_does_not_poison_later_projection(tmp_path, monkeypatch)
     chip = predict._projection_for_window(store, "five_hour", 3.0, reset, now, "s")
     val = float(chip.lstrip("→").rstrip("%"))
     assert val > 30.0, f"projection {chip} still lagging — EMA seeded from zero"
+
+
+def test_depletion_eta_appended_when_projection_maxes(monkeypatch, tmp_path):
+    """User request (2026-07-10): `→100%` alone hides the useful half of the
+    prediction. When the pace overshoots the cap, the chip carries the time
+    until the quota actually runs out: `→100%·1h15m`."""
+    import re
+    monkeypatch.setattr(predict, "_projection_path",
+                        lambda: tmp_path / "proj.json")
+    monkeypatch.setattr(predict, "_latest_path", lambda: tmp_path / "latest.json")
+
+    now = 1_800_000_000.0
+    reset = now + 2 * 3600           # 2h to reset
+    # 3h into a 5h window at 80% used → pace 26.7%/h → 100% in ~45min.
+    samples = [
+        {"observed_at": now - 3600, "used_pct": 53.0},
+        {"observed_at": now - 1800, "used_pct": 67.0},
+        {"observed_at": now, "used_pct": 80.0},
+    ]
+    store = predict.empty_projection_store()
+    store["five_hour"] = samples
+    chip = predict._projection_for_window(store, "five_hour", 80.0, reset,
+                                          now, "sid")
+    assert chip.startswith("→100%·"), chip
+    eta = chip.split("·", 1)[1]
+    assert re.fullmatch(r"(<1m|\d+m|\d+h(\d{2}m)?)", eta), chip
+
+    # The severity parser still reads the percent out of the extended chip.
+    from claude_statusbar.progress import projection_pct
+    assert projection_pct(chip) == 100.0
+
+
+def test_no_eta_when_projection_below_cap(monkeypatch, tmp_path):
+    monkeypatch.setattr(predict, "_projection_path",
+                        lambda: tmp_path / "proj.json")
+    monkeypatch.setattr(predict, "_latest_path", lambda: tmp_path / "latest.json")
+    now = 1_800_000_000.0
+    reset = now + 2 * 3600
+    samples = [
+        {"observed_at": now - 3600, "used_pct": 19.0},
+        {"observed_at": now, "used_pct": 20.0},   # 1%/h — nowhere near the cap
+    ]
+    store = predict.empty_projection_store()
+    store["five_hour"] = samples
+    chip = predict._projection_for_window(store, "five_hour", 20.0, reset,
+                                          now, "sid")
+    assert "·" not in chip, chip
+
+
+def test_depletion_eta_math():
+    # 80% used, 2h to reset, projection says 120% → hits 100 at half the window.
+    eta = predict._depletion_eta_seconds(80.0, 7200.0, 120.0)
+    assert eta == 7200.0 * 20.0 / 40.0
+    assert predict._depletion_eta_seconds(80.0, 7200.0, 95.0) is None     # under cap
+    assert predict._depletion_eta_seconds(100.0, 7200.0, 120.0) is None  # already empty
+    assert predict._depletion_eta_seconds(80.0, 0.0, 120.0) is None      # reset now

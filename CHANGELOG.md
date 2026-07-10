@@ -23,6 +23,30 @@ For a quick overview of the latest release, see the
   v3.29.6 and summarizes the v3.29.5 daemon/session fixes instead of leaving an
   older v3.28.x entry first.
 
+## v3.29.6 — 2026-07-10
+
+### A maxed projection now says WHEN the quota runs out
+
+`→100%` alone buried the useful half of the prediction. When the pace
+overshoots the cap, the chip now carries the estimated time until usage
+actually hits 100%: `5h[▓ 27%] 🕐4h19m →100%·1h12m` reads "headed to the cap,
+empty in about an hour". Computed from the same blended-rate projection
+(unclamped twin), only shown when depletion lands before the window reset.
+
+### Quiet channels no longer read as "listener down"
+
+AgentParty CLIs older than 0.2.80 heartbeat only when traffic arrives, so a
+listener on a quiet channel went heartbeat-stale after 10 minutes and the bar
+showed `⊘ listener down` while the process sat healthily connected (seen live:
+a serve alive with a 32-minute-old heartbeat). The process is the better
+witness: alive and verifiably a `party` process → `◉ watching/serving`,
+whatever the heartbeat age. A recycled PID (alive but not a party process)
+still reads as down. Upstream, AgentParty 0.2.83 also heartbeats on a 60s
+timer and an exiting `watch --once` no longer wipes another live listener's
+record.
+
+---
+
 ## v3.29.5 — 2026-07-09
 
 ### launchd/systemd daemons were unkillable — and immune to upgrades

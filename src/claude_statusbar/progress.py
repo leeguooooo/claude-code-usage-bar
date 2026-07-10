@@ -182,9 +182,14 @@ def projection_pct(chip):
     """
     if not chip:
         return None
-    body = chip.lstrip("→").rstrip("%")
+    # `→100%·1h12m` carries a depletion ETA after the percent — match the
+    # leading number instead of assuming the chip ends at `%`.
+    import re
+    m = re.match(r"→?\s*(\d+(?:\.\d+)?)%", chip)
+    if not m:
+        return None
     try:
-        return float(body)
+        return float(m.group(1))
     except ValueError:
         return None
 
