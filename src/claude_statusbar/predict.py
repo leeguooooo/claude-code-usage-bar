@@ -702,6 +702,19 @@ def record_projection_sample(store: Dict[str, Any], window: str, used_pct, reset
                     display.pop(window, None)
     if series and series[-1] == sample:
         return store
+    # Decimate: a fractional-percent tick every second is pure file weight
+    # (observed live: 2032 stored samples ≈ 2/3 of a 313KB store the daemon
+    # re-parses each second). Rate math reads first/last of a ≥5min span, so
+    # sub-0.5pp/sub-60s granularity adds nothing — skip the append unless the
+    # sample moves the needle or enough time passed.
+    last_same_reset = next(
+        (t for t in reversed(series)
+         if isinstance(t, dict) and _coerce(t.get("resets_at")) == reset), None)
+    if last_same_reset is not None:
+        d_used = sample["used_pct"] - (_coerce(last_same_reset.get("used_pct")) or 0.0)
+        d_ts = ts - (_coerce(last_same_reset.get("observed_at")) or 0.0)
+        if 0 <= d_used < 0.5 and d_ts < 60.0:
+            return store
     series.append(sample)
     series.sort(key=lambda s: float(s.get("observed_at", 0.0)))
     del series[:-MAX_PROJECTION_SAMPLES]
@@ -820,9 +833,12 @@ def _rate_from_samples(samples: List[Dict[str, Any]], now: float, lookback_s: fl
     if dt < span_min or du <= 0:
         return None
     rate = du / dt
-    if rate > cap / 3600.0:
-        return None
-    return rate
+    # Clamp, don't discard: returning None at over-cap rates made the blend
+    # fall back to the (much slower) window average at exactly the moments the
+    # burn was hottest — the projection went LOW when it most needed to go
+    # high. The cap still bounds re-baseline glitches; a genuine burst just
+    # pins at the cap instead of vanishing.
+    return min(rate, cap / 3600.0)
 
 
 def project_5h(current_used: float, resets_at: float, now: float,
@@ -922,14 +938,31 @@ def smooth_projection(window: str, raw: float, current_used: float,
         return {"projected_pct": max(float(current_used), min(100.0, prev_pct)),
                 "updated_at": prev_ts}
     tau = TAU_SECONDS.get(window, 900)
+    if raw >= 100.0 and raw > prev_pct:
+        # The raw projection says the quota depletes before reset. Easing
+        # toward that over a full tau (8 min for 5h) delays the →100%·ETA
+        # warning by minutes at exactly the moment it matters — approach fast
+        # instead. Downward moves keep the slow tau (no flapping on cooldown).
+        tau = min(tau, 120.0)
     alpha = 1.0 - math.exp(-(ts - prev_ts) / tau)
     smoothed = prev_pct * (1.0 - alpha) + raw * alpha
     return {"projected_pct": max(float(current_used), min(100.0, smoothed)),
             "updated_at": ts}
 
 
+SNAPSHOT_MIN_GAP_S = 60.0
+
+
 def record_projection_snapshot(store: Dict[str, Any], window: str, observed_at: float,
                                used_pct: float, resets_at: float, projected_pct: float) -> Dict[str, Any]:
+    """Append a (used, projected) snapshot for offline backtesting.
+
+    Throttled to one per window per SNAPSHOT_MIN_GAP_S: unthrottled, every
+    compute appended one (observed live: 0.4s average gap), so the 1000-entry
+    cap covered 8.5 MINUTES of history — useless for backtesting — while the
+    ~150KB of snapshots were re-parsed and re-written by the daemon every
+    second, its single largest CPU line.
+    """
     snap = {
         "window": window,
         "observed_at": float(observed_at),
@@ -942,6 +975,12 @@ def record_projection_snapshot(store: Dict[str, Any], window: str, observed_at: 
     if not isinstance(snaps, list):
         snaps = []
         store["snapshots"] = snaps
+    ts = float(observed_at)
+    for prev in reversed(snaps):
+        if isinstance(prev, dict) and prev.get("window") == window:
+            if ts - _coerce(prev.get("observed_at", 0.0)) < SNAPSHOT_MIN_GAP_S:
+                return store
+            break
     snaps.append(snap)
     del snaps[:-MAX_PROJECTION_SNAPSHOTS]
     return store
@@ -1000,6 +1039,11 @@ def _format_eta(seconds: float) -> str:
 
 def _depletion_eta_seconds(used: float, ttr: float, raw_unclamped: float):
     """Seconds until usage hits 100%, from the unclamped linear projection.
+
+    Known approximation for 7d: its projection integrates per-time-bucket
+    rates, so burn isn't uniform over `ttr`; inverting linearly overestimates
+    the time left when near-term buckets are hotter than the tail. Accepted —
+    a 7d overshoot is rare and its ETA is hours-to-days coarse anyway.
 
     `raw = used + rate*ttr` → time-to-100 = ttr*(100-used)/(raw-used). Only
     meaningful when the projection actually overshoots the cap; returns None

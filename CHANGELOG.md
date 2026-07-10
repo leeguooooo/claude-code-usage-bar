@@ -9,6 +9,33 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.9 — 2026-07-10
+
+### Projection algorithm review — four fixes
+
+- **Snapshot throttling.** Every compute appended a backtest snapshot (0.4s
+  average gap live), so the 1000-entry cap covered 8.5 minutes of history —
+  useless for backtesting — while ~150KB of snapshots were re-parsed and
+  re-written by the daemon every second, its single largest CPU line. Now one
+  snapshot per window per 60s (~8h of history), and the store shrinks ~10x.
+- **Sample decimation.** Fractional-percent ticks stored a sample each
+  (2032 live); rate math reads the first/last of a ≥5-minute span, so
+  sub-0.5pp/sub-60s granularity was pure file weight. Skipped now.
+- **Burst rates clamp instead of vanishing.** A recent rate above the
+  sanity cap (60%/h for 5h) was discarded entirely, dropping the blend back to
+  the much slower window average at exactly the hottest moments — the
+  projection went LOW when it most needed to go high. It now pins at the cap.
+- **The →100%·ETA warning arrives minutes earlier.** The display smoother
+  eased toward a depleting raw projection over its full 8-minute tau, delaying
+  the warning. When the raw says ≥100% the approach is fast (τ=2min);
+  downward moves keep the slow tau, so cooldowns still don't flap.
+
+Known approximation, documented in code: the 7d depletion ETA inverts a
+bucket-integrated projection linearly and can overestimate time-left when
+near-term buckets are hotter than the tail.
+
+---
+
 ## v3.29.8 — 2026-07-10
 
 ### One countdown, not two

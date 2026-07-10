@@ -668,3 +668,65 @@ def test_legacy_forecast_chip_yields_to_projection_eta():
 
     only_legacy = format_status_line(projection_5h="→100%", forecast_5h="~25m", **kw)
     assert "~25m" in only_legacy
+
+
+def test_snapshots_are_throttled_per_window():
+    """Unthrottled snapshots (one per compute, ~0.4s apart live) rolled the
+    1000-entry cap in 8.5 minutes and dominated the daemon's JSON cost."""
+    store = predict.empty_projection_store()
+    t0 = 1_800_000_000.0
+    for i in range(120):
+        predict.record_projection_snapshot(store, "five_hour", t0 + i, 50.0,
+                                           t0 + 7200, 80.0)
+    assert len(store["snapshots"]) == 2  # t0 and t0+60 — one per MIN_GAP
+    # Windows throttle independently.
+    predict.record_projection_snapshot(store, "seven_day", t0 + 1, 20.0,
+                                       t0 + 86400, 30.0)
+    assert len(store["snapshots"]) == 3
+
+
+def test_samples_are_decimated():
+    """Fractional-percent ticks every second are file weight, not signal —
+    2032 stored samples ≈ 2/3 of a 313KB store re-parsed each second."""
+    store = predict.empty_projection_store()
+    t0 = 1_800_000_000.0
+    reset = t0 + 4 * 3600
+    for i in range(45):
+        predict.record_projection_sample(store, "five_hour", 50.0 + i * 0.01,
+                                         reset, t0 + i)
+    assert len(store["five_hour"]) == 1  # sub-0.5pp AND sub-60s → skipped
+    # A ≥0.5pp jump lands immediately…
+    predict.record_projection_sample(store, "five_hour", 50.6, reset, t0 + 45.5)
+    assert len(store["five_hour"]) == 2
+    # …and a slow trickle still lands once 60s elapse.
+    predict.record_projection_sample(store, "five_hour", 50.61, reset, t0 + 106)
+    assert len(store["five_hour"]) == 3
+
+
+def test_over_cap_rate_clamps_instead_of_vanishing():
+    """Discarding over-cap rates made the projection fall back to the window
+    average at exactly the hottest moments — low when it should be high."""
+    now = 1_800_000_000.0
+    # 80%/h over 10 minutes — above the 60%/h 5h cap.
+    samples = [
+        {"observed_at": now - 600, "used_pct": 40.0, "resets_at": now + 3600},
+        {"observed_at": now, "used_pct": 53.3, "resets_at": now + 3600},
+    ]
+    rate = predict._rate_from_samples(samples, now, 3600.0, window="five_hour")
+    assert rate is not None, "burst rate must not vanish"
+    assert rate == predict.RATE_CAP_PCT_PER_H["five_hour"] / 3600.0
+
+
+def test_smoothing_approaches_fast_when_depleting():
+    """Easing toward a ≥100% raw over the full 8-minute tau delayed the
+    →100%·ETA warning by minutes; the approach is fast on the way up and
+    stays slow on the way down (no flapping on cooldown)."""
+    t0 = 1_800_000_000.0
+    prev = {"projected_pct": 85.0, "updated_at": t0}
+    up = predict.smooth_projection("five_hour", 110.0, 80.0, t0 + 60, prev)
+    # With tau=480 a 60s step moves ~12%; with tau=120 it moves ~39%.
+    assert up["projected_pct"] > 90.0, up
+    down = predict.smooth_projection("five_hour", 60.0, 55.0,
+                                     t0 + 60, {"projected_pct": 100.0, "updated_at": t0})
+    # Downward keeps the slow tau: barely moved in 60s.
+    assert down["projected_pct"] > 92.0, down
