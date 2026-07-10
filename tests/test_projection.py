@@ -652,3 +652,19 @@ def test_depletion_eta_math():
     assert predict._depletion_eta_seconds(80.0, 7200.0, 95.0) is None     # under cap
     assert predict._depletion_eta_seconds(100.0, 7200.0, 120.0) is None  # already empty
     assert predict._depletion_eta_seconds(80.0, 0.0, 120.0) is None      # reset now
+
+
+def test_legacy_forecast_chip_yields_to_projection_eta():
+    """`⚠~25m` (average-pace) and `→100%·33m` (blended-rate) answer the same
+    question; two disagreeing countdowns must not sit side by side. The legacy
+    chip renders only when the projection carries no ETA."""
+    from claude_statusbar.progress import format_status_line
+    from claude_statusbar.themes import get_theme
+
+    kw = dict(msgs_pct=72, tkns_pct=72, weekly_pct=50, model="Opus",
+              reset_time="3h54m", theme=get_theme("graphite"), use_color=False)
+    both = format_status_line(projection_5h="→100%·33m", forecast_5h="~25m", **kw)
+    assert "·33m" in both and "~25m" not in both
+
+    only_legacy = format_status_line(projection_5h="→100%", forecast_5h="~25m", **kw)
+    assert "~25m" in only_legacy

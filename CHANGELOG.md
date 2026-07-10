@@ -9,6 +9,18 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.8 — 2026-07-10
+
+### One countdown, not two
+
+v3.29.7's depletion ETA (`→100%·33m`, blended-rate) and the legacy
+average-pace forecast (`⚠~25m`) answer the same question with different
+estimators, and both rendered side by side — two disagreeing countdowns on one
+line. The legacy chip now yields whenever the projection carries an ETA, and
+remains the fallback for windows whose projection doesn't.
+
+---
+
 ## v3.29.7 — 2026-07-10
 
 ### A maxed projection now says WHEN the quota runs out
