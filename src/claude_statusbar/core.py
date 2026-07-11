@@ -1153,14 +1153,16 @@ def main(json_output: bool = False,
     party_kwargs = {}
     if cfg.show_party:
         try:
-            from .party import read_party_status, session_is_attached
+            from .party import read_party_status, session_party_context
             _transcript = str(stdin_data.get('transcript_path') or '')
             _sid = str(stdin_data.get('session_id') or '')
-            _gated = bool(_transcript and _sid) and not session_is_attached(
-                _transcript, _sid)
+            _party_cwd = str(stdin_data.get('workspace_current_dir') or os.getcwd())
+            _party_context = session_party_context(
+                _transcript, _sid, cwd=_party_cwd)
+            _gated = bool(_transcript and _sid) and not _party_context.attached
             if not _gated:
-                _party_cwd = str(stdin_data.get('workspace_current_dir') or os.getcwd())
-                _party = read_party_status(_party_cwd)
+                _party = read_party_status(
+                    _party_cwd, config_path=_party_context.config_path)
                 if _party is not None:
                     party_kwargs = {"party": _party}
         except Exception:

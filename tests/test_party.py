@@ -397,17 +397,71 @@ def test_session_attachment_gate(tmp_path, monkeypatch):
 
 
 def test_attachment_gate_handles_needle_straddling_scans(tmp_path, monkeypatch):
-    """A needle split across two incremental scans must still match."""
+    """An incomplete tool-use record is picked up once its line completes."""
     from claude_statusbar import party
     from claude_statusbar import daemon as _d
 
     monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
     t = tmp_path / "t.jsonl"
-    t.write_bytes(b'{"cmd": "party wa')          # first half
+    t.write_bytes(b'{"type":"tool_use","command":"party wa')
     assert party.session_is_attached(str(t), "sid-x") is False
     with t.open("ab") as f:
-        f.write(b'tch seamail"}\n')              # second half completes "party watch"
+        f.write(b'tch seamail"}\n')
     assert party.session_is_attached(str(t), "sid-x") is True
+
+
+def test_same_workspace_sessions_resolve_their_own_identity(tmp_path, monkeypatch):
+    """A cwd-scoped status cache must not collapse distinct session configs."""
+    from claude_statusbar import daemon as _d
+    from claude_statusbar import party
+
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path / "cache")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    state_dir = tmp_path / "state" / workspace_id(cwd)
+    state_dir.mkdir(parents=True)
+    (state_dir / "statusline.json").write_text(json.dumps({
+        "channel": "agentparty",
+        "identity": {"name": "last-writer", "kind": "agent"},
+    }), encoding="utf-8")
+
+    identities = []
+    for session_id, name in (("sid-a", "agent-a"), ("sid-b", "agent-b")):
+        config = tmp_path / f"{name}.json"
+        config.write_text(json.dumps({
+            "token": "must-not-be-rendered",
+            "identity": {"name": name, "kind": "agent", "role": "builder"},
+        }), encoding="utf-8")
+        transcript = tmp_path / f"{session_id}.jsonl"
+        config_ref = (str(config) if session_id == "sid-a"
+                      else "${TMPDIR:-/tmp}/agent-b.json")
+        decoy = tmp_path / f"decoy-{name}.json"
+        decoy.write_text(json.dumps({
+            "identity": {"name": f"wrong-{name}", "kind": "agent"},
+        }), encoding="utf-8")
+        transcript.write_text(json.dumps({
+            "type": "assistant",
+            "message": {"content": [{
+                "type": "tool_use",
+                "name": "Bash",
+                "input": {"command": (
+                    f'AGENTPARTY_CONFIG="{config_ref}" '
+                    "party send agentparty hi"
+                )},
+            }]},
+        }) + "\n" + json.dumps({
+            "type": "user",
+            "text": f'example: AGENTPARTY_CONFIG="{decoy}"',
+        }) + "\n", encoding="utf-8")
+
+        context = party.session_party_context(
+            str(transcript), session_id, cwd=cwd)
+        status = read_party_status(
+            cwd, home=tmp_path, config_path=context.config_path)
+        identities.append(status.identity_name)
+
+    assert identities == ["agent-a", "agent-b"]
 
 
 def test_missing_transcript_is_not_attached(tmp_path, monkeypatch):

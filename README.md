@@ -48,6 +48,8 @@ Claude Code.
 
 ## Latest release
 
+**v3.29.11** (2026-07-11) — **AgentParty identity is session-correct**: two Claude Code sessions in the same project can use different `AGENTPARTY_CONFIG` files without both status bars collapsing to the last writer's agent name. Only config paths from actual shell tool calls count; paths quoted in chat do not override identity.
+
 **v3.29.6** (2026-07-10) — **support docs cleanup**: the README now states the support boundary explicitly. Claude Code is the full native `statusLine` integration; Codex support is the AgentParty local status bridge and does not include OpenAI quota/session accounting.
 
 **v3.29.5** (2026-07-09) — **service daemon and AgentParty session fixes**: `cs daemon stop` and upgrade drift-kill now recognize launchd/systemd-managed daemons, pidfile cleanup no longer deletes a newer daemon owner's pidfile, and the AgentParty block is gated on session transcript evidence so unrelated windows in the same repo do not inherit another agent's channel line.
@@ -103,7 +105,7 @@ Claude Code.
 | `▸ <task> (3/7) · ◐ Edit auth.py · ✓ Read×3` | Third "activity" line — what's happening *right now*, parsed from the transcript: the in-progress **todo** + done/total (`show_todos`, on by default), the **active tool** (`◐`, `show_tools`), and an optional completed-tool rollup (`✓ name×N`, `show_tool_rollup`, default off). Omitted entirely when nothing is active. |
 | `◐ explore[haiku] <task> 2m15s` | Bottom line(s) — one per running **subagent** (`show_agents`, opt-in, default **off**). Note: Claude Code already shows background agents in its own native panel, so this largely duplicates that; off by default for that reason. |
 | `⚙ effort:high · think:on · fast:off · style:default` | **Session-mode line** (`show_mode`, on by default) — how this turn is configured, from stdin. Tinted with a per-effort static gradient (`mode_gradient`) so the level reads at a glance. |
-| `#agentparty · ⬡ xdream-agent · ◉ serving · 3 unread` + `↳ ●@ bob  shipped the auth patch 2m` | **AgentParty block** (`show_party`, on by default). Local bridge for Codex + AgentParty workflows: reads only `~/.agentparty/state/<workspaceId>/statusline.json`, never calls AgentParty, never reads tokens, and never makes network requests. The header answers *am I listening* outright — `◉ watching/serving` (green), `⊘ listener down` (red), `◌ not listening` (grey). The last message gets its own line, prefixed `●` unread / `○` read and `@` when it mentions you. |
+| `#agentparty · ⬡ xdream-agent · ◉ serving · 3 unread` + `↳ ●@ bob  shipped the auth patch 2m` | **AgentParty block** (`show_party`, on by default). Local bridge for Codex + AgentParty workflows: reads the workspace status cache and, when several sessions share a project, the identity field from the config path used by that session's actual shell commands. It never calls AgentParty or makes network requests; config tokens are never rendered, logged, or transmitted. The header answers *am I listening* outright — `◉ watching/serving` (green), `⊘ listener down` (red), `◌ not listening` (grey). The last message gets its own line, prefixed `●` unread / `○` read and `@` when it mentions you. |
 | `📚 EN:6.0↑ JA:5.0→` | IELTS band progress (requires [prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)) |
 
 Colors default to green / yellow / red at `30%` and `70%` — both thresholds configurable.

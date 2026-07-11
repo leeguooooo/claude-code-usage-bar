@@ -9,6 +9,23 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.11 — 2026-07-11
+
+### AgentParty identity is isolated per session, not per project directory
+
+Two Claude Code sessions in the same repository can use different
+`AGENTPARTY_CONFIG` files. The AgentParty cache itself is workspace-scoped, so
+the last writer previously made both status bars show the same agent name.
+The status bar now resolves the config used by each session's actual shell
+tool calls and overlays only that config's cached identity.
+
+Transcript parsing accepts real `tool_use` command records only. A later user
+or assistant message that merely quotes another valid config path cannot
+change the displayed identity. The bridge remains local-only: config tokens
+are never rendered, logged, or sent over the network.
+
+---
+
 ## v3.29.10 — 2026-07-10
 
 ### The legacy ⚠ chip is silenced by ANY projection, not just one with an ETA
