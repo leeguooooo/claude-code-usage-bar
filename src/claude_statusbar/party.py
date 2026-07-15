@@ -39,6 +39,10 @@ _CONFIG_QUOTED_RE = re.compile(
 _CONFIG_UNQUOTED_RE = re.compile(
     rb"AGENTPARTY_CONFIG\s*=\s*([^\s\"'\\]+)"
 )
+_SIMPLE_ASSIGNMENT_RE = re.compile(
+    rb"(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)=(?:\"([^\"]*)\"|'([^']*)'|([^\s]+))"
+)
+_SIMPLE_VARIABLE_RE = re.compile(r"^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))$")
 _SCAN_OVERLAP = 4096
 
 
@@ -295,8 +299,23 @@ def _latest_config_path(
         for pattern in (_CONFIG_QUOTED_RE, _CONFIG_UNQUOTED_RE):
             matches.extend(pattern.finditer(encoded))
         for match in sorted(matches, key=lambda item: item.start(), reverse=True):
-            candidate = Path(_expand_config_path(
-                match.group(1).decode("utf-8")))
+            raw_value = match.group(1).decode("utf-8")
+            variable = _SIMPLE_VARIABLE_RE.match(raw_value)
+            if variable:
+                name = (variable.group(1) or variable.group(2)).encode("utf-8")
+                assignments = [
+                    item for item in _SIMPLE_ASSIGNMENT_RE.finditer(
+                        encoded[:match.start()])
+                    if item.group(1) == name
+                ]
+                if assignments:
+                    assignment = assignments[-1]
+                    raw_value = next(
+                        group.decode("utf-8")
+                        for group in assignment.groups()[1:]
+                        if group is not None
+                    )
+            candidate = Path(_expand_config_path(raw_value))
             if not candidate.is_absolute() and cwd is not None:
                 candidate = _coerce_path(cwd) / candidate
             config = _read_json(candidate)
@@ -304,6 +323,14 @@ def _latest_config_path(
             if isinstance(identity, dict) and identity.get("name"):
                 return str(candidate)
     return None
+
+
+def _is_valid_session_config(path: Optional[str]) -> bool:
+    if not path:
+        return False
+    config = _read_json(Path(path))
+    identity = config.get("identity")
+    return isinstance(identity, dict) and bool(identity.get("name"))
 
 
 def session_party_context(
@@ -341,6 +368,15 @@ def session_party_context(
                    if isinstance(state.get("config_path"), str) else None)
     offset = state.get("offset")
     offset = offset if isinstance(offset, int) and 0 <= offset <= tsize else 0
+
+    # Invite bundles are often created under $TMPDIR.  Once that file is
+    # cleaned up, keeping its path forever makes read_party_status fall back
+    # to the cwd's last-writer cache and display another session's channel.
+    # Re-scan the transcript so an older still-valid persistent config can be
+    # recovered instead of pinning the dead temporary path.
+    if cached_path and not _is_valid_session_config(cached_path):
+        cached_path = None
+        offset = 0
 
     if offset == tsize and (cached_path or not was_attached):
         return SessionPartyContext(was_attached, cached_path)
