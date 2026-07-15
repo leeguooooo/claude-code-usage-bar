@@ -464,6 +464,73 @@ def test_same_workspace_sessions_resolve_their_own_identity(tmp_path, monkeypatc
     assert identities == ["agent-a", "agent-b"]
 
 
+def test_same_workspace_sessions_read_their_own_complete_status_slot(tmp_path):
+    """Channel, preview and listener must follow the session config too.
+
+    Regression: only overriding the identity still rendered the last writer's
+    channel/message/listener, producing combinations such as a leo-code-space
+    agent beside an ai-girls stale-listener warning.
+    """
+    import hashlib
+
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    state_dir = tmp_path / "state" / workspace_id(cwd)
+    slots = state_dir / "slots"
+    slots.mkdir(parents=True)
+    (state_dir / "statusline.json").write_text(json.dumps({
+        "channel": "ai-girls",
+        "identity": {"name": "ai-girl-zim", "kind": "agent"},
+        "last_message": {"from": "wrong", "preview": "wrong channel"},
+        "listener": {"mode": "serve", "pid": 99999999},
+    }), encoding="utf-8")
+
+    config = tmp_path / "tk-zego-im.json"
+    token = "ap_session-token"
+    config.write_text(json.dumps({
+        "token": token,
+        "identity": {
+            "name": "tk-zego-im",
+            "kind": "agent",
+            "role": "agent",
+            "channel_scope": "leo-code-space",
+        },
+    }), encoding="utf-8")
+    token_fingerprint = "sha256:" + hashlib.sha256(
+        token.encode("utf-8")).hexdigest()[:12]
+    slot_key = json.dumps({
+        "channel": "leo-code-space",
+        "kind": "explicit",
+        "path": str(config),
+        "token": token_fingerprint,
+    }, separators=(",", ":"))
+    slot_fingerprint = hashlib.sha256(
+        slot_key.encode("utf-8")).hexdigest()[:16]
+    (slots / f"statusline-leo-code-space-{slot_fingerprint}.json").write_text(
+        json.dumps({
+            "channel": "leo-code-space",
+            "server": "https://agentparty.pwtk-dev.work",
+            "identity": {"name": "tk-zego-im", "kind": "agent"},
+            "unread": 6,
+            "last_message": {
+                "from": "super-admin-leo-space",
+                "preview": "headcount fix verified",
+            },
+        }), encoding="utf-8")
+
+    status = read_party_status(
+        cwd, home=tmp_path, config_path=str(config))
+
+    assert status is not None
+    assert status.channel == "leo-code-space"
+    assert status.server == "https://agentparty.pwtk-dev.work"
+    assert status.identity_name == "tk-zego-im"
+    assert status.unread == 6
+    assert status.last_from == "super-admin-leo-space"
+    assert status.last_preview == "headcount fix verified"
+    assert status.listener_present is False
+
+
 def test_missing_transcript_is_not_attached(tmp_path, monkeypatch):
     from claude_statusbar import party
     assert party.session_is_attached("/nope/nothing.jsonl", "sid") is False

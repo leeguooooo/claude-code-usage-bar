@@ -8,6 +8,7 @@ reads the cwd-scoped cache written by the AgentParty CLI:
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import time
@@ -102,6 +103,44 @@ def _read_json(path: Path) -> Dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _status_slot_for_config(
+    state_dir: Path,
+    config_file: Path,
+    config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Read the AgentParty cache slot owned by one explicit config.
+
+    AgentParty lets several sessions share a cwd while using different
+    ``AGENTPARTY_CONFIG`` files.  Its legacy ``statusline.json`` is therefore
+    only a last-writer mirror; the authoritative per-session value lives in a
+    fingerprinted slot.  Mirror cli/src/cache-slot.ts exactly so a session
+    never combines its identity with another channel's preview/listener.
+    """
+    identity = config.get("identity")
+    if not isinstance(identity, dict):
+        return {}
+    channel = identity.get("channel_scope")
+    if not isinstance(channel, str) or not channel:
+        return {}
+
+    source: Dict[str, Any] = {
+        "channel": channel,
+        "kind": "explicit",
+        "path": str(config_file),
+    }
+    token = config.get("token")
+    if isinstance(token, str) and token:
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+        source["token"] = f"sha256:{token_hash}"
+    fingerprint = hashlib.sha256(json.dumps(
+        source, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")).hexdigest()[:16]
+    safe_channel = re.sub(r"[^a-zA-Z0-9._-]", "_", channel) or "channel"
+    return _read_json(
+        state_dir / "slots" / f"statusline-{safe_channel}-{fingerprint}.json"
+    )
 
 
 def _int_or_none(value: Any) -> Optional[int]:
@@ -356,7 +395,22 @@ def read_party_status(
     """
     now_seconds = time.time() if now is None else now
     state_dir = state_dir_for(cwd, home=home)
-    data = _read_json(state_dir / "statusline.json")
+    data: Dict[str, Any] = {}
+    session_identity: Dict[str, Any] = {}
+    if config_path:
+        config_file = Path(config_path)
+        if not config_file.is_absolute():
+            config_file = _coerce_path(cwd) / config_file
+        else:
+            config_file = _coerce_path(config_file)
+        config = _read_json(config_file)
+        candidate_identity = config.get("identity")
+        if (isinstance(candidate_identity, dict)
+                and candidate_identity.get("name")):
+            session_identity = candidate_identity
+            data = _status_slot_for_config(state_dir, config_file, config)
+    if not data:
+        data = _read_json(state_dir / "statusline.json")
     if not data:
         return None
 
@@ -366,15 +420,8 @@ def read_party_status(
         fresh = (now_seconds * 1000.0 - updated_at) <= STALE_AFTER_SECONDS * 1000
 
     identity = data.get("identity") if isinstance(data.get("identity"), dict) else {}
-    if config_path:
-        config_file = Path(config_path)
-        if not config_file.is_absolute():
-            config_file = _coerce_path(cwd) / config_file
-        config = _read_json(config_file)
-        session_identity = config.get("identity")
-        if (isinstance(session_identity, dict)
-                and session_identity.get("name")):
-            identity = session_identity
+    if session_identity:
+        identity = session_identity
     unread = _int_or_none(data.get("unread")) or 0
     last = data.get("last_message") if isinstance(data.get("last_message"), dict) else {}
     listener = data.get("listener") if isinstance(data.get("listener"), dict) else {}
