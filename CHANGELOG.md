@@ -9,6 +9,23 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.29.12 — 2026-07-15
+
+### AgentParty sessions now read their complete matching status slot
+
+v3.29.11 made the displayed AgentParty identity session-specific, but the
+channel, unread count, last-message preview, and listener state still came
+from the workspace's shared last-writer mirror. Two sessions in the same
+repository could therefore render a mixed line, such as one session's agent
+name beside another session's channel or stale-listener warning.
+
+The status bar now reproduces AgentParty's config-slot fingerprint and reads
+the complete cache entry owned by the session's explicit
+`AGENTPARTY_CONFIG`. It falls back to the legacy workspace mirror when no
+matching slot exists, preserving compatibility with older AgentParty clients.
+
+---
+
 ## v3.29.11 — 2026-07-11
 
 ### AgentParty identity is isolated per session, not per project directory

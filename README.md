@@ -48,6 +48,8 @@ Claude Code.
 
 ## Latest release
 
+**v3.29.12** (2026-07-15) — **AgentParty status is session-correct end to end**: sessions sharing one project now read channel, identity, unread count, message preview, and listener state from their own config-owned cache slot instead of mixing those fields with the workspace's last writer.
+
 **v3.29.11** (2026-07-11) — **AgentParty identity is session-correct**: two Claude Code sessions in the same project can use different `AGENTPARTY_CONFIG` files without both status bars collapsing to the last writer's agent name. Only config paths from actual shell tool calls count; paths quoted in chat do not override identity.
 
 **v3.29.6** (2026-07-10) — **support docs cleanup**: the README now states the support boundary explicitly. Claude Code is the full native `statusLine` integration; Codex support is the AgentParty local status bridge and does not include OpenAI quota/session accounting.
