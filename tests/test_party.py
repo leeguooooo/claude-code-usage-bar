@@ -531,6 +531,76 @@ def test_same_workspace_sessions_read_their_own_complete_status_slot(tmp_path):
     assert status.listener_present is False
 
 
+def test_session_recovers_older_config_when_cached_temp_file_disappears(
+        tmp_path, monkeypatch):
+    """A deleted TMPDIR invite config must not stay pinned forever."""
+    from claude_statusbar import daemon as _d
+    from claude_statusbar import party
+
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path / "cache")
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    persistent = tmp_path / "persistent.json"
+    temporary = tmp_path / "temporary.json"
+    for path, name in ((persistent, "persistent-agent"),
+                       (temporary, "temporary-agent")):
+        path.write_text(json.dumps({
+            "identity": {"name": name, "kind": "agent"},
+        }), encoding="utf-8")
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("\n".join([
+        json.dumps({
+            "type": "tool_use",
+            "command": (
+                f'AGENTPARTY_CONFIG="{persistent}" party send first'
+            ),
+        }),
+        json.dumps({
+            "type": "tool_use",
+            "command": (
+                f'AGENTPARTY_CONFIG="{temporary}" party send latest'
+            ),
+        }),
+    ]) + "\n", encoding="utf-8")
+
+    first = party.session_party_context(
+        str(transcript), "sid-temp", cwd=cwd)
+    assert first.config_path == str(temporary)
+
+    temporary.unlink()
+    recovered = party.session_party_context(
+        str(transcript), "sid-temp", cwd=cwd)
+    assert recovered.config_path == str(persistent)
+
+
+def test_session_resolves_config_through_simple_shell_variable(
+        tmp_path, monkeypatch):
+    """Real sessions commonly use ``CFG=... AGENTPARTY_CONFIG=$CFG``."""
+    from claude_statusbar import daemon as _d
+    from claude_statusbar import party
+
+    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path / "cache")
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    config = tmp_path / "persistent.json"
+    config.write_text(json.dumps({
+        "identity": {"name": "tk-zego-im", "kind": "agent"},
+    }), encoding="utf-8")
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text(json.dumps({
+        "type": "tool_use",
+        "command": (
+            f'cd "{cwd}" CFG="{config}" '
+            'AGENTPARTY_CONFIG="$CFG" party history leo-code-space'
+        ),
+    }) + "\n", encoding="utf-8")
+
+    context = party.session_party_context(
+        str(transcript), "sid-variable", cwd=cwd)
+
+    assert context.config_path == str(config)
+
+
 def test_missing_transcript_is_not_attached(tmp_path, monkeypatch):
     from claude_statusbar import party
     assert party.session_is_attached("/nope/nothing.jsonl", "sid") is False
