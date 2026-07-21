@@ -1,311 +1,180 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# claude-statusbar — standalone binary installer (no Python, no pip required).
+#
+# Usage (read the script first, please):
+#   curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh -o /tmp/cs.sh
+#   less /tmp/cs.sh        # audit it
+#   bash /tmp/cs.sh
+#
+# Or, if you trust this repo:
+#   curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash
+#
+# What it does (full disclosure):
+#   1. Detects your OS + CPU arch and downloads the matching prebuilt `cs`
+#      binary from the latest GitHub Release (a single self-contained
+#      executable — no Python needed on your machine).
+#   2. Verifies the SHA-256 checksum published alongside it.
+#   3. Installs it to ~/.local/bin (no sudo; everything under $HOME) and, with
+#      your [y/N] consent, adds ~/.local/bin to PATH in your shell rc.
+#   4. Runs `cs --setup` to wire the Claude Code statusLine + slash commands.
+#
+#   If no prebuilt binary matches your platform (e.g. Linux arm64, Windows), it
+#   automatically falls back to the pip/uv-based installer (web-install.sh),
+#   which needs Python 3.9+.
+#
+# No sudo. No telemetry. The only remote hosts touched are github.com (release
+# assets) and, only on fallback, PyPI / astral.sh (uv).
 
-# Claude Status Bar Monitor - Installation Script
-# This script handles all installation scenarios
+set -euo pipefail
 
-set -e  # Exit on error
+REPO="leeguooooo/claude-code-usage-bar"
+INSTALL_DIR="${CS_INSTALL_DIR:-$HOME/.local/bin}"
+FALLBACK_URL="https://raw.githubusercontent.com/${REPO}/main/web-install.sh"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; RED='\033[0;31m'; NC='\033[0m'
 
-# Script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SCRIPT_PATH="$SCRIPT_DIR/statusbar.py"
+say()  { echo -e "${BLUE}$*${NC}"; }
+ok()   { echo -e "${GREEN}$*${NC}"; }
+warn() { echo -e "${YELLOW}$*${NC}"; }
+err()  { echo -e "${RED}$*${NC}" >&2; }
 
-echo -e "${BLUE}==================================${NC}"
-echo -e "${BLUE}Claude Status Bar Monitor Installer${NC}"
-echo -e "${BLUE}==================================${NC}\n"
+echo -e "${BLUE}╔══════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║   Claude Status Bar — binary install ║${NC}"
+echo -e "${BLUE}╚══════════════════════════════════════╝${NC}"
+echo ""
 
-# Function to print colored messages
-print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
+# ---------------------------------------------------------------------------
+# ask_yes_no PROMPT — reads from /dev/tty so it works under `curl | bash`.
+# Returns 0 on yes; anything else (incl. no tty) is treated as "no".
+# ---------------------------------------------------------------------------
+ask_yes_no() {
+    local reply
+    if [ ! -r /dev/tty ]; then
+        warn "(no /dev/tty — treating as 'no')"
+        return 1
+    fi
+    printf "%s [y/N]: " "$1" > /dev/tty
+    read -r reply < /dev/tty || return 1
+    case "$reply" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
 }
 
-print_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
-}
-
-# Check if Python 3 is installed
-check_python() {
-    if command -v python3 &> /dev/null; then
-        PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
-        print_success "Python $PYTHON_VERSION found"
-        return 0
+# ---------------------------------------------------------------------------
+# fall_back_to_pip — hand off to the Python/pip installer for platforms with no
+# prebuilt binary. Runs it in-place via the same shell.
+# ---------------------------------------------------------------------------
+fall_back_to_pip() {
+    warn "No prebuilt binary for this platform — falling back to the pip installer."
+    warn "(needs Python 3.9+; it will use uv/pipx/pip, bootstrapping uv if needed)"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$FALLBACK_URL" | bash
     else
-        print_error "Python 3 is not installed"
-        echo "Please install Python 3.9 or later from https://python.org"
+        err "curl not found; install Python + run: pip install claude-statusbar && cs --setup"
         exit 1
     fi
+    exit $?
 }
 
-# Check if claude-monitor is installed and install if needed
-check_claude_monitor() {
-    echo -e "\n${BLUE}Checking claude-monitor installation...${NC}"
-    
-    # Check if any version of claude-monitor is available
-    if command -v claude-monitor &> /dev/null || \
-       command -v cmonitor &> /dev/null || \
-       command -v ccmonitor &> /dev/null || \
-       command -v ccm &> /dev/null; then
-        print_success "claude-monitor is already installed"
-        return 0
-    fi
-    
-    print_warning "claude-monitor not found. Need to install it."
-    echo -e "\nChoose installation method:"
-    echo "1) uv (recommended - fastest and cleanest)"
-    echo "2) pip (standard Python package manager)"
-    echo "3) pipx (isolated environment)"
-    echo "4) Skip (use fallback mode - less accurate)"
-    
-    read -p "Enter your choice (1-4): " choice
-    
-    case $choice in
-        1)
-            install_with_uv
-            ;;
-        2)
-            install_with_pip
-            ;;
-        3)
-            install_with_pipx
-            ;;
-        4)
-            print_warning "Skipping claude-monitor installation"
-            print_info "The status bar will use fallback mode (less accurate)"
-            ;;
-        *)
-            print_error "Invalid choice"
-            exit 1
-            ;;
+# ---------------------------------------------------------------------------
+# detect_asset — echo the release asset name for this OS/arch, or "" if none.
+# ---------------------------------------------------------------------------
+detect_asset() {
+    local os arch
+    case "$(uname -s)" in
+        Darwin) os="darwin" ;;
+        Linux)  os="linux"  ;;
+        *)      echo ""; return ;;
     esac
-}
-
-# Install with uv
-install_with_uv() {
-    print_info "Installing with uv..."
-    
-    # Check if uv is installed
-    if ! command -v uv &> /dev/null; then
-        print_info "Installing uv first..."
-        
-        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-            # Windows
-            powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-        else
-            # macOS/Linux
-            curl -LsSf https://astral.sh/uv/install.sh | sh
-        fi
-        
-        # Add uv to current session PATH
-        export PATH="$HOME/.cargo/bin:$PATH"
-        
-        if ! command -v uv &> /dev/null; then
-            print_error "Failed to install uv"
-            print_info "Please restart your terminal and run this script again"
-            exit 1
-        fi
-    fi
-    
-    # Install claude-monitor with uv
-    uv tool install claude-monitor
-    
-    if command -v claude-monitor &> /dev/null; then
-        print_success "claude-monitor installed successfully with uv"
-    else
-        print_error "Installation failed"
-        exit 1
-    fi
-}
-
-# Install with pip
-install_with_pip() {
-    print_info "Installing with pip..."
-    
-    # Try to install with pip
-    if pip3 install --user claude-monitor 2>/dev/null || pip3 install claude-monitor 2>/dev/null; then
-        print_success "claude-monitor installed successfully with pip"
-        
-        # Check if ~/.local/bin is in PATH
-        if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-            print_warning "~/.local/bin is not in your PATH"
-            print_info "Add this line to your shell config file:"
-            echo 'export PATH="$HOME/.local/bin:$PATH"'
-        fi
-    else
-        print_error "pip installation failed"
-        print_info "You might need to use: pip3 install --break-system-packages claude-monitor"
-        print_info "Or better: use a virtual environment"
-        exit 1
-    fi
-}
-
-# Install with pipx
-install_with_pipx() {
-    print_info "Installing with pipx..."
-    
-    # Check if pipx is installed
-    if ! command -v pipx &> /dev/null; then
-        print_info "Installing pipx first..."
-        
-        if command -v apt-get &> /dev/null; then
-            sudo apt-get install -y pipx
-        elif command -v brew &> /dev/null; then
-            brew install pipx
-        else
-            pip3 install --user pipx
-        fi
-        
-        pipx ensurepath
-    fi
-    
-    # Install claude-monitor with pipx
-    pipx install claude-monitor
-    
-    if command -v claude-monitor &> /dev/null; then
-        print_success "claude-monitor installed successfully with pipx"
-    else
-        print_error "Installation failed"
-        exit 1
-    fi
-}
-
-# Make statusbar.py executable
-make_executable() {
-    print_info "Making statusbar.py executable..."
-    chmod +x "$SCRIPT_PATH"
-    print_success "statusbar.py is now executable"
-}
-
-# Test the installation
-test_installation() {
-    echo -e "\n${BLUE}Testing installation...${NC}"
-    
-    if OUTPUT=$("$SCRIPT_PATH" 2>&1); then
-        print_success "Status bar is working!"
-        echo -e "\nOutput: $OUTPUT"
-    else
-        print_error "Status bar test failed"
-        echo "Error output: $OUTPUT"
-        exit 1
-    fi
-}
-
-# Configure shell aliases
-configure_aliases() {
-    echo -e "\n${BLUE}Configure shell aliases?${NC}"
-    echo "This will add convenient shortcuts to your shell configuration"
-    read -p "Add aliases? (y/n): " -n 1 -r
-    echo
-    
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Skipping alias configuration"
-        return
-    fi
-    
-    # Detect shell
-    SHELL_NAME=$(basename "$SHELL")
-    CONFIG_FILE=""
-    
-    case "$SHELL_NAME" in
-        bash)
-            CONFIG_FILE="$HOME/.bashrc"
-            ;;
-        zsh)
-            CONFIG_FILE="$HOME/.zshrc"
-            ;;
-        fish)
-            CONFIG_FILE="$HOME/.config/fish/config.fish"
-            ;;
-        *)
-            print_warning "Unknown shell: $SHELL_NAME"
-            print_info "Please manually add aliases to your shell configuration"
-            return
-            ;;
+    case "$(uname -m)" in
+        arm64|aarch64) arch="arm64" ;;
+        x86_64|amd64)  arch="x86_64" ;;
+        *)             echo ""; return ;;
     esac
-    
-    # Alias lines to add
-    ALIAS_MARKER="# Claude Status Bar Monitor aliases"
-    ALIAS_LINES="
-$ALIAS_MARKER
-alias claude-status='$SCRIPT_PATH'
-alias cs='$SCRIPT_PATH'
-alias cstatus='$SCRIPT_PATH'
-"
-    
-    # Check if aliases already exist
-    if grep -q "$ALIAS_MARKER" "$CONFIG_FILE" 2>/dev/null; then
-        print_info "Aliases already configured in $CONFIG_FILE"
+    # Published matrix: darwin arm64/x86_64, linux x86_64. linux arm64 → none.
+    if [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then echo ""; return; fi
+    echo "cs-${os}-${arch}.tar.gz"
+}
+
+# ---------------------------------------------------------------------------
+# sha256_of FILE — portable SHA-256 (shasum on macOS, sha256sum on Linux).
+# ---------------------------------------------------------------------------
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
     else
-        echo "$ALIAS_LINES" >> "$CONFIG_FILE"
-        print_success "Aliases added to $CONFIG_FILE"
-        print_info "Run 'source $CONFIG_FILE' to use them in current session"
+        shasum -a 256 "$1" | awk '{print $1}'
     fi
-    
-    echo -e "\n${GREEN}Available commands:${NC}"
-    echo "  claude-status  - Check Claude usage"
-    echo "  cs            - Short alias"
-    echo "  cstatus       - Alternative alias"
 }
 
-# Integration options
-show_integration_options() {
-    echo -e "\n${BLUE}Integration Options${NC}"
-    echo "You can integrate the status bar with:"
-    echo ""
-    echo "1. tmux (add to ~/.tmux.conf):"
-    echo "   set -g status-right '#($SCRIPT_PATH)'"
-    echo "   set -g status-interval 10"
-    echo ""
-    echo "2. Zsh prompt (add to ~/.zshrc):"
-    echo "   claude_usage() { $SCRIPT_PATH }"
-    echo "   RPROMPT='\$(claude_usage)'"
-    echo ""
-    echo "3. i3 status bar (add to i3 config):"
-    echo "   bar {"
-    echo "       status_command while :; do echo \"\$($SCRIPT_PATH)\"; sleep 10; done"
-    echo "   }"
-}
-
-# Main installation flow
 main() {
-    # Check Python
-    check_python
-    
-    # Check and install claude-monitor
-    check_claude_monitor
-    
-    # Make script executable
-    make_executable
-    
-    # Test installation
-    test_installation
-    
-    # Configure aliases
-    configure_aliases
-    
-    # Show integration options
-    show_integration_options
-    
-    echo -e "\n${GREEN}==================================${NC}"
-    echo -e "${GREEN}Installation Complete! 🎉${NC}"
-    echo -e "${GREEN}==================================${NC}"
+    command -v curl >/dev/null 2>&1 || { err "curl is required."; exit 1; }
+
+    local asset
+    asset="$(detect_asset)"
+    [ -n "$asset" ] || fall_back_to_pip
+
+    local base="https://github.com/${REPO}/releases/latest/download"
+    local tmp; tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+
+    say "Downloading $asset from the latest release..."
+    if ! curl -fsSL "$base/$asset" -o "$tmp/$asset"; then
+        warn "Download failed (no release asset yet?)."
+        fall_back_to_pip
+    fi
+
+    # Verify checksum if the .sha256 sidecar is present.
+    if curl -fsSL "$base/$asset.sha256" -o "$tmp/$asset.sha256" 2>/dev/null; then
+        local want got
+        want="$(awk '{print $1}' "$tmp/$asset.sha256")"
+        got="$(sha256_of "$tmp/$asset")"
+        if [ "$want" != "$got" ]; then
+            err "Checksum mismatch! expected $want, got $got. Aborting."
+            exit 1
+        fi
+        ok "✓ Checksum verified"
+    else
+        warn "No .sha256 published for $asset — skipping checksum verification."
+    fi
+
+    say "Extracting..."
+    tar -xzf "$tmp/$asset" -C "$tmp"
+    [ -f "$tmp/cs" ] || { err "Archive did not contain a 'cs' binary."; exit 1; }
+
+    mkdir -p "$INSTALL_DIR"
+    install -m 0755 "$tmp/cs" "$INSTALL_DIR/cs"
+    # Convenience aliases as symlinks so `claude-statusbar` / `cstatus` also work.
+    ln -sf "$INSTALL_DIR/cs" "$INSTALL_DIR/claude-statusbar"
+    ln -sf "$INSTALL_DIR/cs" "$INSTALL_DIR/cstatus"
+    ok "✓ Installed cs → $INSTALL_DIR/cs"
+
+    # Ensure the install dir is on PATH.
+    if ! command -v cs >/dev/null 2>&1 || [ "$(command -v cs)" != "$INSTALL_DIR/cs" ]; then
+        if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+            warn "$INSTALL_DIR is not on your PATH."
+            if ask_yes_no "Append 'export PATH=\"$INSTALL_DIR:\$PATH\"' to ~/.bashrc and ~/.zshrc?"; then
+                for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+                    echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$rc" 2>/dev/null || true
+                done
+                ok "✓ PATH updated (open a new shell, or run: export PATH=\"$INSTALL_DIR:\$PATH\")"
+            else
+                warn "Skipped. Add $INSTALL_DIR to your PATH manually to use 'cs'."
+            fi
+        fi
+    fi
+    export PATH="$INSTALL_DIR:$PATH"
+
+    say "Wiring Claude Code statusLine (cs --setup)..."
+    "$INSTALL_DIR/cs" --setup || warn "cs --setup reported an issue; run it manually if the bar doesn't appear."
+
     echo ""
-    echo "Run '$SCRIPT_PATH' or use configured aliases to check Claude usage"
-    echo "For more information, see: $SCRIPT_DIR/README.md"
+    ok "═══════════════════════════════════════"
+    ok "Install complete — restart Claude Code."
+    ok "═══════════════════════════════════════"
+    echo "  cs doctor    # verify the wiring"
+    echo "  cs preview   # try every style × theme"
+    echo ""
+    echo "Update later:   curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash"
+    echo "Desktop HUD:    pip install 'claude-statusbar[hud]' && cs hud install   (macOS)"
 }
 
-# Run main function
-main
+main "$@"

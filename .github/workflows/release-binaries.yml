@@ -1,0 +1,80 @@
+name: Release binaries
+
+# Builds the standalone `cs` binary for each platform and attaches it to the
+# GitHub Release, so users can `curl … install.sh | bash` with no Python/pip.
+#
+# Fires when a Release is published (the existing per-tag release flow), and can
+# be run manually against an existing tag via the Actions tab.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build + upload assets for (e.g. v3.29.12)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-binaries-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14        # Apple Silicon
+            asset: cs-darwin-arm64.tar.gz
+          - os: macos-13        # Intel
+            asset: cs-darwin-x86_64.tar.gz
+          - os: ubuntu-22.04    # glibc 2.35 — broad compat
+            asset: cs-linux-x86_64.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+
+      - name: Build binary
+        run: pyinstaller packaging/cs.spec --noconfirm
+
+      - name: Smoke-test the binary
+        run: |
+          ./dist/cs --version
+          ./dist/cs styles >/dev/null
+          # Exercise the `-m` self-spawn shim the daemon relies on.
+          ./dist/cs -m claude_statusbar._ip_risk_refresh || true
+
+      - name: Package (tar.gz + sha256)
+        run: |
+          tar -czf "${{ matrix.asset }}" -C dist cs
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          fi
+          ls -lh "${{ matrix.asset }}"*
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || inputs.tag }}
+          files: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.sha256

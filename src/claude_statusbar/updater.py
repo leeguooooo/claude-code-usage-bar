@@ -19,6 +19,18 @@ import importlib.metadata as metadata
 # Distribution name on PyPI (used for local version lookup)
 DIST_NAME = "claude-statusbar"
 PYPI_URL = "https://pypi.org/pypi/claude-statusbar/json"
+# One-liner that re-installs the standalone binary from the latest GitHub Release.
+INSTALL_SH_URL = "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh"
+BINARY_UPGRADE_HINT = f"curl -fsSL {INSTALL_SH_URL} | bash"
+
+
+def _is_frozen() -> bool:
+    """True when running as a PyInstaller standalone binary (no pip/uv around).
+
+    Frozen binaries can't `pip install --upgrade` themselves — `sys.executable`
+    is the binary, not a Python — so the upgrade path re-runs install.sh instead.
+    """
+    return bool(getattr(sys, "frozen", False))
 # The background check writes the latest PyPI version here; the render path
 # reads it (cheap, no network) to show a `↑<newver>` update hint on the bar.
 LATEST_VERSION_CACHE = Path.home() / ".cache" / "claude-statusbar" / "latest_version.json"
@@ -142,6 +154,11 @@ def get_upgrade_command(
     executable: str | Path | None = None,
 ) -> list[str]:
     """Return the most appropriate self-upgrade command for this install."""
+    if _is_frozen():
+        # Standalone binary: re-run the installer, which pulls the latest
+        # release binary for this platform.
+        return ["sh", "-c", BINARY_UPGRADE_HINT]
+
     channel = detect_install_channel(executable)
 
     if channel == "uv":
@@ -180,6 +197,11 @@ def _run_upgrade(cmd) -> bool:
 
 def auto_upgrade() -> bool:
     """Attempt automatic upgrade. Bounded by _UPGRADE_TIMEOUT_S per attempt."""
+    if _is_frozen():
+        # Never auto-run a curl|sh installer behind the user's back. Binary
+        # users still see the `↑<newver>` hint and can re-run install.sh.
+        return False
+
     if _run_upgrade(get_upgrade_command()):
         return True
 
@@ -196,6 +218,18 @@ def auto_upgrade() -> bool:
 def upgrade_current_install() -> Tuple[bool, str]:
     """Upgrade the environment that is actually running this CLI."""
     current = get_current_version()
+
+    if _is_frozen():
+        # Don't silently pipe curl|sh; hand the user the exact command so they
+        # stay in control of the install (and any PATH prompt it may show).
+        latest = get_latest_version()
+        newer = latest and compare_versions(current, latest)
+        headline = (
+            f"Standalone binary v{current}"
+            + (f" — v{latest} available." if newer else " is up to date (per PyPI).")
+        )
+        return False, f"{headline}\nUpdate the binary with:\n  {BINARY_UPGRADE_HINT}"
+
     cmd = get_upgrade_command()
 
     if _run_upgrade(cmd):
@@ -217,6 +251,10 @@ def spawn_background_upgrade_check() -> None:
     On a successful upgrade the on-disk package mtime changes, and the daemon's
     code-drift detection (render_thin._is_fresh) restarts it onto new code.
     """
+    if _is_frozen():
+        # A frozen binary can't pip-upgrade itself; skip the background check
+        # entirely (the `↑<newver>` hint still surfaces new releases).
+        return
     try:
         subprocess.Popen(
             [sys.executable, "-m", "claude_statusbar.updater"],

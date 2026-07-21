@@ -16,18 +16,17 @@ workflow presence (channel, listener, unread) from a local cache.
 
 ## Claude Code (terminal)
 
-**One line — no pip required.** The installer auto-detects `uv` / `pipx` / `pip`,
-and if you have none of them it bootstraps `uv` for you, then wires up the
-status line:
+**One line — no Python, no pip.** Downloads a prebuilt standalone binary for
+your platform (macOS arm64/x86_64, Linux x86_64) and wires up the status line:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash
 ```
 
-<sub>Security-conscious? Download and read it first — the script's header lists
-exactly what it touches (`curl … -o /tmp/cs-install.sh && less /tmp/cs-install.sh`).</sub>
+<sub>Security-conscious? Download and read it first — the header lists exactly
+what it touches. On platforms without a prebuilt binary it falls back to pip.</sub>
 
-Already have pip / uv and prefer to do it by hand:
+Prefer pip / uv, or want the desktop HUD extra? Install the Python package:
 
 ```bash
 pip install claude-statusbar     # or: uv tool install / pipx install
