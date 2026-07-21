@@ -16,6 +16,19 @@ workflow presence (channel, listener, unread) from a local cache.
 
 ## Claude Code (terminal)
 
+**One line — no pip required.** The installer auto-detects `uv` / `pipx` / `pip`,
+and if you have none of them it bootstraps `uv` for you, then wires up the
+status line:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh | bash
+```
+
+<sub>Security-conscious? Download and read it first — the script's header lists
+exactly what it touches (`curl … -o /tmp/cs-install.sh && less /tmp/cs-install.sh`).</sub>
+
+Already have pip / uv and prefer to do it by hand:
+
 ```bash
 pip install claude-statusbar     # or: uv tool install / pipx install
 cs --setup                       # wires the statusLine hook + installs the skill

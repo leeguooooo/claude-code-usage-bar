@@ -1,6 +1,30 @@
 # Install
 
-## Claude Code: PyPI + `cs --setup`
+## Claude Code: one-shot installer (recommended, no pip required)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh | bash
+```
+
+What it does: auto-detects `uv` / `pipx` / `pip` and installs the
+`claude-statusbar` package with whichever you have; **if you have none of them,
+it bootstraps `uv`** (Astral's official installer) so you don't need pip at all.
+Then it writes the `statusLine` block into `~/.claude/settings.json` (backing up
+any existing file first) and verifies the install. No `sudo`; everything stays
+under `$HOME`. Requires Python 3.9+ on PATH.
+
+Security-conscious? Download and read it first — the script's header lists
+exactly what it touches:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh -o /tmp/cs-install.sh
+less /tmp/cs-install.sh    # audit it
+bash /tmp/cs-install.sh
+```
+
+The header of [`web-install.sh`](../web-install.sh) is the full disclosure.
+
+## Claude Code: manual (PyPI + `cs --setup`)
 
 ```bash
 pip install claude-statusbar     # or: uv tool install claude-statusbar
@@ -35,24 +59,6 @@ bridge](agentparty.md) for the full picture.
 ```
 
 Disable it with `cs config set show_party false`.
-
-## Alternative: one-shot installer (audit first, then run)
-
-A bash helper is available if you'd rather not chain `pip install` + `cs --setup` manually. **Please read it before running** — it modifies `~/.claude/settings.json` and (with your explicit `[y/N]` consent) `~/.bashrc` / `~/.zshrc`:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh -o /tmp/cs-install.sh
-less /tmp/cs-install.sh    # audit it
-bash /tmp/cs-install.sh
-```
-
-Or, if you've already audited the script and trust this repo:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh | bash
-```
-
-The header of [`web-install.sh`](../web-install.sh) lists exactly what it touches.
 
 ## Skill-only install (already have `cs`)
 
