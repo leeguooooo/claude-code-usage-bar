@@ -33,6 +33,11 @@ dependencies = []
 full = [
     "claude-monitor>=3.0.0",
 ]
+# Desktop floating HUD (macOS only): `cs hud`. Requires PyObjC.
+hud = [
+    "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'",
+]
 
 [project.urls]
 Homepage = "https://github.com/leeguooooo/claude-code-usage-bar"
