@@ -17,6 +17,11 @@ On the **Claude desktop app** (macOS), `cs hud` adds a floating panel with the
 same official 5h / 7d usage and your active AgentParty channels — see
 [Desktop HUD](#desktop-hud-cs-hud).
 
+<img width="209" height="63" alt="image" src="https://github.com/user-attachments/assets/4bcf4c8d-e919-416a-8356-daa4d5c1a966" />
+<img width="1257" height="539" alt="image" src="https://github.com/user-attachments/assets/fcdea929-5e85-4f1a-982e-ba431d8a80d1" />
+
+
+
 ```
 5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s
 ```
