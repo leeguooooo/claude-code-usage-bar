@@ -6,39 +6,50 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/leeguooooo/claude-code-usage-bar?style=social)](https://github.com/leeguooooo/claude-code-usage-bar/stargazers)
 
-Lightweight status-line monitor for Claude Code, with a local AgentParty bridge
-for Codex workflows. In Claude Code it shows your 5h / 7d rate-limit usage,
-reset timers, current model, context window, prompt-cache freshness, and
-(optionally) session cost. In Codex + AgentParty workflows it can append the
-current AgentParty channel, identity, listener, unread count, and last-message
-preview from a local cache.
-
-On the **Claude desktop app** (macOS), `cs hud` adds a floating panel with the
-same official 5h / 7d usage and your active AgentParty channels — see
-[Desktop HUD](docs/desktop-hud.md).
-
-```
-5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s
-```
-
-> 📖 **Deep dive:** [Is that `cache 4m23s` line actually accurate? — how the prompt-cache countdown is computed](https://blog.leeguoo.com/en/posts/claude-statusbar-cache-countdown/)
-
-![claude-statusbar live demo](docs/images/hero.gif)
+Lightweight usage monitor for Claude Code. It shows your 5h / 7d rate-limit
+usage, reset timers, current model, context window, prompt-cache freshness, and
+(optionally) session cost — inline in Claude Code's status line, **or** in a
+floating HUD on the Claude desktop app. A local AgentParty bridge adds Codex
+workflow presence (channel, listener, unread) from a local cache.
 
 3 styles × 9 themes, configurable in one command. Auto-updates from PyPI.
 
-## Quick start
-
-For Claude Code:
+## Claude Code (terminal)
 
 ```bash
 pip install claude-statusbar     # or: uv tool install / pipx install
 cs --setup                       # wires the statusLine hook + installs the skill
 ```
 
-Restart Claude Code to see the bar. Other install paths (one-shot installer,
-skill-only, plugin marketplace, Codex/AgentParty) are in the
-[install guide](docs/install.md).
+Restart Claude Code and the bar appears at the bottom:
+
+```
+5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s
+```
+
+![claude-statusbar live demo](docs/images/hero.gif)
+
+> 📖 **Deep dive:** [Is that `cache 4m23s` line actually accurate? — how the prompt-cache countdown is computed](https://blog.leeguoo.com/en/posts/claude-statusbar-cache-countdown/)
+
+Other install paths (one-shot installer, skill-only, plugin marketplace,
+Codex/AgentParty) are in the [install guide](docs/install.md).
+
+## Claude desktop app (macOS) — `cs hud`
+
+The desktop app has no status line, so `cs hud` adds an always-on-top floating
+panel with the same **official** 5h / 7d usage (sampled by the desktop app
+itself, not an estimate) and your active AgentParty channels.
+
+```bash
+pip install 'claude-statusbar[hud]'   # adds PyObjC (macOS GUI deps)
+cs hud install                        # launchd: auto-start on login + keep-alive
+```
+
+<img width="209" height="63" alt="collapsed HUD pill" src="https://github.com/user-attachments/assets/4bcf4c8d-e919-416a-8356-daa4d5c1a966" />
+<img width="1257" height="539" alt="expanded HUD panel" src="https://github.com/user-attachments/assets/fcdea929-5e85-4f1a-982e-ba431d8a80d1" />
+
+Collapsed pill → click to expand → drag anywhere; it hides when the desktop app
+isn't open. Full details in the [Desktop HUD guide](docs/desktop-hud.md).
 
 ## What it shows
 
