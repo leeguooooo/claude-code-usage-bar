@@ -13,6 +13,10 @@ reset timers, current model, context window, prompt-cache freshness, and
 current AgentParty channel, identity, listener, unread count, and last-message
 preview from a local cache.
 
+On the **Claude desktop app** (macOS), `cs hud` adds a floating panel with the
+same official 5h / 7d usage and your active AgentParty channels — see
+[Desktop HUD](#desktop-hud-cs-hud).
+
 ```
 5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s
 ```
@@ -30,6 +34,7 @@ Claude Code.
 - [What it shows](#what-it-shows)
 - [Claude Code vs Codex support](#claude-code-vs-codex-support)
 - [Install](#install)
+- [Desktop HUD (`cs hud`)](#desktop-hud-cs-hud)
 - [Styles & themes](#styles--themes)
 - [Configuration](#configuration-file)
 - [Fast mode (daemon)](#fast-mode--for-refreshinterval-1)
@@ -48,37 +53,17 @@ Claude Code.
 
 ## Latest release
 
-**v3.29.12** (2026-07-15) — **AgentParty status is session-correct end to end**: sessions sharing one project now read channel, identity, unread count, message preview, and listener state from their own config-owned cache slot instead of mixing those fields with the workspace's last writer.
+**Unreleased** — **Desktop HUD** (`cs hud`, macOS): a floating panel for the **Claude desktop app** showing official 5h / 7d usage + your active AgentParty channels, with launchd auto-start. See [Desktop HUD](#desktop-hud-cs-hud).
 
-**v3.29.11** (2026-07-11) — **AgentParty identity is session-correct**: two Claude Code sessions in the same project can use different `AGENTPARTY_CONFIG` files without both status bars collapsing to the last writer's agent name. Only config paths from actual shell tool calls count; paths quoted in chat do not override identity.
+**v3.29.12** (2026-07-15) — AgentParty status is session-correct end to end: sessions sharing one project read channel/identity/unread/preview/listener from their own config-owned cache slot, not the workspace's last writer.
 
-**v3.29.6** (2026-07-10) — **support docs cleanup**: the README now states the support boundary explicitly. Claude Code is the full native `statusLine` integration; Codex support is the AgentParty local status bridge and does not include OpenAI quota/session accounting.
+**v3.29.0** (2026-07-09) — AgentParty block redesign (two-line, monochrome, listening-state header) + three daemon-restart fixes.
 
-**v3.29.5** (2026-07-09) — **service daemon and AgentParty session fixes**: `cs daemon stop` and upgrade drift-kill now recognize launchd/systemd-managed daemons, pidfile cleanup no longer deletes a newer daemon owner's pidfile, and the AgentParty block is gated on session transcript evidence so unrelated windows in the same repo do not inherit another agent's channel line.
+**v3.28.0** (2026-07-09) — AgentParty / Codex bridge line (`show_party`): appends `#channel · identity · listener · unread · last message` from the local `~/.agentparty` cache.
 
-**v3.29.0** (2026-07-09) — **AgentParty block redesign + daemon-restart fixes.** The AgentParty line was unreadable (`FAINT` stacked on the dimmest grey) and always claimed `watch down`: the reader looked for `heartbeat_at` while the contract writes `heartbeat_ts`, so every live listener read as dead. Now it renders as two lines with monochrome glyphs that inherit the theme — a header that states the listening state outright, and the last message on its own line marked `●` unread / `○` read and `@` when it mentions you. Also fixes three daemon defects found while chasing "I upgraded but nothing changed": the code-drift tick burned its own 30s spawn debounce and left every session inline-rendering; `_signal_outdated_daemon` could SIGTERM a recycled PID belonging to an unrelated process; and the orphan-`.tmp` sweep + auto-update check were starved by sharing a timer seeded to daemon start (a daemon that restarts on drift never lived the 30 minutes needed to fire either).
+**v3.11.0** (2026-06-02) — rate-limit projections (`→NN%`) blending recent pace, whole-window average, and learned day/night/weekend rhythm.
 
-**v3.28.2** (2026-07-09) — **uv-tool upgrade fix**: `cs upgrade` now detects uv-tool Python symlinks correctly and selects `uv tool install --upgrade claude-statusbar`.
-
-**v3.28.1** (2026-07-09) — **upgrade/version UX fix**: `cs upgrade` upgrades the install channel that is actually running `cs` (`uv tool`, `pipx`, or plain `pip`), and `cs -v`, `cs -V`, `cs -version` all work like `cs --version`.
-
-**v3.28.0** (2026-07-09) — **AgentParty / Codex bridge line** (`show_party`, default on): when the same workspace has AgentParty local status, `cs` appends `🎈 #channel · 🤖/👤 name · 👂watch/serve · unread · last message` under the project line. This is local-only (`~/.agentparty/state/<workspaceId>/statusline.json`), uses the same cwd-scoped workspace id fixtures as AgentParty, and marks stale/down listener state instead of pretending it is live.
-
-**v3.27.0** (2026-07-03) — **IP-risk detection aligned with ip-check**: China-cloud provider detection and ban-risk threshold handling now match the ip-check.leeguoo.com classifier.
-
-**v3.11.0** (2026-06-02) — **rate-limit projections** (`show_projection`, default on): after each `⏰<reset>` timer the bar shows `→NN%`, your expected end-of-window usage. The 5h model blends recent pace, whole-window average, and a local baseline; the 7d model integrates learned coarse rhythm buckets (work hours, non-work hours, night, weekend) so a busy first day is not blindly extrapolated across the whole week. `show_forecast` remains the separate `⚠<eta>` warning chip for imminent cap hits. Plus: `context_window.used_percentage = null` handled gracefully, and the daemon only renders windows active in the last 10s.
-
-**v3.10.0** (2026-06-02) — **live-activity line** (in-progress todo, active tool, completed-tool rollup), **git ahead/behind + session duration/lines** on the project line, **running-subagent** lines, an opt-in **`bar_shimmer`** starfield on the battery bars, and a **self-hosted plugin marketplace**. Plus: auto-update now actually runs in daemon mode (detached, non-blocking), and the cache countdown is per-session-correct. All new segments are opt-in except the todo line.
-
-**v3.6.0** (2026-05-08) — **`cs --setup` now defaults to daemon (fast) mode**: under 1% CPU continuously instead of ~3% inline. Pass `--inline` to opt back. Also: py3.9 compat fixes, GitHub Actions CI, animated hero GIF.
-
-**v3.5.1** — `npx skills add` install path, `show_cache_age` on by default.
-
-**v3.5.0** — consolidated `claude-statusbar` skill: say *"switch theme to nord"* / *"余量颜色改成 #4ec85b"* and Claude Code routes it to the right `cs` command.
-
-**v3.4** — per-segment color management (each metric colors itself by its own severity), classic style finally respects themes, two new themes (`catppuccin-mocha`, `tokyo-night`), per-severity color overrides via `cs config set color_ok|warn|hot`.
-
-**v3.2** — daemon fast-mode (now the default in v3.6.0) for ~5× lower CPU at `refreshInterval=1`.
+**v3.6.0** (2026-05-08) — `cs --setup` defaults to daemon (fast) mode: under 1% CPU instead of ~3% inline.
 
 📋 **Full changelog:** [CHANGELOG.md](CHANGELOG.md) · [GitHub Releases](https://github.com/leeguooooo/claude-code-usage-bar/releases) — every version's changes, also linked from the [PyPI page](https://pypi.org/project/claude-statusbar/).
 
@@ -202,6 +187,38 @@ This installs only the skill globally. It does *not* install `cs` itself — the
 
 `cs --setup` already installs the same skill alongside the slash commands, so most users don't need this path.
 
+## Desktop HUD (`cs hud`)
+
+> **macOS only.** A floating panel that docks to the bottom-right of the **Claude
+> desktop app** — for when you live in the desktop client instead of the terminal.
+
+The desktop app has no `statusLine` hook, so the HUD is a separate always-on-top
+window. It reads the **official** 5h / 7d usage the desktop app itself samples
+every 5 minutes into `plan-usage-history.json` — the same numbers the terminal
+bar shows, not an estimate — plus your active AgentParty channels.
+
+```bash
+pip install 'claude-statusbar[hud]'   # adds PyObjC (macOS GUI deps)
+cs hud install                        # launchd: auto-start on login + keep-alive
+```
+
+- **Collapsed pill** — `5h 26% · 7d 22%` + a status dot. Click to expand.
+- **Expanded panel** — orange 5h / 7d gradient bars with reset countdowns, and a
+  scrollable list of active AgentParty channels (unread count + latest message).
+  Click a channel row to **lock** it as the one shown in the collapsed pill.
+- **Drag** it anywhere — the position is remembered. It hides itself when the
+  Claude desktop app isn't open.
+
+| Command | What it does |
+|---------|--------------|
+| `cs hud install` | Install the launchd agent — auto-start on login + crash-restart |
+| `cs hud start` | Run in the foreground (what the launchd service calls) |
+| `cs hud stop` | Stop the running HUD |
+| `cs hud uninstall` | Remove the launchd agent |
+
+Everything is local: official usage from the desktop app's own cache, AgentParty
+from `~/.agentparty/state/`. No network calls, no credentials read.
+
 ## Styles & themes
 
 The default style (`classic`) stays the same forever. Two alternative styles, plus a palette of seven themes, are opt-in.
@@ -305,33 +322,27 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | Key | Values | What it does |
 |-----|--------|--------------|
 | `style` | `classic` / `capsule` / `hairline` | Layout |
-| `theme` | `graphite` / `twilight` / `linen` / `nord` / `dracula` / `sakura` / `mono` / `catppuccin-mocha` / `tokyo-night` | Colors |
-| `density` | `compact` / `regular` / `cozy` | Padding around segments (capsule + hairline only) |
-| `auto_compact_width` | integer (e.g. `100`) | Force `hairline` when terminal narrower than this. `0` = disabled |
-| `show_weekly`, `show_language` | bool | Hide individual segments |
-| `show_cost` | bool, default `false` | Append `$ X.XX` — the current session's cost as Claude Code reports it. For Pro/Max subscribers this is the **API-equivalent value** of your usage (what it would cost on the API), not money owed; many subscribers use it as a "subscription ROI" gauge. Opt-in because the "session" boundary is what Claude Code reports — not necessarily what you intuitively call one. |
-| `show_balance` | bool, default `true` | In no-quota mode only, show `bal $X.XX` — your relay account balance. A detached helper probes the relay's OpenAI-compatible billing endpoint (`/dashboard/billing/subscription` + `/usage`) with your key, computes `hard_limit − used`, and caches it (5 min; a relay that doesn't support it is remembered as unsupported for 1 h). Default on but **fully auto**: it only appears if the relay actually answers, so subscribers and unsupported relays see nothing. Set `false` to never probe. |
-| `balance_bar` | bool, default `true` | Render the balance (above) as a fuel-gauge battery `bal[████ 52%] $26.00` — fill = remaining proportion, green when full → yellow ≤25% → red ≤10%. Falls back to plain `bal $X` text when the relay reports no usable hard-limit. Set `false` to always use plain text. No effect when `show_balance` is off. |
-| `show_cache_age` | bool, default `true` | Append a `cache 4m23s` countdown to Anthropic's prompt-cache expiry, with the TTL (5min vs 1h) auto-detected from the transcript. Three-level color: green (>1min remaining), yellow (<1min), red `cache COLD` (expired). Cache hits consume ~10× less rate-limit quota — for Pro/Max subscribers, letting it go COLD eats your 5h / 7d windows ~10× faster. `cs --setup` writes `refreshInterval: 1` by default so this segment ticks visibly. Original implementation contributed by [@marcwimmer](https://github.com/marcwimmer) in [#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9). Disable with `cs config set show_cache_age false`. |
-| `cache_ttl_seconds` | int, default `300` | **Deprecated since v3.9.0.** The segment now auto-detects the real TTL (5min vs 1h) from the transcript's `cache_creation` buckets, so this value is no longer consulted. Still accepted (and `cs config set cache_ttl_seconds …` still works) so existing configs don't break. See [How the cache countdown works](#how-the-cache-countdown-works). |
-| `show_project_branch` | bool, default `true` | Append a second line `⤷ <project> ⎇ <branch>●` below the bar. Project name comes from Claude Code's `workspace.repo.name` stdin field (falls back to cwd basename); branch is read from `.git/HEAD` directly. The `●` dirty marker is refreshed by a background helper and cached 5 s — the inline render path never blocks on `git`. Disable with `cs config set show_project_branch false`. |
-| `show_party` | bool, default `true` | Append the local AgentParty/Codex bridge line when `~/.agentparty/state/<workspaceId>/statusline.json` exists for the current workspace. Shows channel, identity kind/name, listener mode, unread count, and last-message preview. Local-only: no AgentParty CLI call, no token read, no network. Disable with `cs config set show_party false`. |
-| `show_ahead_behind` | bool, default `false` | Append a `↑2↓1` commits-ahead/behind-upstream marker after the branch on the identity line. Reuses the same cached `git status --branch` call as the dirty dot, so it adds no extra git spawn. Only takes effect when `show_project_branch` is on (it lives on that line). Arrows show only for nonzero directions; in sync → nothing. |
-| `show_todos` | bool, default `true` | Third "activity" line: the in-progress todo + `done/total`, e.g. `▸ Wire the activity line (1/3)`. Parsed from the newest `TodoWrite` in the transcript (full list, last-write-wins) via the same bounded reverse-tail read as the cache countdown. The clearest "is my long turn making progress?" signal. Disable with `cs config set show_todos false`. |
-| `show_tools` | bool, default `false` | Activity line: the **active tool** (`◐ Edit auth.py` — the newest tool_use with no result yet). MCP names are shortened (`mcp__figma__get_screenshot` → `get_screenshot`). Opt-in. |
-| `show_tool_rollup` | bool, default `false` | Activity line: a frequency rollup of recently-completed tools (`✓ Edit×14 Bash×6 Read×4`). A volume tally rather than a live signal — separate from `show_tools` and off by default. Opt-in. |
-| `bar_shimmer` | bool, default `false` | **Experimental, classic style only.** A faint twinkling starfield in the *empty* part of the 5h/7d battery bars (static high/mid/low dot field + bright `✦`/`✧` stars winking in/out). The fill color is never changed. Capped at the statusLine's ~1Hz refresh, so it's a gentle twinkle, not a smooth animation. Off by default. |
-| `show_projection` | bool, default `true` | Appends an always-visible `→NN%` projection after each 5h/7d reset timer, estimating the percentage expected at reset. The 5h model blends recent pace, whole-window average, and local baseline; the 7d model integrates learned coarse rhythm buckets (work hours, non-work hours, night, weekend) so a busy first day is not blindly extrapolated across the whole week. Disable with `cs config set show_projection false`. |
-| `show_forecast` | bool, default `true` | Controls the separate `⚠~ETA` warning chip. It appears after the projection only when a window is projected to hit 100% before reset and the cap is imminent. Disable with `cs config set show_forecast false`. |
-| `show_agents` | bool, default `false` | One **bottom line per running subagent**, e.g. `◐ explore[haiku] 探索 RsaKeyPairPool 2m15s` (multiple agents → multiple lines). Inline agents finish via their tool_result; background (`run_in_background`) agents finish via the queue-operation that carries their tool-use-id. **Off by default because Claude Code already shows background agents in its own native panel** — enabling this largely duplicates that. |
-| `show_duration` | bool, default `false` | **Identity line:** session wall-clock duration as Claude Code reports it (`⏱ 12m`). Already on stdin — no transcript scan. Shows next to the project (needs `show_project_branch` on). Opt-in. |
-| `show_lines` | bool, default `true` | **Identity line:** session lines added/removed as Claude Code reports it (`+182 -47`, +green/−red). This is Claude Code's own cumulative session tally (every Write/Edit), **not a git diff** — it can exceed the net working-tree change. Needs `show_project_branch` on. On by default; disable with `cs config set show_lines false`. |
-| `show_version` | bool, default `true` | **Identity line:** a faint `· vX.Y.Z` at the very end (darkest grey + dim attribute, so it recedes). When a newer version is on PyPI, an amber `↑<newver>` is appended (`· v3.11.2 ↑3.12.0`) — read from a local cache the background update check writes, so the render path never hits the network. Disable with `cs config set show_version false`. |
-| `show_mode` | bool, default `true` | A dedicated **`⚙` session-mode line**: `⚙ effort:high · think:on · fast:off · style:default`, straight from Claude Code's stdin (effort level / thinking / fast mode / output style). Each field is dropped when absent. Disable with `cs config set show_mode false`. |
-| `mode_gradient` | bool, default `true` | Tint the mode line with a **static gradient keyed to the effort tier** — a soft, **desaturated** cool→purple ladder matching Claude Code's own Faster→Smarter slider (low/auto teal, medium azure, high blue, xhigh indigo, max violet, **ultracode** dusty magenta) — muted so it doesn't shout next to the rest of the bar, while the hue still tells the level. Static, not animated (an external statusLine refreshes at ≤1 Hz, so motion only flickers). `cs config set mode_gradient false` → plain per-tier text colours. |
-| `api_mode` | `auto` (default) / `on` / `off` | **No-quota mode** for third-party relays & cloud backends — see below. `auto` detects from the environment; `on`/`off` force it. Per-shell override: `CS_API_MODE` env var (wins over config). |
+| `theme` | 9 themes (listed above) | Colors |
+| `density` | `compact` / `regular` / `cozy` | Segment padding (capsule + hairline only) |
+| `auto_compact_width` | int | Force `hairline` below this terminal width; `0` = off |
+| `show_cost` | bool, `false` | Append `$ X.XX` session cost (API-equivalent value for subscribers) |
+| `show_balance` / `balance_bar` | bool, `true` | No-quota relay balance as a fuel-gauge bar — auto-hidden if the relay doesn't support it |
+| `show_cache_age` | bool, `true` | `cache 4m23s` prompt-cache countdown (TTL auto-detected 5m/1h) |
+| `show_project_branch` | bool, `true` | Second line: project + branch + `●` dirty dot |
+| `show_ahead_behind` | bool, `false` | `↑2↓1` commits ahead/behind on the branch line |
+| `show_party` | bool, `true` | AgentParty / Codex bridge line (reads local cache only) |
+| `show_todos` | bool, `true` | Activity line: in-progress todo + `done/total` |
+| `show_tools` / `show_tool_rollup` | bool, `false` | Active tool / completed-tool frequency rollup |
+| `show_projection` / `show_forecast` | bool, `true` | `→NN%` projection / `⚠ETA` at-risk warning chip |
+| `show_agents` | bool, `false` | One bottom line per running subagent (Claude Code shows these natively too) |
+| `show_duration` / `show_lines` | bool | Session `⏱` duration / `+/−` lines on the identity line |
+| `show_version` | bool, `true` | Faint `· vX.Y.Z` (+ amber `↑newver` when a newer PyPI release exists) |
+| `show_mode` / `mode_gradient` | bool, `true` | `⚙` session-mode line + effort-tier gradient tint |
+| `show_weekly` / `show_language` | bool | Toggle the 7d bar / language-coach segment |
+| `bar_shimmer` | bool, `false` | Experimental twinkling starfield on bars (classic only) |
+| `api_mode` | `auto` / `on` / `off` | No-quota mode (see below); `CS_API_MODE` env overrides |
 
-Set via `cs config set <key> <value>`. Wipe everything back to defaults with `cs config reset`.
+Full per-key detail is in the [segment table above](#what-it-shows) or `cs config show`. Set with `cs config set <key> <value>`; `cs config reset` restores defaults.
 
 ## No-quota mode (third-party relay / Bedrock / Vertex)
 
@@ -529,44 +540,7 @@ flowchart TD
     style CO fill:#fbeceb,stroke:#e0443d,color:#8f2723
 ```
 
-It's a couple dozen lines and not Claude-Code-specific — `message.usage.cache_creation` is a standard Claude API field, so you can reuse the logic in your own status bar, plugin, or script:
-
-```text
-# prompt-cache countdown. input: path to the current session transcript (JSONL).
-# three things to get right:
-#   1. anchor the most recent assistant entry (not the user message, not file mtime)
-#   2. read the TTL from the cache_creation buckets — don't hard-code it
-#   3. read the file tail only, don't slurp the whole thing
-
-function cacheCountdown(transcriptPath):
-    age = null            # seconds, from the newest assistant entry's timestamp
-    ttl = null            # seconds, from the newest entry that WROTE cache
-
-    # reverse-read the tail, at most 320KB (32KB chunks); grab age + ttl in one pass
-    for entry in reversedJsonlEntries(transcriptPath, maxBytes = 320 * 1024):
-        if entry.type != "assistant": continue
-        if age is null and entry.timestamp:
-            age = now() - parseTimeUTC(entry.timestamp)   # treat naive timestamps as UTC
-        if ttl is null:
-            cc = entry.message.usage.cache_creation
-            if   cc.ephemeral_1h_input_tokens > 0: ttl = 3600
-            elif cc.ephemeral_5m_input_tokens > 0: ttl = 300
-        if age is not null and ttl is not null: break
-
-    if age is null:  return "COLD"     # no assistant entry
-    if ttl is null:  ttl = 300         # no cache-write signal -> conservative fallback
-    if age < 0:      age = 0           # clock skew / future timestamp -> clamp to 0
-
-    remaining = ttl - age
-    if remaining <= 0: return "COLD"
-    return formatCountdown(ceil(remaining))
-
-# always show seconds so the number visibly ticks (proof it's live, not stuck)
-function formatCountdown(s):
-    if s >= 3600: return "{h}h{mm}m{ss}s"   # 1h59m03s
-    if s >= 60:   return "{m}m{ss}s"         # 58m23s / 4m07s
-    return "{s}s"                            # 47s (< 1min)
-```
+The logic is a couple dozen lines and not Claude-Code-specific — `message.usage.cache_creation` is a standard Claude API field, so you can reuse it in your own status bar or script. See [`activity.py`](src/claude_statusbar/activity.py) for the implementation: reverse-tail the transcript (≤ 320 KB), anchor the newest `assistant` entry's timestamp for `age`, read the TTL from its `cache_creation` bucket (1h → 3600, 5m → 300), then `remaining = TTL − age` (COLD when ≤ 0).
 
 **Deep dive** — how accurate it really is, plus the Feb→May 2026 cache-TTL saga (1h → 5m → 1h) with sources: [状态栏那行 cache 4m23s，到底准不准？ (Chinese)](https://blog.misonote.com/zh/posts/claude-statusbar-cache-countdown/)
 

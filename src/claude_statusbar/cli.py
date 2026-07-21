@@ -23,6 +23,7 @@ SUBCOMMANDS = (
     "doctor",
     "daemon",
     "upgrade",
+    "hud",
 )
 
 
@@ -196,6 +197,97 @@ def _run_upgrade_subcommand():
     return 0 if ok else 1
 
 
+HUD_LABEL = "com.leeguoo.claude-statusbar-hud"
+
+
+def _hud_plist_path():
+    from pathlib import Path
+    return Path.home() / "Library/LaunchAgents" / f"{HUD_LABEL}.plist"
+
+
+def _hud_program_args():
+    import shutil
+    cs = shutil.which("cs") or shutil.which("claude-statusbar")
+    return [cs, "hud", "start"] if cs else [sys.executable, "-m", "claude_statusbar.cli", "hud", "start"]
+
+
+def _hud_install():
+    from pathlib import Path
+    import subprocess
+    plist = _hud_plist_path()
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    log = str(Path.home() / ".claude" / "claude-statusbar-hud.log")
+    args = "".join(f"    <string>{a}</string>\n" for a in _hud_program_args())
+    plist.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0">\n<dict>\n'
+        f'  <key>Label</key><string>{HUD_LABEL}</string>\n'
+        f'  <key>ProgramArguments</key>\n  <array>\n{args}  </array>\n'
+        '  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n'
+        f'  <key>StandardErrorPath</key><string>{log}</string>\n'
+        f'  <key>StandardOutPath</key><string>{log}</string>\n'
+        '</dict>\n</plist>\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["launchctl", "unload", str(plist)], capture_output=True)
+    r = subprocess.run(["launchctl", "load", str(plist)], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"launchctl load 失败: {r.stderr.strip()}", file=sys.stderr)
+        return 1
+    print(f"已安装 HUD 常驻服务 (开机自启 + 崩溃重启)\n  plist: {plist}")
+    return 0
+
+
+def _hud_uninstall():
+    import subprocess
+    plist = _hud_plist_path()
+    subprocess.run(["launchctl", "unload", str(plist)], capture_output=True)
+    if plist.exists():
+        plist.unlink()
+    subprocess.run(["pkill", "-f", "claude_statusbar.cli hud"], capture_output=True)
+    print("已卸载 HUD 常驻服务")
+    return 0
+
+
+def _hud_stop():
+    import subprocess
+    subprocess.run(["launchctl", "stop", HUD_LABEL], capture_output=True)
+    subprocess.run(["pkill", "-f", "claude_statusbar.cli hud"], capture_output=True)
+    print("已停止 HUD (若已 install,launchd 会自动重启;彻底移除用 uninstall)")
+    return 0
+
+
+def _run_hud_subcommand(rest):
+    """`cs hud [start|install|uninstall|stop]` — floating desktop HUD (macOS)."""
+    if sys.platform != "darwin":
+        print("cs hud 仅支持 macOS", file=sys.stderr)
+        return 2
+    action = rest[0] if rest else "start"
+    if action == "install":
+        return _hud_install()
+    if action == "uninstall":
+        return _hud_uninstall()
+    if action == "stop":
+        return _hud_stop()
+    if action in ("start", "run"):
+        try:
+            from . import hud
+        except ImportError as e:
+            print(
+                f"缺少 GUI 依赖 (pyobjc): {e}\n"
+                "安装: pip install 'claude-statusbar[hud]'\n"
+                "或:   pip install pyobjc-framework-Cocoa pyobjc-framework-Quartz",
+                file=sys.stderr,
+            )
+            return 1
+        hud.run(rest[1:])
+        return 0
+    print(f"未知 hud 动作: {action} (支持 start/install/uninstall/stop)", file=sys.stderr)
+    return 2
+
+
 def main():
     """Main CLI entry point"""
     # Render fast-path: `cs render` is what Claude Code calls 60×/min when
@@ -210,6 +302,8 @@ def main():
     if len(sys.argv) >= 2 and sys.argv[1] in SUBCOMMANDS:
         sub = sys.argv[1]
         rest = sys.argv[2:]
+        if sub == "hud":
+            return _run_hud_subcommand(rest)
         if sub == "daemon":
             return _run_daemon_subcommand(rest)
         if sub == "upgrade":
