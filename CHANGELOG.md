@@ -9,6 +9,12 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.32.0 — 2026-07-22
+
+**One command installs everything.** The `curl … install.sh | bash` one-liner now sets up *both* surfaces on macOS: the terminal statusLine **and** the floating desktop HUD. The macOS binary bundles the HUD (PyObjC) — no `pip install 'claude-statusbar[hud]'`, no venv, no extra steps. When the installer detects the Claude desktop app it registers the HUD to auto-start on login, and it rides the binary's own auto-update like everything else. Linux binaries are unchanged (the HUD is macOS-only).
+
+---
+
 ## v3.31.0 — 2026-07-22
 
 **Desktop HUD: channel jump + English UI.** Single-click an AgentParty channel in the `cs hud` panel to open a menu — **Open session in Claude** (`claude://resume?session=` deep link to the matching CLI session), **Open in AgentParty** (`agentparty://channel/…` deep link the AgentParty client handles), or **Pin to bar** (keep that channel on the collapsed pill). The HUD UI is now fully English.

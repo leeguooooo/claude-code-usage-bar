@@ -50,9 +50,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install package + PyInstaller
+        # The [hud] extra pulls in PyObjC — its `sys_platform == 'darwin'`
+        # markers mean it installs on the macOS runner (so the spec can bundle
+        # the desktop HUD) and is skipped on Linux automatically.
         run: |
           python -m pip install --upgrade pip
-          pip install . pyinstaller
+          pip install '.[hud]' pyinstaller
 
       - name: Build binary
         run: pyinstaller packaging/cs.spec --noconfirm
@@ -63,6 +66,8 @@ jobs:
           ./dist/cs styles >/dev/null
           # Exercise the `-m` self-spawn shim the daemon relies on.
           ./dist/cs -m claude_statusbar._ip_risk_refresh || true
+          # macOS: verify the HUD (pyobjc) actually got bundled — non-GUI check.
+          if [ "$RUNNER_OS" = "macOS" ]; then ./dist/cs hud check; fi
 
       - name: Package (tar.gz + sha256)
         run: |

@@ -17,6 +17,10 @@
 #   3. Installs it to ~/.local/bin (no sudo; everything under $HOME) and, with
 #      your [y/N] consent, adds ~/.local/bin to PATH in your shell rc.
 #   4. Runs `cs --setup` to wire the Claude Code statusLine + slash commands.
+#   5. On macOS, if the Claude desktop app is installed, also registers the
+#      floating desktop HUD to auto-start on login (`cs hud install`) — the
+#      macOS binary bundles the HUD, so this needs no Python. One command wires
+#      up both the terminal statusLine and the desktop panel.
 #
 #   If no prebuilt binary matches your platform (e.g. Linux arm64, Windows), it
 #   automatically falls back to the pip/uv-based installer (web-install.sh),
@@ -169,6 +173,23 @@ main() {
     say "Wiring Claude Code statusLine (cs --setup)..."
     "$INSTALL_DIR/cs" --setup || warn "cs --setup reported an issue; run it manually if the bar doesn't appear."
 
+    # macOS: if the Claude *desktop* app is installed, wire the floating HUD too,
+    # so a single install covers BOTH surfaces — the terminal statusLine and the
+    # desktop panel — with no extra steps. The macOS binary bundles the HUD, so
+    # this needs no Python/pip and rides the same auto-update.
+    if [ "$(uname -s)" = "Darwin" ] && \
+       { [ -d "/Applications/Claude.app" ] || [ -d "$HOME/Applications/Claude.app" ]; }; then
+        say "Detected the Claude desktop app — installing the floating HUD..."
+        # curl-installed binaries carry no com.apple.quarantine attribute, but
+        # strip it defensively so Gatekeeper never blocks the HUD's window.
+        xattr -dr com.apple.quarantine "$INSTALL_DIR/cs" 2>/dev/null || true
+        if "$INSTALL_DIR/cs" hud install; then
+            ok "✓ Desktop HUD installed — auto-starts on login (drag to place, click to expand)"
+        else
+            warn "HUD setup hit an issue; run 'cs hud install' to retry."
+        fi
+    fi
+
     echo ""
     ok "═══════════════════════════════════════"
     ok "Install complete — restart Claude Code."
@@ -177,7 +198,8 @@ main() {
     echo "  cs preview   # try every style × theme"
     echo ""
     echo "Update later:   curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash"
-    echo "Desktop HUD:    pip install 'claude-statusbar[hud]' && cs hud install   (macOS)"
+    echo "Desktop HUD:    auto-installed above if the Claude desktop app was found (macOS)."
+    echo "                otherwise: cs hud install"
 }
 
 main "$@"

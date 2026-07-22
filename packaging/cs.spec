@@ -13,8 +13,8 @@ The desktop HUD (`cs hud`) is intentionally NOT bundled — it needs PyObjC, whi
 is macOS-GUI-heavy and platform-specific. `cs hud` in the binary prints a hint to
 install the pip extra instead.
 """
-import os
-from PyInstaller.utils.hooks import copy_metadata
+import os, sys
+from PyInstaller.utils.hooks import copy_metadata, collect_submodules
 
 SPEC_DIR = os.path.dirname(os.path.abspath(SPECPATH))
 SRC = os.path.join(SPEC_DIR, "src")
@@ -41,19 +41,39 @@ hiddenimports = [
     "claude_statusbar._ip_risk_refresh",
 ]
 
-# The HUD (PyObjC) and the optional claude-monitor fast path are deliberately
-# excluded — HUD is a pip extra; claude-monitor runs in a separate interpreter.
-excludes = [
-    "claude_statusbar.hud",
-    "claude_statusbar.hud_data",
-    "objc",
-    "Quartz",
-    "AppKit",
-    "Cocoa",
-    "Foundation",
-    "PyObjCTools",
-    "claude_monitor",
-]
+# The HUD (`cs hud`) is macOS-only (PyObjC). On darwin we bundle it INTO the
+# binary so `curl … install.sh | bash` gives the user the floating desktop panel
+# from the same zero-dependency executable — no pip, no venv, and it rides the
+# binary's own auto-update. On Linux there is no PyObjC, so the HUD modules stay
+# excluded there. `claude_monitor` (optional fast path) always runs in a separate
+# interpreter, so it's excluded on every platform.
+if sys.platform == "darwin":
+    # pyobjc loads many framework submodules dynamically; collect_submodules
+    # pulls the ones PyInstaller's static graph would otherwise miss.
+    hiddenimports += [
+        "claude_statusbar.hud",
+        "claude_statusbar.hud_data",
+        "objc",
+        "AppKit",
+        "Quartz",
+        "Foundation",
+        "Cocoa",
+        "PyObjCTools",
+    ]
+    hiddenimports += collect_submodules("PyObjCTools")
+    excludes = ["claude_monitor"]
+else:
+    excludes = [
+        "claude_statusbar.hud",
+        "claude_statusbar.hud_data",
+        "objc",
+        "Quartz",
+        "AppKit",
+        "Cocoa",
+        "Foundation",
+        "PyObjCTools",
+        "claude_monitor",
+    ]
 
 a = Analysis(
     [os.path.join(SPEC_DIR, "packaging", "pyi_entry.py")],

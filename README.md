@@ -50,6 +50,10 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/ma
 <sub>Security-conscious? Download and read it first — the header lists exactly what it touches.
 On platforms without a prebuilt binary it falls back to pip.</sub>
 
+**On macOS this one line does everything** — it wires the terminal statusLine *and*, if the
+Claude desktop app is installed, registers the floating desktop HUD to auto-start on login. The
+macOS binary bundles the HUD, so there's no separate `pip install '[hud]'` and no extra config.
+
 Prefer pip / uv, or want the desktop HUD extra? Install the Python package:
 
 ```bash
@@ -67,6 +71,10 @@ marketplace, Codex/AgentParty bridge) are in the **[install guide](docs/install.
 The desktop app has no status line, so `cs hud` adds an always-on-top floating panel with the
 same **official** 5h / 7d usage (sampled by the desktop app itself, not an estimate) and your
 active AgentParty channels.
+
+**If you used the `curl … install.sh | bash` one-liner above, the HUD is already installed** —
+the macOS binary bundles it and the installer auto-registers it when the desktop app is present.
+The commands below are only for a manual/pip setup:
 
 ```bash
 pip install 'claude-statusbar[hud]'   # adds PyObjC (macOS GUI deps)

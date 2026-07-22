@@ -206,9 +206,16 @@ def _hud_plist_path():
 
 
 def _hud_program_args():
-    import shutil
-    cs = shutil.which("cs") or shutil.which("claude-statusbar")
-    return [cs, "hud", "start"] if cs else [sys.executable, "-m", "claude_statusbar.cli", "hud", "start"]
+    # launchd's plist must point at an executable that can actually import the
+    # HUD (pyobjc). Two cases:
+    #  - standalone binary: it *is* the cs executable and on macOS bundles the
+    #    HUD, so sys.executable is exactly what we want.
+    #  - pip/venv install: prefer *this* interpreter (whoever ran `hud install`
+    #    has pyobjc), not which("cs") — a pyobjc-less binary could sit ahead of
+    #    it on PATH and get picked wrongly.
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "hud", "start"]
+    return [sys.executable, "-m", "claude_statusbar.cli", "hud", "start"]
 
 
 def _hud_install():
@@ -271,6 +278,17 @@ def _run_hud_subcommand(rest):
         return _hud_uninstall()
     if action == "stop":
         return _hud_stop()
+    if action == "check":
+        # Non-GUI import check: verifies pyobjc + the HUD modules are present
+        # (used by CI to smoke-test that the binary bundled the HUD).
+        try:
+            import objc, AppKit, Quartz, Foundation  # noqa: F401
+            from . import hud  # noqa: F401
+        except Exception as e:
+            print(f"HUD import failed: {e}", file=sys.stderr)
+            return 1
+        print("HUD OK (pyobjc bundled)")
+        return 0
     if action in ("start", "run"):
         try:
             from . import hud
