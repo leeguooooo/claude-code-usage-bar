@@ -227,47 +227,6 @@ def snapshot(org: Optional[str] = None, now: Optional[float] = None) -> Usage:
     return u
 
 
-# ---------- dock geometry (pure, unit-tested — no pyobjc) ----------
-def dock_origin(dock, win, sh, pw, ph, shadow, margin):
-    """Cocoa panel origin so a docked chip sits on dock['edge'] of `win`
-    (x, y, cw, ch in CG top-left coords) at dock['along'] (0..1)."""
-    x, y, cw, ch = win
-    cl, cr = x, x + cw
-    cb, ct = sh - (y + ch), sh - y                    # cocoa bottom / top
-    edge, along = dock["edge"], dock.get("along", 0.5)
-    if edge == "r":
-        ox = cr - pw + shadow - margin; oy = (cb + along * (ct - cb)) - ph / 2
-    elif edge == "l":
-        ox = cl - shadow + margin;      oy = (cb + along * (ct - cb)) - ph / 2
-    elif edge == "b":
-        oy = cb - shadow + margin;      ox = (cl + along * (cr - cl)) - pw / 2
-    else:  # "t"
-        oy = ct - ph + shadow - margin; ox = (cl + along * (cr - cl)) - pw / 2
-    return (ox, oy)
-
-
-def detect_dock(hud, windows, sh, snap_dist):
-    """hud = (hl, hb, hr, ht) cocoa content edges. windows = [(num,x,y,cw,ch)].
-    Returns {win, edge, along} for the nearest edge within snap_dist, or None."""
-    hl, hb, hr, ht = hud
-    hcx, hcy = (hl + hr) / 2, (hb + ht) / 2
-    best = None
-    for num, x, y, cw, ch in windows:
-        cl, cr = x, x + cw
-        cb, ct = sh - (y + ch), sh - y
-        cands = []
-        if cb - 40 <= hcy <= ct + 40:                 # alongside vertical edge
-            a = (hcy - cb) / (ct - cb) if ct > cb else 0.5
-            cands += [("r", abs(hr - cr), a), ("l", abs(hl - cl), a)]
-        if cl - 40 <= hcx <= cr + 40:                 # alongside horizontal edge
-            a = (hcx - cl) / (cr - cl) if cr > cl else 0.5
-            cands += [("b", abs(hb - cb), a), ("t", abs(ht - ct), a)]
-        for edge, dist, along in cands:
-            if dist < snap_dist and (best is None or dist < best[1]):
-                best = ({"win": num, "edge": edge, "along": max(0.0, min(1.0, along))}, dist)
-    return best[0] if best else None
-
-
 def fmt_dur(s):
     if s is None:
         return "—"

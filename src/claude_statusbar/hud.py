@@ -61,9 +61,6 @@ EXP_H = LIST_TOP + LIST_H + 8
 COLLAPSED_W = 190
 COLLAPSED_W_LOCKED = 340      # wider pill when a channel is pinned
 COLLAPSED_H = 32
-DOCK_W = 138                  # docked mini-pill width
-DOCK_H = 26                   # docked mini-pill height
-DOCK_MARGIN = 2               # docked chip hugs the window edge (vs MARGIN for pill)
 MARGIN = 14
 SNAP_DIST = 46          # px within which a dragged edge snaps to the Claude window
 DATA_EVERY = 20.0
@@ -72,15 +69,14 @@ DURATION = 0
 HUD_STATE_PATH = Path.home() / ".claude" / "claude-statusbar-hud.json"
 HUD_PID_PATH = Path.home() / ".claude" / "claude-statusbar-hud.pid"
 state = {"expanded": False, "u": HD.Usage(), "channels": [], "locked": None,
-         "rows": [], "scroll": 0.0, "abs": None, "dock": None,
-         "last_data": 0.0}
+         "rows": [], "scroll": 0.0, "abs": None, "snap": "br", "last_data": 0.0}
 
 
 def load_persist():
     try:
         d = json.loads(HUD_STATE_PATH.read_text(encoding="utf-8"))
         state["abs"] = d.get("abs")
-        state["dock"] = d.get("dock")
+        state["snap"] = d.get("snap", "br")
         state["locked"] = d.get("locked"); state["expanded"] = bool(d.get("expanded", False))
     except Exception:
         pass
@@ -89,7 +85,7 @@ def load_persist():
 def save_persist():
     try:
         HUD_STATE_PATH.write_text(json.dumps({
-            "abs": state["abs"], "dock": state["dock"],
+            "abs": state["abs"], "snap": state["snap"],
             "locked": state["locked"], "expanded": state["expanded"]}), encoding="utf-8")
     except Exception:
         pass
@@ -206,31 +202,9 @@ def build_content(card):
     state["rows"] = []
     u = state["u"]
 
-    if state["expanded"]:
-        _build_expanded(card, u); return
-    if state.get("dock"):
-        _build_docked(card, u); return
-    _build_collapsed(card, u)
-
-
-def _build_docked(card, u):
-    fh = "–" if u.fh is None else f"{u.fh}"
-    sd = "–" if u.sd is None else f"{u.sd}"
-    s = NSMutableAttributedString.alloc().initWithString_(f"5h {fh}%   ·   7d {sd}%")
-    full = s.string()
-    def paint(sub, color, font):
-        r = full.rangeOfString_(sub)
-        if r.length:
-            s.addAttribute_value_range_(NSForegroundColorAttributeName, color, r)
-            s.addAttribute_value_range_(NSFontAttributeName, font, r)
-    f_lbl = NSFont.systemFontOfSize_weight_(11, NSFontWeightSemibold)
-    f_pct = NSFont.monospacedDigitSystemFontOfSize_weight_(11.5, NSFontWeightBold)
-    s.addAttribute_value_range_(NSFontAttributeName, f_lbl, (0, len(full)))
-    paint("5h", GREY, f_lbl); paint("7d", GREY, f_lbl); paint("·", _c("#c9c5b8"), f_lbl)
-    if u.fh is not None: paint(f"{fh}%", GREEN, f_pct)
-    if u.sd is not None: paint(f"{sd}%", GREEN, f_pct)
-    lab = _lbl(card, NSMakeRect(12, 4, DOCK_W - 24, 17), 11, NSFontWeightSemibold, GREY, "")
-    lab.setAttributedStringValue_(s)
+    if not state["expanded"]:
+        _build_collapsed(card, u); return
+    _build_expanded(card, u)
 
 
 def _build_collapsed(card, u):
@@ -350,13 +324,11 @@ class HUDView(objc.lookUpClass("NSView")):
         loc = NSEvent.mouseLocation()
         dx, dy = loc.x - self._down.x, loc.y - self._down.y
         if abs(dx) + abs(dy) > 3: self._moved = True
-        if state.get("dock"):                         # popping off an edge -> become a pill
-            state["dock"] = None
-            self.ctrl.relayout()                      # resize DOCK->pill before moving it
         win = self.window()
         f = win.frame()
         np = NSMakePoint(f.origin.x + dx, f.origin.y + dy)
         win.setFrameOrigin_(np)
+        state["snap"] = None                          # dragging -> detach from edge
         # store the BOTTOM-RIGHT corner so expand/collapse (different widths)
         # stay right-aligned instead of drifting
         state["abs"] = [float(np.x + f.size.width), float(np.y)]
@@ -368,20 +340,31 @@ class HUDView(objc.lookUpClass("NSView")):
         self.ctrl.relayout()
 
     @objc.python_method
-    def _detect_dock(self):
-        f = self.window().frame()
-        hud = (f.origin.x + SH, f.origin.y + SH,                 # cocoa content edges
-               f.origin.x + f.size.width - SH, f.origin.y + f.size.height - SH)
+    def _detect_snap(self):
+        b = claude_bounds()
+        if not b:
+            return None
+        _, x, y, cw, ch = b
         sh = NSScreen.screens()[0].frame().size.height
-        return HD.detect_dock(hud, claude_windows(), sh, SNAP_DIST)
+        cl, cr = x, x + cw
+        cb, ct = sh - (y + ch), sh - y
+        f = self.window().frame()
+        hl, hb = f.origin.x + SH, f.origin.y + SH               # content edges
+        hr, ht = f.origin.x + f.size.width - SH, f.origin.y + f.size.height - SH
+        near_r = abs(hr - cr) < SNAP_DIST
+        near_l = abs(hl - cl) < SNAP_DIST
+        near_b = abs(hb - cb) < SNAP_DIST
+        near_t = abs(ht - ct) < SNAP_DIST
+        v = "b" if near_b else ("t" if near_t else "")
+        h = "r" if near_r else ("l" if near_l else "")
+        return (v + h) if (v and h) else None
 
     def mouseUp_(self, ev):
         if self._moved:
-            dock = self._detect_dock()
-            state["dock"] = dock
-            if dock:                                            # snapped to a window edge
-                state["abs"] = None
-            self.ctrl.relayout()
+            snap = self._detect_snap()
+            if snap:
+                state["snap"] = snap; state["abs"] = None
+                self.ctrl.relayout()                            # jump onto the edge
             self._down = None; save_persist(); return
         if state["expanded"]:
             loc = ev.locationInWindow()
@@ -476,8 +459,6 @@ class Ctrl(objc.lookUpClass("NSObject")):
     def _content_size(self):
         if state["expanded"]:
             return (EXP_W, EXP_H)
-        if state.get("dock"):
-            return (DOCK_W, DOCK_H)
         w = COLLAPSED_W_LOCKED if (state["locked"] and _pick_collapsed_channel()) else COLLAPSED_W
         return (w, COLLAPSED_H)
 
@@ -487,14 +468,18 @@ class Ctrl(objc.lookUpClass("NSObject")):
 
     def _origin(self):
         pw, ph = self._panel_size()
-        dock = state.get("dock")
-        if dock:                                      # docked to a specific window's edge
-            o = _dock_origin(dock, pw, ph)
-            if o:
-                return NSMakePoint(o[0], o[1])
+        snap = state.get("snap")
+        b = claude_bounds()
+        if snap and b:                                # snapped to a Claude-window corner
+            _, x, y, cw, ch = b
+            sh = NSScreen.screens()[0].frame().size.height
+            cl, cr = x, x + cw
+            cb, ct = sh - (y + ch), sh - y            # cocoa bottom / top of the window
+            ox = (cr - pw + SH - MARGIN) if "r" in snap else (cl - SH + MARGIN)
+            oy = (cb - SH + MARGIN) if "b" in snap else (ct - ph + SH - MARGIN)
+            return NSMakePoint(ox, oy)
         if state.get("abs"):                          # free-placed (bottom-right anchor)
             return NSMakePoint(state["abs"][0] - pw, state["abs"][1])
-        b = claude_bounds()
         if b:                                         # default: bottom-right of window
             _, x, y, cw, ch = b
             sh = NSScreen.screens()[0].frame().size.height
@@ -512,7 +497,7 @@ class Ctrl(objc.lookUpClass("NSObject")):
         cw, ch = self._content_size()
         pw, ph = self._panel_size()
         fr = self.panel.frame()
-        if (not self._placed) or state.get("dock"):    # docked/first: recompute from edge
+        if (not self._placed) or state.get("snap"):   # snapped/first: align to corner
             o = self._origin(); nx, ny = o.x, o.y; self._placed = True
         else:                                # free: keep bottom-right corner fixed on resize
             nx = (fr.origin.x + fr.size.width) - pw
@@ -539,7 +524,7 @@ class Ctrl(objc.lookUpClass("NSObject")):
         if sig != self._sig:
             self._sig = sig
             self.relayout()
-        elif state.get("dock"):                       # follow the docked window's edge
+        elif state.get("snap"):                       # follow the Claude window edge
             o = self._origin(); cur = self.panel.frame().origin
             if abs(cur.x - o.x) > 0.5 or abs(cur.y - o.y) > 0.5:
                 self.panel.setFrameOrigin_(o)
@@ -548,42 +533,16 @@ class Ctrl(objc.lookUpClass("NSObject")):
         # edges and caused jitter.
 
 
-def claude_windows():
-    """All on-screen Claude content windows as (number, x, y, w, h)."""
+def claude_bounds():
     opts = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
-    out = []
+    best = None
     for w in Quartz.CGWindowListCopyWindowInfo(opts, Quartz.kCGNullWindowID):
         if "Claude" not in (w.get("kCGWindowOwnerName") or "") or w.get("kCGWindowLayer") != 0:
             continue
-        b = w.get("kCGWindowBounds")
-        if b["Width"] * b["Height"] < 100000:        # skip title bars / tiny helpers
-            continue
-        out.append((w.get("kCGWindowNumber"), b["X"], b["Y"], b["Width"], b["Height"]))
-    return out
-
-
-def claude_bounds():
-    ws = claude_windows()
-    if not ws:
-        return None
-    n, x, y, w, h = max(ws, key=lambda t: t[3] * t[4])
-    return (w * h, x, y, w, h)                        # legacy shape: (area, x, y, w, h)
-
-
-def _win_by_number(num):
-    for n, x, y, w, h in claude_windows():
-        if n == num:
-            return (x, y, w, h)
-    return None
-
-
-def _dock_origin(dock, pw, ph):
-    """Panel origin (cocoa) for the docked chip. None if the window is gone."""
-    wb = _win_by_number(dock["win"])
-    if not wb:
-        return None
-    sh = NSScreen.screens()[0].frame().size.height
-    return HD.dock_origin(dock, wb, sh, pw, ph, SH, DOCK_MARGIN)
+        b = w.get("kCGWindowBounds"); area = b["Width"] * b["Height"]
+        if best is None or area > best[0]:
+            best = (area, b["X"], b["Y"], b["Width"], b["Height"])
+    return best
 
 
 def _acquire_single_instance():
