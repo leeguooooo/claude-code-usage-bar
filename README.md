@@ -41,7 +41,7 @@ got left, and when does it reset?"*
 ### Claude Code (terminal)
 
 **One line — no Python, no pip.** Downloads a prebuilt standalone binary for your platform
-(macOS arm64/x86_64, Linux x86_64) and wires up the status line:
+(macOS Apple Silicon, Linux x86_64) and wires up the status line:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash

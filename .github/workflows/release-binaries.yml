@@ -32,10 +32,13 @@ jobs:
         include:
           - os: macos-14        # Apple Silicon
             asset: cs-darwin-arm64.tar.gz
-          - os: macos-13        # Intel
-            asset: cs-darwin-x86_64.tar.gz
           - os: ubuntu-22.04    # glibc 2.35 — broad compat
             asset: cs-linux-x86_64.tar.gz
+        # Intel macOS (macos-13) is intentionally omitted: GitHub-hosted Intel
+        # runners can queue for hours or never get assigned on this account.
+        # Intel-Mac users fall through install.sh to the pip installer, which
+        # works fine. Re-add `{os: macos-13, asset: cs-darwin-x86_64.tar.gz}`
+        # here if a reliable Intel runner becomes available.
 
     steps:
       - uses: actions/checkout@v4

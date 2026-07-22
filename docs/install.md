@@ -15,9 +15,9 @@ installs it to `~/.local/bin` (no `sudo`; everything under `$HOME`), and runs
 `cs --setup` to wire the statusLine + slash commands. The binary is a single
 self-contained executable — **no Python, no pip, no dependencies**.
 
-Prebuilt targets: **macOS arm64 / x86_64, Linux x86_64**. On any other platform
-(Linux arm64, Windows) the script automatically falls back to the pip installer
-below.
+Prebuilt targets: **macOS Apple Silicon (arm64), Linux x86_64**. On any other
+platform (Intel Mac, Linux arm64, Windows) the script automatically falls back
+to the pip installer below.
 
 Security-conscious? Download and read it first:
 

@@ -89,9 +89,12 @@ detect_asset() {
         x86_64|amd64)  arch="x86_64" ;;
         *)             echo ""; return ;;
     esac
-    # Published matrix: darwin arm64/x86_64, linux x86_64. linux arm64 → none.
-    if [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then echo ""; return; fi
-    echo "cs-${os}-${arch}.tar.gz"
+    # Published matrix: darwin arm64, linux x86_64. Everything else (Intel mac,
+    # linux arm64, Windows) has no prebuilt binary → fall back to pip.
+    case "$os-$arch" in
+        darwin-arm64|linux-x86_64) echo "cs-${os}-${arch}.tar.gz" ;;
+        *)                         echo "" ;;
+    esac
 }
 
 # ---------------------------------------------------------------------------
