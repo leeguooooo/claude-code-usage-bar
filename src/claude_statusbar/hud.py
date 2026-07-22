@@ -61,7 +61,8 @@ EXP_H = LIST_TOP + LIST_H + 8
 COLLAPSED_W = 190
 COLLAPSED_W_LOCKED = 340      # wider pill when a channel is pinned
 COLLAPSED_H = 32
-DOCK_D = 52                   # docked chip diameter
+DOCK_W = 138                  # docked mini-pill width
+DOCK_H = 26                   # docked mini-pill height
 DOCK_MARGIN = 2               # docked chip hugs the window edge (vs MARGIN for pill)
 MARGIN = 14
 SNAP_DIST = 46          # px within which a dragged edge snaps to the Claude window
@@ -213,12 +214,23 @@ def build_content(card):
 
 
 def _build_docked(card, u):
-    fh = "–" if u.fh is None else f"{u.fh}%"
-    sd = "–" if u.sd is None else f"{u.sd}%"
-    _lbl(card, NSMakeRect(0, DOCK_D - 24, DOCK_D, 12), 9, NSFontWeightSemibold, GREY, "5h", center=True)
-    _lbl(card, NSMakeRect(0, DOCK_D - 34, DOCK_D, 13), 11, NSFontWeightBold, GREEN, fh, center=True)
-    _lbl(card, NSMakeRect(0, 12, DOCK_D, 12), 9, NSFontWeightSemibold, GREY, "7d", center=True)
-    _lbl(card, NSMakeRect(0, 2, DOCK_D, 13), 11, NSFontWeightBold, GREEN, sd, center=True)
+    fh = "–" if u.fh is None else f"{u.fh}"
+    sd = "–" if u.sd is None else f"{u.sd}"
+    s = NSMutableAttributedString.alloc().initWithString_(f"5h {fh}%   ·   7d {sd}%")
+    full = s.string()
+    def paint(sub, color, font):
+        r = full.rangeOfString_(sub)
+        if r.length:
+            s.addAttribute_value_range_(NSForegroundColorAttributeName, color, r)
+            s.addAttribute_value_range_(NSFontAttributeName, font, r)
+    f_lbl = NSFont.systemFontOfSize_weight_(11, NSFontWeightSemibold)
+    f_pct = NSFont.monospacedDigitSystemFontOfSize_weight_(11.5, NSFontWeightBold)
+    s.addAttribute_value_range_(NSFontAttributeName, f_lbl, (0, len(full)))
+    paint("5h", GREY, f_lbl); paint("7d", GREY, f_lbl); paint("·", _c("#c9c5b8"), f_lbl)
+    if u.fh is not None: paint(f"{fh}%", GREEN, f_pct)
+    if u.sd is not None: paint(f"{sd}%", GREEN, f_pct)
+    lab = _lbl(card, NSMakeRect(12, 4, DOCK_W - 24, 17), 11, NSFontWeightSemibold, GREY, "")
+    lab.setAttributedStringValue_(s)
 
 
 def _build_collapsed(card, u):
@@ -465,7 +477,7 @@ class Ctrl(objc.lookUpClass("NSObject")):
         if state["expanded"]:
             return (EXP_W, EXP_H)
         if state.get("dock"):
-            return (DOCK_D, DOCK_D)
+            return (DOCK_W, DOCK_H)
         w = COLLAPSED_W_LOCKED if (state["locked"] and _pick_collapsed_channel()) else COLLAPSED_W
         return (w, COLLAPSED_H)
 
