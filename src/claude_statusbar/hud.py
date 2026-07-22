@@ -61,7 +61,8 @@ EXP_H = LIST_TOP + LIST_H + 8
 COLLAPSED_W = 190
 COLLAPSED_W_LOCKED = 340      # wider pill when a channel is pinned
 COLLAPSED_H = 32
-DOCK_D = 48                   # docked half-circle diameter
+DOCK_D = 52                   # docked chip diameter
+DOCK_MARGIN = 2               # docked chip hugs the window edge (vs MARGIN for pill)
 MARGIN = 14
 SNAP_DIST = 46          # px within which a dragged edge snaps to the Claude window
 DATA_EVERY = 20.0
@@ -212,10 +213,12 @@ def build_content(card):
 
 
 def _build_docked(card, u):
-    fh = "–" if u.fh is None else f"{u.fh}"
-    d = GoldDot.alloc().initWithFrame_(NSMakeRect(DOCK_D / 2 - 6, DOCK_D - 17, 12, 12))
-    d.setWantsLayer_(True); card.addSubview_(d)
-    _lbl(card, NSMakeRect(0, 8, DOCK_D, 16), 12.5, NSFontWeightBold, INK, f"{fh}%", center=True)
+    fh = "–" if u.fh is None else f"{u.fh}%"
+    sd = "–" if u.sd is None else f"{u.sd}%"
+    _lbl(card, NSMakeRect(0, DOCK_D - 24, DOCK_D, 12), 9, NSFontWeightSemibold, GREY, "5h", center=True)
+    _lbl(card, NSMakeRect(0, DOCK_D - 34, DOCK_D, 13), 11, NSFontWeightBold, GREEN, fh, center=True)
+    _lbl(card, NSMakeRect(0, 12, DOCK_D, 12), 9, NSFontWeightSemibold, GREY, "7d", center=True)
+    _lbl(card, NSMakeRect(0, 2, DOCK_D, 13), 11, NSFontWeightBold, GREEN, sd, center=True)
 
 
 def _build_collapsed(card, u):
@@ -335,11 +338,13 @@ class HUDView(objc.lookUpClass("NSView")):
         loc = NSEvent.mouseLocation()
         dx, dy = loc.x - self._down.x, loc.y - self._down.y
         if abs(dx) + abs(dy) > 3: self._moved = True
+        if state.get("dock"):                         # popping off an edge -> become a pill
+            state["dock"] = None
+            self.ctrl.relayout()                      # resize DOCK->pill before moving it
         win = self.window()
         f = win.frame()
         np = NSMakePoint(f.origin.x + dx, f.origin.y + dy)
         win.setFrameOrigin_(np)
-        state["dock"] = None                          # dragging -> detach from edge
         # store the BOTTOM-RIGHT corner so expand/collapse (different widths)
         # stay right-aligned instead of drifting
         state["abs"] = [float(np.x + f.size.width), float(np.y)]
@@ -566,7 +571,7 @@ def _dock_origin(dock, pw, ph):
     if not wb:
         return None
     sh = NSScreen.screens()[0].frame().size.height
-    return HD.dock_origin(dock, wb, sh, pw, ph, SH, MARGIN)
+    return HD.dock_origin(dock, wb, sh, pw, ph, SH, DOCK_MARGIN)
 
 
 def _acquire_single_instance():
