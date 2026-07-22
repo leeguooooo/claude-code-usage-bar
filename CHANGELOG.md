@@ -9,6 +9,37 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.30.0 — 2026-07-22
+
+### Zero-dependency standalone binary — install with no Python or pip
+
+`claude-statusbar` now ships as a self-contained `cs` binary attached to each
+GitHub Release, so people without Python can install in one line:
+
+```
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash
+```
+
+The installer detects the platform (macOS arm64/x86_64, Linux x86_64), verifies
+a SHA-256 checksum, drops the binary in `~/.local/bin`, and runs `cs --setup`.
+Platforms without a prebuilt binary fall back to the pip installer. The pip /
+uv / pipx package is still fully supported and remains required for the desktop
+HUD (`cs hud`), which needs PyObjC.
+
+Under the hood the frozen binary emulates `python -m <module>` for its own
+background self-spawns (daemon, git / balance / IP-risk refresh), so daemon
+fast-mode behaves identically to a pip install. The updater is frozen-aware: a
+binary can't `pip`-upgrade itself, so `cs upgrade` points at the installer
+instead, and the background auto-update check is skipped.
+
+### Documentation
+
+The README was reorganized into a concise landing page with a Features overview
+and per-topic guides under `docs/`, and a Simplified Chinese translation
+(`README.zh-CN.md`) was added.
+
+---
+
 ## v3.29.12 — 2026-07-15
 
 ### AgentParty sessions now read their complete matching status slot
