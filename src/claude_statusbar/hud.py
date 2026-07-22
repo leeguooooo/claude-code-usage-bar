@@ -5,7 +5,7 @@ Draggable, click-to-expand/minimize, anchored bottom-right of the Claude window.
 5h/7d official usage (plan-usage-history) + scrollable AgentParty channels.
 Visual spec mirrors the Claude Usage Panel design (warm #faf9f5 card, orange
 gradient bars, colored status dots)."""
-import sys, os, time, json
+import sys, os, time, json, subprocess, shutil
 from pathlib import Path
 import objc
 import Quartz
@@ -21,6 +21,7 @@ from AppKit import (
     NSFontWeightSemibold, NSFontWeightBold, NSFontWeightRegular,
     NSLineBreakByTruncatingTail, NSTextAlignmentRight, NSTextAlignmentCenter,
     NSMutableAttributedString, NSForegroundColorAttributeName, NSFontAttributeName,
+    NSMenu, NSMenuItem,
 )
 from Foundation import NSTimer
 
@@ -58,21 +59,24 @@ AGENT_ROW_H = 46
 LIST_H = 172       # scrollable area height (≈3.7 rows)
 EXP_H = LIST_TOP + LIST_H + 8
 COLLAPSED_W = 190
+COLLAPSED_W_LOCKED = 340      # wider pill when a channel is pinned
 COLLAPSED_H = 32
 MARGIN = 14
+SNAP_DIST = 46          # px within which a dragged edge snaps to the Claude window
 DATA_EVERY = 20.0
 DURATION = 0
 
 HUD_STATE_PATH = Path.home() / ".claude" / "claude-statusbar-hud.json"
 HUD_PID_PATH = Path.home() / ".claude" / "claude-statusbar-hud.pid"
 state = {"expanded": False, "u": HD.Usage(), "channels": [], "locked": None,
-         "rows": [], "scroll": 0.0, "abs": None, "last_data": 0.0}
+         "rows": [], "scroll": 0.0, "abs": None, "snap": "br", "last_data": 0.0}
 
 
 def load_persist():
     try:
         d = json.loads(HUD_STATE_PATH.read_text(encoding="utf-8"))
         state["abs"] = d.get("abs")
+        state["snap"] = d.get("snap", "br")
         state["locked"] = d.get("locked"); state["expanded"] = bool(d.get("expanded", False))
     except Exception:
         pass
@@ -81,7 +85,7 @@ def load_persist():
 def save_persist():
     try:
         HUD_STATE_PATH.write_text(json.dumps({
-            "abs": state["abs"],
+            "abs": state["abs"], "snap": state["snap"],
             "locked": state["locked"], "expanded": state["expanded"]}), encoding="utf-8")
     except Exception:
         pass
@@ -204,11 +208,16 @@ def build_content(card):
 
 
 def _build_collapsed(card, u):
-    w = COLLAPSED_W
+    c = _pick_collapsed_channel() if state["locked"] else None
+    w = COLLAPSED_W_LOCKED if c else COLLAPSED_W
     fh = "–" if u.fh is None else f"{u.fh}"
     sd = "–" if u.sd is None else f"{u.sd}"
-    # "5h 26% · 7d 17%"   + gold dot
-    s = NSMutableAttributedString.alloc().initWithString_(f"5h {fh}%    ·    7d {sd}%")
+    base = f"5h {fh}%    ·    7d {sd}%"
+    if c:
+        icon = "🟢" if c["age_s"] < 300 else ("🟡" if c["age_s"] < 1800 else "⚪")
+        unread = f"  {c['unread']}" if c["unread"] else ""
+        base += f"    {icon} {c['channel']}{unread}"
+    s = NSMutableAttributedString.alloc().initWithString_(base)
     full = s.string()
     def paint(sub, color, font):
         r = full.rangeOfString_(sub)
@@ -222,10 +231,12 @@ def _build_collapsed(card, u):
     paint("·", _c("#c9c5b8"), f_lbl)
     if u.fh is not None: paint(f"{fh}%", GREEN, f_pct)
     if u.sd is not None: paint(f"{sd}%", GREEN, f_pct)
-    lab = _lbl(card, NSMakeRect(14, 7, w - 44, 18), 12.5, NSFontWeightSemibold, GREY, "")
+    if c: paint(c["channel"], INK, f_lbl)
+    lab = _lbl(card, NSMakeRect(14, 7, w - 28, 18), 12.5, NSFontWeightSemibold, GREY, "")
     lab.setAttributedStringValue_(s)
-    d = GoldDot.alloc().initWithFrame_(NSMakeRect(w - 26, 9, 14, 14))
-    d.setWantsLayer_(True); card.addSubview_(d)
+    if not c:
+        d = GoldDot.alloc().initWithFrame_(NSMakeRect(w - 26, 9, 14, 14))
+        d.setWantsLayer_(True); card.addSubview_(d)
 
 
 def _build_expanded(card, u):
@@ -233,7 +244,7 @@ def _build_expanded(card, u):
     # ---- header ----
     logo = _round_view(card, NSMakeRect(PAD, 14, 15, 15), ORANGE, 4)
     _lbl(logo, NSMakeRect(0, 0, 15, 15), 9.5, NSFontWeightBold, BG, "C", center=True)
-    _lbl(card, NSMakeRect(PAD + 22, 14, 200, 15), 11, NSFontWeightSemibold, INK_Hdr, "CLAUDE 用量")
+    _lbl(card, NSMakeRect(PAD + 22, 14, 200, 15), 11, NSFontWeightSemibold, INK_Hdr, "CLAUDE")
     # minimize button (visual)
     mb = _round_view(card, NSMakeRect(w - PAD - 20, 12, 20, 20), _c("#3d3929", 0.0), 6)
     _round_view(mb, NSMakeRect(5.5, 9.2, 9, 1.6), GREY2, 0.8)
@@ -257,7 +268,7 @@ def _build_expanded(card, u):
     # ---- scrollable list ----
     chs = state["channels"]
     if not chs:
-        _lbl(card, NSMakeRect(PAD, LIST_TOP + 6, w - 2 * PAD, 15), 12, NSFontWeightRegular, GREY2, "无活跃 channel")
+        _lbl(card, NSMakeRect(PAD, LIST_TOP + 6, w - 2 * PAD, 15), 12, NSFontWeightRegular, GREY2, "No active channels")
         return
     state["scroll"] = max(0.0, min(state["scroll"], _max_scroll()))
     clip = Flipped.alloc().initWithFrame_(NSMakeRect(0, LIST_TOP, w, LIST_H))
@@ -314,10 +325,13 @@ class HUDView(objc.lookUpClass("NSView")):
         dx, dy = loc.x - self._down.x, loc.y - self._down.y
         if abs(dx) + abs(dy) > 3: self._moved = True
         win = self.window()
-        o = win.frame().origin
-        np = NSMakePoint(o.x + dx, o.y + dy)
+        f = win.frame()
+        np = NSMakePoint(f.origin.x + dx, f.origin.y + dy)
         win.setFrameOrigin_(np)
-        state["abs"] = [float(np.x), float(np.y)]     # lock to absolute screen pos
+        state["snap"] = None                          # dragging -> detach from edge
+        # store the BOTTOM-RIGHT corner so expand/collapse (different widths)
+        # stay right-aligned instead of drifting
+        state["abs"] = [float(np.x + f.size.width), float(np.y)]
         self._down = loc
 
     def scrollWheel_(self, ev):
@@ -325,8 +339,32 @@ class HUDView(objc.lookUpClass("NSView")):
         state["scroll"] = max(0.0, min(_max_scroll(), state["scroll"] - ev.deltaY() * 6))
         self.ctrl.relayout()
 
+    @objc.python_method
+    def _detect_snap(self):
+        b = claude_bounds()
+        if not b:
+            return None
+        _, x, y, cw, ch = b
+        sh = NSScreen.screens()[0].frame().size.height
+        cl, cr = x, x + cw
+        cb, ct = sh - (y + ch), sh - y
+        f = self.window().frame()
+        hl, hb = f.origin.x + SH, f.origin.y + SH               # content edges
+        hr, ht = f.origin.x + f.size.width - SH, f.origin.y + f.size.height - SH
+        near_r = abs(hr - cr) < SNAP_DIST
+        near_l = abs(hl - cl) < SNAP_DIST
+        near_b = abs(hb - cb) < SNAP_DIST
+        near_t = abs(ht - ct) < SNAP_DIST
+        v = "b" if near_b else ("t" if near_t else "")
+        h = "r" if near_r else ("l" if near_l else "")
+        return (v + h) if (v and h) else None
+
     def mouseUp_(self, ev):
         if self._moved:
+            snap = self._detect_snap()
+            if snap:
+                state["snap"] = snap; state["abs"] = None
+                self.ctrl.relayout()                            # jump onto the edge
             self._down = None; save_persist(); return
         if state["expanded"]:
             loc = ev.locationInWindow()
@@ -336,13 +374,77 @@ class HUDView(objc.lookUpClass("NSView")):
             if LIST_TOP <= fy <= LIST_TOP + LIST_H:
                 idx = int((fy - LIST_TOP + state["scroll"]) / AGENT_ROW_H)
                 if 0 <= idx < len(state["rows"]):
-                    key = state["rows"][idx]
-                    state["locked"] = None if state["locked"] == key else key
-                    self.ctrl.relayout(); self._down = None; save_persist(); return
+                    self._show_channel_menu(ev, state["rows"][idx])
+                    self._down = None; return
             state["expanded"] = False
         else:
             state["expanded"] = True
         self.ctrl.relayout(); self._down = None; save_persist()
+
+    # ---- right-click a channel: jump to its session / AgentParty ----
+    @objc.python_method
+    def _channel_key_at(self, ev):
+        if not state["expanded"]:
+            return None
+        loc = ev.locationInWindow(); h = self.frame().size.height
+        fy = (h - loc.y) - SH
+        if LIST_TOP <= fy <= LIST_TOP + LIST_H:
+            idx = int((fy - LIST_TOP + state["scroll"]) / AGENT_ROW_H)
+            if 0 <= idx < len(state["rows"]):
+                return state["rows"][idx]
+        return None
+
+    @objc.python_method
+    def _rec(self, key):
+        return next((c for c in state["channels"] if c["key"] == key), None)
+
+    def rightMouseDown_(self, ev):
+        key = self._channel_key_at(ev)
+        if key:
+            self._show_channel_menu(ev, key)
+
+    @objc.python_method
+    def _show_channel_menu(self, ev, key):
+        pinned = state["locked"] == key
+        menu = NSMenu.alloc().init()
+        items = (
+            ("Open session in Claude", "openSession:"),
+            ("Open in AgentParty", "openParty:"),
+            ("Unpin from bar" if pinned else "Pin to bar", "pinChannel:"),
+        )
+        for title, action in items:
+            it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, "")
+            it.setTarget_(self); it.setRepresentedObject_(key)
+            menu.addItem_(it)
+        NSMenu.popUpContextMenu_withEvent_forView_(menu, ev, self)
+
+    def pinChannel_(self, sender):
+        key = sender.representedObject()
+        state["locked"] = None if state["locked"] == key else key
+        self.ctrl.relayout(); save_persist()
+
+    def openSession_(self, sender):
+        rec = self._rec(sender.representedObject())
+        if not rec:
+            return
+        tgt = HD.channel_session(rec.get("ws", ""))
+        if tgt:
+            subprocess.Popen(["open", f"claude://resume?session={tgt[1]}"])
+
+    def openParty_(self, sender):
+        rec = self._rec(sender.representedObject())
+        if not rec:
+            return
+        from urllib.parse import quote
+        channel = rec.get("channel", "")
+        server = rec.get("server", "")
+        # Deep-link protocol: the AgentParty client registers the agentparty://
+        # scheme and decides how to open the channel (web page or native view).
+        # HUD only supplies channel + server; the client does the rest.
+        url = f"agentparty://channel/{quote(channel)}"
+        if server:
+            url += f"?server={quote(server, safe='')}"
+        subprocess.Popen(["open", url])
 
 
 class Ctrl(objc.lookUpClass("NSObject")):
@@ -355,17 +457,30 @@ class Ctrl(objc.lookUpClass("NSObject")):
         return self
 
     def _content_size(self):
-        return (EXP_W, EXP_H) if state["expanded"] else (COLLAPSED_W, COLLAPSED_H)
+        if state["expanded"]:
+            return (EXP_W, EXP_H)
+        w = COLLAPSED_W_LOCKED if (state["locked"] and _pick_collapsed_channel()) else COLLAPSED_W
+        return (w, COLLAPSED_H)
 
     def _panel_size(self):
         cw, ch = self._content_size()
         return (cw + 2 * SH, ch + 2 * SH)
 
     def _origin(self):
-        if state.get("abs"):                          # user placed it -> fixed
-            return NSMakePoint(state["abs"][0], state["abs"][1])
-        b = claude_bounds(); pw, ph = self._panel_size()
-        if b:
+        pw, ph = self._panel_size()
+        snap = state.get("snap")
+        b = claude_bounds()
+        if snap and b:                                # snapped to a Claude-window corner
+            _, x, y, cw, ch = b
+            sh = NSScreen.screens()[0].frame().size.height
+            cl, cr = x, x + cw
+            cb, ct = sh - (y + ch), sh - y            # cocoa bottom / top of the window
+            ox = (cr - pw + SH - MARGIN) if "r" in snap else (cl - SH + MARGIN)
+            oy = (cb - SH + MARGIN) if "b" in snap else (ct - ph + SH - MARGIN)
+            return NSMakePoint(ox, oy)
+        if state.get("abs"):                          # free-placed (bottom-right anchor)
+            return NSMakePoint(state["abs"][0] - pw, state["abs"][1])
+        if b:                                         # default: bottom-right of window
             _, x, y, cw, ch = b
             sh = NSScreen.screens()[0].frame().size.height
             ox = (x + cw) - pw + SH - MARGIN
@@ -381,11 +496,13 @@ class Ctrl(objc.lookUpClass("NSObject")):
     def relayout(self):
         cw, ch = self._content_size()
         pw, ph = self._panel_size()
-        cur = self.panel.frame().origin
-        if not self._placed:                 # first layout: use default/persisted spot
-            o = self._origin(); cur = NSMakePoint(o.x, o.y); self._placed = True
-        # keep current position (user-placed); only size/content change
-        self.panel.setFrame_display_animate_(NSMakeRect(cur.x, cur.y, pw, ph), True, False)
+        fr = self.panel.frame()
+        if (not self._placed) or state.get("snap"):   # snapped/first: align to corner
+            o = self._origin(); nx, ny = o.x, o.y; self._placed = True
+        else:                                # free: keep bottom-right corner fixed on resize
+            nx = (fr.origin.x + fr.size.width) - pw
+            ny = fr.origin.y
+        self.panel.setFrame_display_animate_(NSMakeRect(nx, ny, pw, ph), True, False)
         self.card.setFrame_(NSMakeRect(SH, SH, cw, ch))
         self.card.layer().setCornerRadius_(ch / 2 if not state["expanded"] else 14.0)
         build_content(self.card)
@@ -407,6 +524,10 @@ class Ctrl(objc.lookUpClass("NSObject")):
         if sig != self._sig:
             self._sig = sig
             self.relayout()
+        elif state.get("snap"):                       # follow the Claude window edge
+            o = self._origin(); cur = self.panel.frame().origin
+            if abs(cur.x - o.x) > 0.5 or abs(cur.y - o.y) > 0.5:
+                self.panel.setFrameOrigin_(o)
         # NOTE: never reposition on tick — position is owned solely by the user's
         # drag (mouseDragged). Touching it every frame fought macOS at screen
         # edges and caused jitter.
@@ -446,7 +567,7 @@ def _acquire_single_instance():
 
 def run(argv=None):
     if not _acquire_single_instance():
-        print("[hud] 已有实例在运行,退出", file=sys.stderr)
+        print("[hud] already running, exiting", file=sys.stderr)
         return
     load_persist()
     app = NSApplication.sharedApplication()
@@ -488,7 +609,7 @@ def run(argv=None):
     ctrl.relayout(); panel.orderFrontRegardless()
     NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
         0.1, ctrl, "tick:", None, True)
-    print("[hud] running — Claude 面板样式")
+    print("[hud] running")
     app.run()
 
 

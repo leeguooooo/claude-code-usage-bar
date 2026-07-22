@@ -20,7 +20,7 @@ STALE_S = 15 * 60
 SESSION_ACTIVE_S = 600      # transcript touched within 10 min => "current session"
 
 try:
-    from .party import read_party_status  # same package
+    from .party import read_party_status, workspace_id  # same package
     _PARTY_OK = True
 except Exception:
     _PARTY_OK = False
@@ -161,6 +161,8 @@ def all_channels(top_n: int = 3, max_age_s: int = CHANNEL_ACTIVE_S,
             "last_preview": last.get("preview", ""),
             "age_s": now - ua / 1000,
             "updated": ua,
+            "ws": f.parent.name,            # workspace_id (statusline.json dir)
+            "server": d.get("server", ""),  # for web fallback
         }
         if ch not in best or ua > best[ch]["updated"]:
             best[ch] = rec
@@ -168,18 +170,48 @@ def all_channels(top_n: int = 3, max_age_s: int = CHANNEL_ACTIVE_S,
     return chans[:top_n]
 
 
+def _ws_to_session_map() -> Dict[str, Any]:
+    """workspace_id -> (cwd, latest_session_uuid), by scanning ~/.claude/projects.
+    Lets a channel (which knows only its workspace_id) resolve to a resumable
+    Claude session."""
+    m: Dict[str, Any] = {}
+    if not _PARTY_OK:
+        return m
+    try:
+        projs = [p for p in PROJECTS.glob("*") if p.is_dir()]
+    except Exception:
+        return m
+    for proj in projs:
+        jsonls = sorted(proj.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not jsonls:
+            continue
+        cwd = _cwd_of(jsonls[0])
+        if not cwd:
+            continue
+        try:
+            m[workspace_id(cwd)] = (cwd, jsonls[0].stem)
+        except Exception:
+            continue
+    return m
+
+
+def channel_session(ws_id: str):
+    """Resolve a channel's workspace_id to (cwd, session_uuid), or None."""
+    return _ws_to_session_map().get(ws_id)
+
+
 def snapshot(org: Optional[str] = None, now: Optional[float] = None) -> Usage:
     now = time.time() if now is None else now
     try:
         alls = _load_usage()
     except FileNotFoundError:
-        u = Usage(err="plan-usage-history.json 不存在")
+        u = Usage(err="plan-usage-history.json not found")
         u.project, u.party = _party_for_project(now)
         return u
     except Exception as e:
-        return Usage(err=f"读取失败: {e}")
+        return Usage(err=f"read failed: {e}")
     if not alls:
-        return Usage(err="无样本")
+        return Usage(err="no samples")
     cur_org = org or alls[-1].get("org", "")
     s = [e for e in alls if e.get("org") == cur_org]
     last = s[-1]
