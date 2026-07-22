@@ -13,36 +13,30 @@ freshness — inline in Claude Code's status line, or a floating HUD on the desk
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/leeguooooo/claude-code-usage-bar?style=social)](https://github.com/leeguooooo/claude-code-usage-bar/stargazers)
 
-**English** · [简体中文](README.zh-CN.md) · [Install](docs/install.md) · [Documentation](#-documentation)
+**English** · [简体中文](README.zh-CN.md) · [Install](docs/install.md) · [Documentation](#documentation)
 
 ![claude-statusbar live demo](docs/images/hero.gif)
 
 </div>
-
-```
-5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s
-```
 
 Claude Code tells you almost nothing about where you stand against your rate limits.
 `claude-statusbar` puts the numbers that matter on one quiet line at the bottom of your
 terminal — so you never switch context to a separate window to answer *"how much have I
 got left, and when does it reset?"*
 
----
+## Features
 
-## ✨ Features
+- **Official 5h / 7d usage** — the same rate-limit numbers Claude Code enforces, with reset countdowns and end-of-window projections (`→NN%`), not a local guess.
+- **Model & context window** — current model and how full the context is (`Opus 4.8 · 350k/1M`).
+- **Prompt-cache countdown** — see how long your cache stays warm (`cache 4m23s`) so you know when the next turn pays full price.
+- **Cost & balance** — optional per-session cost, or live relay/API balance in no-quota setups.
+- **Two surfaces** — inline `statusLine` in the terminal, or an always-on-top floating HUD for the Claude desktop app (macOS).
+- **3 styles × 9 themes** — switch the whole look with one command: battery-bar, capsule, or hairline.
+- **Fast by design** — an optional daemon renders in well under 1% CPU even at a 1-second refresh.
+- **More when you want it** — git branch & diff stats, session activity, AgentParty/Codex presence, IELTS writing-coach progress — each opt-in.
+- **Zero-dependency install** — a single prebuilt binary (no Python needed) or a `pip` package. Auto-updates.
 
-- 📊 **Official 5h / 7d usage** — the same rate-limit numbers Claude Code enforces, with reset countdowns and end-of-window projections (`→NN%`), not a local guess.
-- 🧠 **Model & context window** — current model and how full the context is (`Opus 4.8 · 350k/1M`).
-- ⏱ **Prompt-cache countdown** — see how long your cache stays warm (`cache 4m23s`) so you know when the next turn pays full price.
-- 💰 **Cost & balance** — optional per-session cost, or live relay/API balance in no-quota setups.
-- 🖥 **Two surfaces** — inline `statusLine` in the terminal, **or** an always-on-top floating HUD for the Claude desktop app (macOS).
-- 🎨 **3 styles × 9 themes** — switch the whole look with one command; battery-bar, capsule, or hairline.
-- ⚡ **Fast by design** — an optional daemon renders in well under 1% CPU even at a 1-second refresh.
-- 🔌 **More when you want it** — git branch & diff stats, session activity, AgentParty/Codex presence, IELTS writing-coach progress — each opt-in.
-- 📦 **Zero-dependency install** — a single prebuilt binary (no Python needed) or a `pip` package. Auto-updates.
-
-## 🚀 Install
+## Install
 
 ### Claude Code (terminal)
 
@@ -66,7 +60,7 @@ cs --setup                       # wires the statusLine hook + installs the skil
 Restart Claude Code and the bar appears at the bottom. Other paths (skill-only, plugin
 marketplace, Codex/AgentParty bridge) are in the **[install guide](docs/install.md)**.
 
-> 📖 **Deep dive:** [Is that `cache 4m23s` line actually accurate? — how the prompt-cache countdown is computed](https://blog.leeguoo.com/en/posts/claude-statusbar-cache-countdown/)
+> **Deep dive:** [Is that `cache 4m23s` line actually accurate? — how the prompt-cache countdown is computed](https://blog.leeguoo.com/en/posts/claude-statusbar-cache-countdown/)
 
 ### Claude desktop app (macOS) — `cs hud`
 
@@ -87,24 +81,25 @@ cs hud install                        # launchd: auto-start on login + keep-aliv
 Collapsed pill → click to expand → drag anywhere; it hides when the desktop app isn't open.
 Full details in the **[Desktop HUD guide](docs/desktop-hud.md)**.
 
-## 👀 What it shows
+## What it shows
 
-```
-5h[   27%    ]⏰1h28m →42% | 7d[   79%    ]⏰11h28m →88% | Opus 4.8(350.0k/1.0M) | cache 4m23s | $ 1.42
-⤷ claude-code-usage-bar ⎇ main● · +182 -47 · ⏱ 12m · v3.12.0
-⚙ effort:high · think:on · fast:off · style:default
-```
+The default bar — `classic` style, `graphite` theme:
 
-| Line | Contents |
+![default status bar](docs/images/classic-graphite.svg)
+
+At a full refresh it can render up to three lines, each segment optional:
+
+| Line | Segments |
 |---|---|
-| **1** | 5h / 7d rate-limit usage + reset timers + end-of-window projections, model & context window, prompt-cache countdown, optional session cost / relay balance |
-| **2** | project + git branch, session `+/−` lines, duration, version |
-| **3** | session mode (effort / thinking / fast / style) |
+| **Usage** | 5h / 7d rate-limit bars, reset countdowns, end-of-window projections (`→NN%`), model & context window, prompt-cache countdown, optional session cost or relay balance |
+| **Project** | project name, git branch, session `+/−` lines, duration, version |
+| **Mode** | session effort / thinking / fast / style |
 
-Plus optional **activity** and **AgentParty** lines. The full per-segment breakdown — every
-icon, color threshold, and toggle — is in the **[segment reference](docs/segments.md)**.
+Every icon, color threshold, and toggle is documented in the
+**[segment reference](docs/segments.md)**. Nine themes and three styles are in
+**[styles & themes](docs/styles-and-themes.md)**.
 
-## 📚 Documentation
+## Documentation
 
 | Guide | What's inside |
 |-------|---------------|
@@ -119,7 +114,7 @@ icon, color threshold, and toggle — is in the **[segment reference](docs/segme
 | [Cache countdown](docs/cache-countdown.md) | Data source + how `cache 4m23s` is computed |
 | [Troubleshooting](docs/troubleshooting.md) | `cs doctor`, common problems, upgrading |
 
-## 🆚 Comparison
+## Comparison
 
 There are a few good Claude Code usage monitors. They solve overlapping but distinct
 problems — pick the one that matches *where* you want the information.
@@ -134,19 +129,19 @@ problems — pick the one that matches *where* you want the information.
 with charts, daily/weekly aggregates, and burn-rate prediction, run a TUI in a side pane. The
 two coexist nicely.
 
-## 🔌 Integrations
+## Integrations
 
 **[prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)** — install the
 plugin to track IELTS band progress. The bar then shows your writing level and trend
 automatically (no config; appears when `~/.claude/language-progress.json` exists):
 
 ```
-... | Opus 4.8(350k/1M) | 📚 EN:6.0↑ JA:5.0→
+... | Opus 4.8(350k/1M) | EN:6.0↑ JA:5.0→
 ```
 
 `↑` improved · `↓` dropped · `→` no change since last session.
 
-## 🤝 Contributing
+## Contributing
 
 PRs welcome. The full contributor guide — local setup, test commands, architecture map, coding
 conventions, release flow — is in **[CONTRIBUTING.md](CONTRIBUTING.md)**. Security issues:
@@ -163,9 +158,9 @@ The render path is hot (up to 60×/min at `refreshInterval: 1`) — `tests/test_
 pins which modules can't be imported on the fast path. Read CONTRIBUTING.md before adding
 dependencies.
 
-📋 Every version's changes: **[CHANGELOG.md](CHANGELOG.md)** · [GitHub Releases](https://github.com/leeguooooo/claude-code-usage-bar/releases).
+Every version's changes: **[CHANGELOG.md](CHANGELOG.md)** · [GitHub Releases](https://github.com/leeguooooo/claude-code-usage-bar/releases).
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [@marcwimmer](https://github.com/marcwimmer) — original `show_cache_age` widget ([#9](https://github.com/leeguooooo/claude-code-usage-bar/pull/9))
 - [claude-monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) — token-usage analysis library used as the optional fast-path data source
