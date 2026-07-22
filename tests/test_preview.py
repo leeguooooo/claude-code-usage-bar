@@ -66,9 +66,17 @@ def test_preview_unknown_style_returns_error():
     assert "unknown style" in out
 
 
-def test_preview_includes_cache_and_cost_segments_in_output():
+def test_preview_includes_cache_and_cost_segments_in_output(monkeypatch):
     """v3.3.1 fix: preview must show cache + $ cost so users can see what
-    those segments look like across themes."""
+    those segments look like across themes.
+
+    Force the demo dataset: preview prefers the machine's real cached stdin
+    (~/.cache/claude-statusbar/last_stdin.json) when present, which may legitimately
+    have no warm cache or session cost (e.g. 5h=0%/7d=0% with no active turn) — so
+    the segments would be absent for reasons unrelated to rendering. The demo data
+    is exactly the fixture that guarantees both segments, which is what this test is
+    about."""
+    monkeypatch.setattr(preview, "_real_data", lambda: None)
     rc, out = _run(style_filter="capsule", theme_filter="graphite")
     assert "cache " in out, "preview must render cache segment"
     assert "$" in out, "preview must render cost segment"

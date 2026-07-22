@@ -444,8 +444,14 @@ Integration:
     # Only register the action when the user actually asked for a version.
     if any(flag in sys.argv[1:] for flag in VERSION_FLAGS):
         from . import __version__ as _ver
+        # Derive the program name from argv[0] ourselves rather than argparse's
+        # %(prog)s: Python 3.14's argparse rewrites prog to "python3.x -m module"
+        # (via sys.orig_argv) when launched with -m, which ignores argv[0]. Using
+        # basename(argv[0]) keeps the real exe name (cs / cstatus / claude-statusbar)
+        # on every Python version.
+        prog = os.path.basename(sys.argv[0]) or "cs"
         parser.add_argument(
-            *VERSION_FLAGS, action="version", version=f"%(prog)s {_ver}"
+            *VERSION_FLAGS, action="version", version=f"{prog} {_ver}"
         )
 
     parser.add_argument(
