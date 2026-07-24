@@ -1045,3 +1045,56 @@ def test_release_pidfile_still_cleans_its_own_file(monkeypatch, tmp_path: Path):
     assert _d._acquire_pidfile() is True
     _d._release_pidfile()
     assert not _d.pid_path().exists()
+
+
+def test_windows_identity_uses_cim_not_ps(monkeypatch):
+    """On Windows there is no /proc, and a Git-Bash `ps` on PATH only lists
+    MSYS processes — a natively spawned daemon reads as gone, so `cs daemon
+    stop` refuses to stop it and the drift-kill guard never restarts it onto
+    upgraded code."""
+    import subprocess as _sp
+
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd[0])
+        if cmd[0] == "ps":
+            raise AssertionError("ps must not be consulted on win32")
+        return _sp.CompletedProcess(
+            cmd, 0,
+            stdout=('"C:\Python\python.exe" -m claude_statusbar.cli '
+                    'daemon _run --render-interval 1.0\n'),
+            stderr="",
+        )
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(_sp, "run", fake_run)
+
+    assert _d._process_is_our_daemon(4242) is True
+    assert calls and calls[0] in ("powershell", "pwsh")
+
+
+def test_windows_identity_false_when_pid_is_someone_else(monkeypatch):
+    import subprocess as _sp
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(
+        _sp, "run",
+        lambda cmd, **kw: _sp.CompletedProcess(
+            cmd, 0, stdout="C:\Windows\explorer.exe\n", stderr=""),
+    )
+
+    assert _d._process_is_our_daemon(4242) is False
+
+
+def test_windows_identity_false_when_no_shell_available(monkeypatch):
+    """No powershell and no pwsh — stay conservative, never SIGTERM."""
+    import subprocess as _sp
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(
+        _sp, "run",
+        lambda cmd, **kw: (_ for _ in ()).throw(FileNotFoundError(cmd[0])),
+    )
+
+    assert _d._process_is_our_daemon(4242) is False

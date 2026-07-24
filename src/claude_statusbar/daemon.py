@@ -343,16 +343,56 @@ def _cmdline_is_our_daemon(cmdline: str) -> bool:
     )
 
 
+_WIN_CMDLINE_TIMEOUT_S = 8.0
+
+
+def _win_process_cmdline(pid: int) -> Optional[str]:
+    """Command line of `pid` on Windows, or None if it can't be read.
+
+    Windows has no /proc, and `ps` is worse than useless there: when Git Bash
+    is on PATH its MSYS `ps` only lists MSYS processes, so a natively spawned
+    daemon reads as gone and the caller concludes "not ours".
+
+    CIM is the reliable source. `wmic` would be faster but is deprecated and
+    already absent from current Windows 11 builds. ~0.5s per call, which only
+    the stop / install / drift-restart paths pay — never a render.
+    """
+    import subprocess
+    script = (
+        f"$p = Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}';"
+        "if ($p) { $p.CommandLine }"
+    )
+    for exe in ("powershell", "pwsh"):
+        try:
+            out = subprocess.run(
+                [exe, "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=_WIN_CMDLINE_TIMEOUT_S,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue  # not installed / hung — try the next interpreter
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout
+    return None
+
+
 def _process_is_our_daemon(pid: int) -> bool:
     """Verify the PID actually belongs to *our* daemon, not a recycled PID.
 
     Linux: read /proc/<pid>/cmdline directly (cheap, no fork).
+    Windows: query CIM (see `_win_process_cmdline`).
     macOS / fallback: shell out to `ps -o command= -p <pid>` (~10ms — only
     runs on stop/install paths, never on the per-render hot path).
 
     Returns False on any error (better to assume not-ours and skip than to
     accidentally SIGTERM an unrelated user process).
     """
+    if sys.platform == "win32":
+        cmdline = _win_process_cmdline(pid)
+        return _cmdline_is_our_daemon(cmdline) if cmdline else False
+
     proc_path = f"/proc/{pid}/cmdline"
     try:
         with open(proc_path, "rb") as f:
