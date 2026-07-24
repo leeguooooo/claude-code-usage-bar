@@ -727,6 +727,22 @@ def _env_context_window_override(reported_size: float, env=None) -> Optional[int
     return None
 
 
+def _exact_used_tokens(stdin_data: Dict[str, Any]) -> Optional[int]:
+    """Context tokens as Claude Code reported them, or None when unavailable.
+
+    None means "no usable signal" — an older Claude Code that omits the
+    totals, a relay payload that zeroes them, or a malformed value. Callers
+    fall back to deriving the count from the percentage.
+    """
+    total = 0
+    for key in ('total_input_tokens', 'total_output_tokens'):
+        try:
+            total += int(stdin_data.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            return None
+    return total or None
+
+
 def _context_window_usage(stdin_data: Dict[str, Any],
                           env=None) -> Tuple[Optional[float], int, int]:
     """Return (ctx_pct, ctx_size, ctx_used) for renderer/model suffix.
@@ -752,13 +768,15 @@ def _context_window_usage(stdin_data: Dict[str, Any],
     except (TypeError, ValueError):
         ctx_pct = None
 
-    if ctx_pct is not None:
-        ctx_used = int(ctx_size_f * ctx_pct / 100)
-    else:
-        ctx_used = (
-            stdin_data.get('total_input_tokens', 0)
-            + stdin_data.get('total_output_tokens', 0)
-        )
+    # Exact totals beat the integer percentage. Claude Code reports
+    # used_percentage as a whole number, so deriving tokens from it quantises
+    # the readout to 1% of the window — 2k on a 200k model (invisible), but
+    # 10k on a 1M-context one, where the bar steps 60.0k → 70.0k and can sit
+    # ~10k off the truth. `ctx_pct` itself stays as reported so the percentage
+    # and its severity colour keep matching what Claude Code shows.
+    ctx_used = _exact_used_tokens(stdin_data)
+    if ctx_used is None:
+        ctx_used = int(ctx_size_f * ctx_pct / 100) if ctx_pct is not None else 0
 
     # Env override (#29): used tokens stay what stdin reported; the window and
     # the percentage are re-derived against the real (env-forced) size.
