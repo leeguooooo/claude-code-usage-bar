@@ -1098,3 +1098,67 @@ def test_windows_identity_false_when_no_shell_available(monkeypatch):
     )
 
     assert _d._process_is_our_daemon(4242) is False
+
+
+MODULE_STATUSLINE = "C:/Users/x/miniconda3/python.exe -m claude_statusbar.cli render"
+
+
+def test_module_invocation_counts_as_ours():
+    """`<python> -m claude_statusbar.cli render` skips pip's console-script
+    launcher, which on Windows spawns a second process and roughly doubles
+    per-render latency. It must not be mistaken for a foreign tool."""
+    assert _is_our_statusline({"type": "command", "command": MODULE_STATUSLINE}) is True
+
+    from claude_statusbar.setup import _existing_uses_render
+    assert _existing_uses_render({"command": MODULE_STATUSLINE}) is True
+
+
+def test_daily_repair_does_not_rewrite_module_invocation(monkeypatch, tmp_path):
+    """The once-a-day auto-repair pass would otherwise replace a deliberate
+    module invocation with the console script every single day."""
+    from claude_statusbar import setup as _setup
+
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": MODULE_STATUSLINE,
+                       "refreshInterval": 1},
+    }), encoding="utf-8")
+    monkeypatch.setattr(_setup, "SETTINGS_PATH", settings)
+
+    changed, msg = _setup.ensure_statusline_configured()
+
+    assert changed is False, msg
+    after = json.loads(settings.read_text(encoding="utf-8"))
+    assert after["statusLine"]["command"] == MODULE_STATUSLINE
+
+
+def test_displacement_warning_silent_for_module_invocation(monkeypatch, tmp_path):
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": MODULE_STATUSLINE},
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", settings)
+
+    assert render_thin._displacement_suffix() == ""
+
+
+def test_displacement_warning_silent_for_windows_exe_shim(monkeypatch, tmp_path):
+    """pip writes `cs.EXE` on Windows; case + extension must not read as foreign."""
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({
+        "statusLine": {"type": "command",
+                       "command": r"C:\Users\x\Scripts\cs.EXE render"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", settings)
+
+    assert render_thin._displacement_suffix() == ""
+
+
+def test_displacement_warning_still_fires_for_foreign_tool(monkeypatch, tmp_path):
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "starship prompt"},
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_USER_SETTINGS", settings)
+
+    assert "starship" in render_thin._displacement_suffix()

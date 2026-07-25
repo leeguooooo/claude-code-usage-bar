@@ -167,7 +167,15 @@ def _displacement_suffix() -> str:
     cmd = sl.get("command")
     if not isinstance(cmd, str) or not cmd.strip():
         return ""
-    name = Path(cmd.strip().split()[0]).name
+    if "claude_statusbar" in cmd:
+        # `<python> -m claude_statusbar.cli render` — ours, just not via the
+        # console script. See setup._invokes_our_module.
+        return ""
+    name = Path(cmd.strip().split()[0]).name.lower()
+    for _ext in (".exe", ".cmd", ".bat"):
+        if name.endswith(_ext):
+            name = name[: -len(_ext)]
+            break
     if name in _OUR_BINARY_NAMES:
         return ""
     # ANSI red. Kept short so it doesn't blow up the bar on narrow terminals.
