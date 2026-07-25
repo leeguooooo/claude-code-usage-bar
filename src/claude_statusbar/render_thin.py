@@ -184,6 +184,18 @@ def _append_suffix(content: str, suffix: str) -> str:
     return content + suffix
 
 
+_STDIN_CHUNK = 64 * 1024
+
+
+def _payload_is_complete(buf: bytearray) -> bool:
+    """True once `buf` holds a whole JSON document."""
+    try:
+        json.loads(buf.decode("utf-8", errors="replace"))
+    except ValueError:  # JSONDecodeError ⊂ ValueError
+        return False
+    return True
+
+
 def _consume_stdin() -> bytes | None:
     """Read Claude Code's stdin payload (bytes) and return it.
 
@@ -191,17 +203,40 @@ def _consume_stdin() -> bytes | None:
     for both (a) writing it to per-session + legacy last_stdin.json so the
     daemon sees it on the next tick, and (b) replaying it into sys.stdin
     if the inline fallback path needs to consume it.
+
+    Stops at the end of the JSON document rather than at EOF. `read()` waits
+    for *every* write handle on the pipe to close, which is not something the
+    client controls: Claude Code spawns the statusLine through a shell, and on
+    Windows a sibling process that inherited the write handle keeps the pipe
+    open after that shell exits. The payload has arrived in full, but read()
+    never returns and the process lives forever — observed as a steady drip of
+    `cs render` processes, parent gone, each still resident minutes later.
+
+    One extra json.loads per chunk; the payload is a couple of KB and arrives
+    in a single read, so this costs ~0.05ms on the render hot path.
     """
     try:
         if sys.stdin.isatty():
             return None
     except (OSError, ValueError):
         return None
+    data = bytearray()
     try:
-        data = sys.stdin.buffer.read()
+        # read1() returns what one raw read yields; read() would block until
+        # the buffer is full or EOF, which is the behaviour being avoided.
+        read_some = getattr(sys.stdin.buffer, "read1", None)
+        if read_some is None:  # exotic stdin replacement — keep the old path
+            return sys.stdin.buffer.read() or None
+        while True:
+            chunk = read_some(_STDIN_CHUNK)
+            if not chunk:
+                break  # EOF — the writer closed as expected
+            data += chunk
+            if _payload_is_complete(data):
+                break  # whole document in hand; don't wait on the pipe
     except (OSError, AttributeError):
         return None
-    return data or None
+    return bytes(data) or None
 
 
 def _extract_session_id(payload: bytes) -> str:
