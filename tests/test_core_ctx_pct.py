@@ -34,6 +34,37 @@ def test_normal_context_returns_float():
     assert isinstance(out, float)
 
 
+def test_used_tokens_come_from_exact_totals_not_rounded_pct():
+    """used_percentage is a whole number; on a 1M window that quantises the
+    token readout to 10k steps. The exact totals must win."""
+    ctx_pct, _, ctx_used = core._context_window_usage({
+        "context_window_size": 1_000_000,
+        "context_used_pct": 6,
+        "total_input_tokens": 63_824,
+        "total_output_tokens": 0,
+    })
+    assert ctx_used == 63_824  # not 60_000
+    assert ctx_pct == 6.0      # percentage stays as Claude Code reported it
+
+
+def test_used_tokens_fall_back_to_pct_when_totals_absent():
+    """Older Claude Code / relay payloads omit the totals entirely."""
+    _, _, ctx_used = core._context_window_usage({
+        "context_window_size": 200_000,
+        "context_used_pct": 25,
+    })
+    assert ctx_used == 50_000
+
+
+def test_malformed_totals_fall_back_to_pct():
+    _, _, ctx_used = core._context_window_usage({
+        "context_window_size": 200_000,
+        "context_used_pct": 25,
+        "total_input_tokens": "lots",
+    })
+    assert ctx_used == 50_000
+
+
 def test_null_context_pct_is_unknown_not_error():
     ctx_pct, ctx_size, ctx_used = core._context_window_usage({
         "context_window_size": 1_000_000,
