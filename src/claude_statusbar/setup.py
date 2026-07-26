@@ -110,6 +110,18 @@ def _statusline_config(fast: bool = False, refresh_interval: int = DEFAULT_REFRE
     }
 
 
+def _invokes_our_module(cmd: str) -> bool:
+    """True for ``<python> -m claude_statusbar.cli render``.
+
+    A legitimate way to run us that skips pip's console-script launcher. On
+    Windows that launcher spawns a second process, roughly doubling status-line
+    latency (~0.9s vs ~0.44s per render on a conda install), so users on slow
+    Python startups may prefer the module form. Recognise it as ours rather
+    than reporting it as a foreign tool.
+    """
+    return "claude_statusbar" in cmd
+
+
 def _is_our_statusline(entry: object) -> bool:
     """Return True if the existing statusLine entry already points at our CLI."""
     if not isinstance(entry, dict):
@@ -117,6 +129,8 @@ def _is_our_statusline(entry: object) -> bool:
     cmd = entry.get("command")
     if not isinstance(cmd, str) or not cmd.strip():
         return False
+    if _invokes_our_module(cmd):
+        return True
     name = _normalize_command_name(Path(cmd.strip().split()[0]).name)  # strip args + path + .exe shim
     return name in OUR_COMMAND_NAMES
 
@@ -158,7 +172,9 @@ def _existing_uses_render(existing) -> bool:
     if not isinstance(cmd, str):
         return False
     parts = cmd.strip().split()
-    return len(parts) >= 2 and parts[1] == "render"
+    # `cs render`, and the module form `<python> -m claude_statusbar.cli render`
+    # — in both, `render` is the last token.
+    return len(parts) >= 2 and parts[-1] == "render"
 
 
 def ensure_statusline_configured(fast: Optional[bool] = None) -> Tuple[bool, str]:
@@ -217,6 +233,13 @@ def ensure_statusline_configured(fast: Optional[bool] = None) -> Tuple[bool, str
     else:
         effective_refresh = DEFAULT_REFRESH_INTERVAL
     desired = _statusline_config(fast=effective_fast, refresh_interval=effective_refresh)
+
+    # The module form is a deliberate choice (see `_invokes_our_module`), not
+    # drift — the daily repair pass must not rewrite it back to the console
+    # script. Keep the command, still refresh refreshInterval.
+    existing_cmd = existing.get("command")
+    if isinstance(existing_cmd, str) and _invokes_our_module(existing_cmd):
+        desired["command"] = existing_cmd
 
     if (existing.get("command") != desired["command"]
             or existing.get("refreshInterval") != desired["refreshInterval"]):
