@@ -9,6 +9,12 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.32.1 — 2026-07-22
+
+**Patch: `cs --version` program name + test determinism.** `cs --version` now derives its program name from `basename(argv[0])` rather than argparse's `%(prog)s` — Python 3.14 rewrites `%(prog)s` to `python3.x -m module` under `-m`, which mangled the prefix. The three aliases (`cs` / `cstatus` / `claude-statusbar`) now each show their real name on every Python version. Also made `test_preview` deterministic by forcing the demo dataset instead of depending on the machine's cached stdin (which can legitimately have no warm cache or cost).
+
+---
+
 ## v3.32.0 — 2026-07-22
 
 **One command installs everything.** The `curl … install.sh | bash` one-liner now sets up *both* surfaces on macOS: the terminal statusLine **and** the floating desktop HUD. The macOS binary bundles the HUD (PyObjC) — no `pip install 'claude-statusbar[hud]'`, no venv, no extra steps. When the installer detects the Claude desktop app it registers the HUD to auto-start on login, and it rides the binary's own auto-update like everything else. Linux binaries are unchanged (the HUD is macOS-only).
