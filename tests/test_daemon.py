@@ -1062,7 +1062,7 @@ def test_windows_identity_uses_cim_not_ps(monkeypatch):
             raise AssertionError("ps must not be consulted on win32")
         return _sp.CompletedProcess(
             cmd, 0,
-            stdout=('"C:\Python\python.exe" -m claude_statusbar.cli '
+            stdout=(r'"C:\Python\python.exe" -m claude_statusbar.cli '
                     'daemon _run --render-interval 1.0\n'),
             stderr="",
         )
@@ -1081,7 +1081,7 @@ def test_windows_identity_false_when_pid_is_someone_else(monkeypatch):
     monkeypatch.setattr(
         _sp, "run",
         lambda cmd, **kw: _sp.CompletedProcess(
-            cmd, 0, stdout="C:\Windows\explorer.exe\n", stderr=""),
+            cmd, 0, stdout="C:\\Windows\\explorer.exe\n", stderr=""),
     )
 
     assert _d._process_is_our_daemon(4242) is False
