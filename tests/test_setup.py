@@ -144,7 +144,7 @@ def test_write_is_atomic_no_temp_files_left(isolated):
 # ---------------------------------------------------------------------------
 def test_install_commands_creates_dir_and_copies(isolated):
     _, _, commands = isolated
-    n, skipped = setup_mod.install_commands()
+    n, skipped, _failed = setup_mod.install_commands()
     assert n >= 5  # statusbar + 4 sub-commands
     assert skipped == []
     assert commands.is_dir()
@@ -154,7 +154,7 @@ def test_install_commands_creates_dir_and_copies(isolated):
 
 def test_install_commands_idempotent_when_unchanged(isolated):
     setup_mod.install_commands()
-    n2, skipped2 = setup_mod.install_commands()
+    n2, skipped2, _failed = setup_mod.install_commands()
     # Identical content → counted as installed (no-op), nothing skipped
     assert n2 >= 5
     assert skipped2 == []
@@ -167,7 +167,7 @@ def test_install_commands_skips_modified_user_files(isolated):
     edited = commands / "statusbar.md"
     edited.write_text("# Locally customized\n", encoding="utf-8")
 
-    n, skipped = setup_mod.install_commands()
+    n, skipped, _failed = setup_mod.install_commands()
     assert any("statusbar.md" in s for s in skipped), f"expected skip, got: {skipped}"
     # User edit preserved
     assert edited.read_text(encoding="utf-8") == "# Locally customized\n"
@@ -179,7 +179,7 @@ def test_install_commands_force_overwrites_user_edits(isolated):
     edited = commands / "statusbar.md"
     edited.write_text("# Locally customized\n", encoding="utf-8")
 
-    n, skipped = setup_mod.install_commands(force=True)
+    n, skipped, _failed = setup_mod.install_commands(force=True)
     assert skipped == []
     assert "Locally customized" not in edited.read_text(encoding="utf-8")
 
@@ -188,7 +188,7 @@ def test_install_commands_force_overwrites_user_edits(isolated):
 # install_skills
 # ---------------------------------------------------------------------------
 def test_install_skills_creates_dir_and_copies(isolated, tmp_path):
-    n, skipped = setup_mod.install_skills()
+    n, skipped, _failed = setup_mod.install_skills()
     assert n >= 1
     assert skipped == []
     skills_dir = setup_mod.SKILLS_DIR
@@ -202,7 +202,7 @@ def test_install_skills_creates_dir_and_copies(isolated, tmp_path):
 
 def test_install_skills_idempotent_when_unchanged(isolated):
     setup_mod.install_skills()
-    n2, skipped2 = setup_mod.install_skills()
+    n2, skipped2, _failed = setup_mod.install_skills()
     assert n2 >= 1
     assert skipped2 == []
 
@@ -211,7 +211,7 @@ def test_install_skills_skips_modified_user_files(isolated):
     setup_mod.install_skills()
     edited = setup_mod.SKILLS_DIR / "claude-statusbar" / "SKILL.md"
     edited.write_text("# Locally customized skill\n", encoding="utf-8")
-    n, skipped = setup_mod.install_skills()
+    n, skipped, _failed = setup_mod.install_skills()
     assert any("SKILL.md" in s for s in skipped), f"expected skip, got: {skipped}"
     assert edited.read_text(encoding="utf-8") == "# Locally customized skill\n"
 
@@ -220,7 +220,7 @@ def test_install_skills_force_overwrites_user_edits(isolated):
     setup_mod.install_skills()
     edited = setup_mod.SKILLS_DIR / "claude-statusbar" / "SKILL.md"
     edited.write_text("# Locally customized skill\n", encoding="utf-8")
-    n, skipped = setup_mod.install_skills(force=True)
+    n, skipped, _failed = setup_mod.install_skills(force=True)
     assert skipped == []
     assert "Locally customized" not in edited.read_text(encoding="utf-8")
 
@@ -358,3 +358,56 @@ def test_project_setup_corrupt_existing_json_is_overwritten(tmp_path: Path):
     assert ok is True
     data = json.loads(proj_settings.read_text(encoding="utf-8"))
     assert "statusLine" in data
+
+
+# ---------------------------------------------------------------------------
+# Re-running install.sh (the documented upgrade path) used to print a scary
+# "cs --setup reported an issue" whenever the user had edited a bundled command
+# or skill: the benign "kept your version" skip was folded into the same list as
+# real copy failures, and `cmds_ok = False` was set inside `if verbose:` — so the
+# exit code depended on verbosity too.
+# ---------------------------------------------------------------------------
+def _user_edited_command(isolated):
+    """Make one installed slash command differ from the bundled copy."""
+    setup_mod.run_setup(verbose=False)
+    edited = sorted(setup_mod.COMMANDS_DIR.glob("*.md"))[0]
+    edited.write_text("# my own version\n", encoding="utf-8")
+    return edited
+
+
+def test_user_edited_command_is_not_a_failure(isolated, capsys):
+    """A file we deliberately left alone must not make setup look broken.
+
+    verbose=True on purpose: that is how install.sh invokes `cs --setup`, and it
+    was the only mode where the bug fired.
+    """
+    _user_edited_command(isolated)
+    rc = setup_mod.run_setup(verbose=True)
+    capsys.readouterr()
+    assert rc == 0
+
+
+def test_exit_code_is_independent_of_verbosity(isolated, capsys):
+    """Same state, same exit code — verbose only changes what gets printed."""
+    _user_edited_command(isolated)
+    quiet = setup_mod.run_setup(verbose=False)
+    loud = setup_mod.run_setup(verbose=True)
+    capsys.readouterr()
+    assert quiet == loud == 0
+
+
+def test_install_commands_separates_skipped_from_failed(isolated):
+    """Benign skip lands in `skipped`; a real write error lands in `failed`."""
+    _user_edited_command(isolated)
+    _n, skipped, failed = setup_mod.install_commands()
+    assert skipped and not failed
+
+
+def test_real_copy_failure_is_reported_and_fails(isolated, monkeypatch, capsys):
+    """A genuine write error must still surface and produce a non-zero code."""
+    def _boom(*a, **kw):
+        raise OSError("read-only file system")
+    monkeypatch.setattr(setup_mod.shutil, "copy2", _boom)
+    _n, skipped, failed = setup_mod.install_commands()
+    assert failed and not skipped
+    assert setup_mod.run_setup(verbose=False) != 0

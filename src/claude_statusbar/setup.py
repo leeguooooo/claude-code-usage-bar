@@ -343,18 +343,26 @@ def _packaged_skills_dir() -> Path:
     return here.parent / "skills"
 
 
-def install_commands(force: bool = False) -> Tuple[int, list[str]]:
+def install_commands(force: bool = False) -> Tuple[int, list, list]:
     """Copy bundled slash commands into ~/.claude/commands/.
 
-    Returns (count_installed, list_of_skipped_paths).
+    Returns (count_installed, skipped, failed).
+
+    The two lists mean very different things and must not be conflated:
+
+    - `skipped` — the file exists with content the user changed, so we leave it
+      alone. Entirely benign, and re-running the installer (the documented
+      upgrade path) hits it every time. Must never make the exit code non-zero.
+    - `failed` — we tried to write and could not. A real problem.
     """
     src_dir = _packaged_commands_dir()
     if not src_dir.is_dir():
-        return 0, []
+        return 0, [], []
 
     COMMANDS_DIR.mkdir(parents=True, exist_ok=True)
     installed = 0
-    skipped: list[str] = []
+    skipped: list = []
+    failed: list = []
 
     for src in sorted(src_dir.glob("*.md")):
         name = src.name
@@ -372,23 +380,25 @@ def install_commands(force: bool = False) -> Tuple[int, list[str]]:
             shutil.copy2(src, dst)
             installed += 1
         except OSError as e:
-            skipped.append(f"{dst}: {e}")
-    return installed, skipped
+            failed.append(f"{dst}: {e}")
+    return installed, skipped, failed
 
 
-def install_skills(force: bool = False) -> Tuple[int, list[str]]:
+def install_skills(force: bool = False) -> Tuple[int, list, list]:
     """Copy bundled skills into ~/.claude/skills/<skill-name>/SKILL.md.
 
     Each skill lives in its own directory (per Claude Code skill convention).
-    Returns (count_installed, list_of_skipped_paths).
+    Returns (count_installed, skipped, failed) — see install_commands() for
+    why a user-modified file (skipped) must not be treated as a failure.
     """
     src_dir = _packaged_skills_dir()
     if not src_dir.is_dir():
-        return 0, []
+        return 0, [], []
 
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     installed = 0
-    skipped: list[str] = []
+    skipped: list = []
+    failed: list = []
 
     for skill_dir in sorted(src_dir.iterdir()):
         if not skill_dir.is_dir():
@@ -412,8 +422,8 @@ def install_skills(force: bool = False) -> Tuple[int, list[str]]:
             shutil.copy2(src, dst)
             installed += 1
         except OSError as e:
-            skipped.append(f"{dst}: {e}")
-    return installed, skipped
+            failed.append(f"{dst}: {e}")
+    return installed, skipped, failed
 
 
 def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = True) -> int:
@@ -440,26 +450,41 @@ def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = True
 
     cmds_ok = True
     if install_cmds:
-        n, skipped = install_commands()
+        n, skipped, failed = install_commands()
+        # Compute status OUTSIDE the verbose blocks: the exit code must describe
+        # what happened, not how loudly we described it. (It used to be set only
+        # under `if verbose`, so the same run returned 0 quietly and 1 verbosely.)
+        # A user-modified file we deliberately left alone is not a failure —
+        # re-running install.sh, the documented upgrade path, hits that every
+        # time and used to print a spurious "cs --setup reported an issue".
+        cmds_ok = not failed
         if verbose:
             if n:
                 print(f"✓ Installed {n} slash command(s) to {COMMANDS_DIR}")
             if skipped:
-                cmds_ok = False
-                print(f"  Skipped (already exist with different content; use --force to overwrite):")
+                print(f"  Kept your edited version (use --force to overwrite):")
                 for s in skipped:
+                    print(f"    {s}")
+            if failed:
+                print(f"! Could not install:")
+                for s in failed:
                     print(f"    {s}")
             print("  Try /statusbar in Claude Code.")
 
         # Install the consolidated skill alongside the slash commands.
-        s_n, s_skipped = install_skills()
+        s_n, s_skipped, s_failed = install_skills()
+        if s_failed:
+            cmds_ok = False
         if verbose:
             if s_n:
                 print(f"✓ Installed {s_n} skill(s) to {SKILLS_DIR}")
             if s_skipped:
-                cmds_ok = False
-                print(f"  Skill skipped (use --force to overwrite):")
+                print(f"  Kept your edited skill (use --force to overwrite):")
                 for s in s_skipped:
+                    print(f"    {s}")
+            if s_failed:
+                print(f"! Could not install skill:")
+                for s in s_failed:
                     print(f"    {s}")
 
     if fast:

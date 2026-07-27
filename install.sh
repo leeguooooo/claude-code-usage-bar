@@ -35,6 +35,13 @@ REPO="leeguooooo/claude-code-usage-bar"
 INSTALL_DIR="${CS_INSTALL_DIR:-$HOME/.local/bin}"
 FALLBACK_URL="https://raw.githubusercontent.com/${REPO}/main/web-install.sh"
 
+# Scratch dir for the downloaded tarball, cleaned up on any exit. Declared here
+# (not inside the function that fills it) so the trap can still see it — see the
+# note at the mktemp call.
+TMP_DIR=""
+cleanup() { [ -n "${TMP_DIR:-}" ] && rm -rf "$TMP_DIR"; return 0; }
+trap cleanup EXIT
+
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; RED='\033[0;31m'; NC='\033[0m'
 
 say()  { echo -e "${BLUE}$*${NC}"; }
@@ -120,8 +127,12 @@ main() {
     [ -n "$asset" ] || fall_back_to_pip
 
     local base="https://github.com/${REPO}/releases/latest/download"
-    local tmp; tmp="$(mktemp -d)"
-    trap 'rm -rf "$tmp"' EXIT
+    # NOTE: the scratch dir must be a global, not a `local`. The EXIT trap runs
+    # after this function has already returned, so a local `tmp` is out of scope
+    # by then — under `set -u` that ended the install with a bare
+    # "tmp: unbound variable", and the temp dir was never cleaned up.
+    TMP_DIR="$(mktemp -d)"
+    local tmp="$TMP_DIR"
 
     say "Downloading $asset from the latest release..."
     if ! curl -fsSL "$base/$asset" -o "$tmp/$asset"; then

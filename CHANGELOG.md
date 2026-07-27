@@ -9,6 +9,16 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.32.3 — 2026-07-27
+
+**Installer polish — three papercuts visible on every re-install.**
+
+- `install.sh` ended with `bash: line 1: tmp: unbound variable`. The cleanup trap referenced a variable declared `local` inside the download function, so by the time the `EXIT` trap fired it was out of scope — which under `set -u` errored *and* meant the downloaded tarball's temp dir was never cleaned up. The scratch dir is now a global with a proper cleanup trap.
+- `cs --setup reported an issue` was printed on every re-install even when everything succeeded. Setup lumped "this file exists with your edits, so we kept it" — a benign, expected outcome when re-running the installer — into the same bucket as genuine copy failures. Skipped and failed are now separate, and only real failures affect the exit code. The status was also computed inside an `if verbose:` block, so the same run returned 0 quietly and 1 verbosely; it no longer depends on verbosity.
+- `cs hud` printed its install/uninstall/stop messages and errors in Chinese inside an otherwise English installer — leftovers from the v3.31.0 HUD English-ification.
+
+---
+
 ## v3.32.2 — 2026-07-27
 
 **Fixes a crash that broke the status line for every standalone-binary user ([#36](https://github.com/leeguooooo/claude-code-usage-bar/issues/36)).**

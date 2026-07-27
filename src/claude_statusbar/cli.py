@@ -241,9 +241,9 @@ def _hud_install():
     subprocess.run(["launchctl", "unload", str(plist)], capture_output=True)
     r = subprocess.run(["launchctl", "load", str(plist)], capture_output=True, text=True)
     if r.returncode != 0:
-        print(f"launchctl load 失败: {r.stderr.strip()}", file=sys.stderr)
+        print(f"launchctl load failed: {r.stderr.strip()}", file=sys.stderr)
         return 1
-    print(f"已安装 HUD 常驻服务 (开机自启 + 崩溃重启)\n  plist: {plist}")
+    print(f"HUD service installed — starts on login, restarts on crash\n  plist: {plist}")
     return 0
 
 
@@ -254,7 +254,7 @@ def _hud_uninstall():
     if plist.exists():
         plist.unlink()
     subprocess.run(["pkill", "-f", "claude_statusbar.cli hud"], capture_output=True)
-    print("已卸载 HUD 常驻服务")
+    print("HUD service uninstalled")
     return 0
 
 
@@ -262,14 +262,14 @@ def _hud_stop():
     import subprocess
     subprocess.run(["launchctl", "stop", HUD_LABEL], capture_output=True)
     subprocess.run(["pkill", "-f", "claude_statusbar.cli hud"], capture_output=True)
-    print("已停止 HUD (若已 install,launchd 会自动重启;彻底移除用 uninstall)")
+    print("HUD stopped (launchd will restart it if installed — use `cs hud uninstall` to remove for good)")
     return 0
 
 
 def _run_hud_subcommand(rest):
     """`cs hud [start|install|uninstall|stop]` — floating desktop HUD (macOS)."""
     if sys.platform != "darwin":
-        print("cs hud 仅支持 macOS", file=sys.stderr)
+        print("cs hud is macOS-only", file=sys.stderr)
         return 2
     action = rest[0] if rest else "start"
     if action == "install":
@@ -294,15 +294,15 @@ def _run_hud_subcommand(rest):
             from . import hud
         except ImportError as e:
             print(
-                f"缺少 GUI 依赖 (pyobjc): {e}\n"
-                "安装: pip install 'claude-statusbar[hud]'\n"
-                "或:   pip install pyobjc-framework-Cocoa pyobjc-framework-Quartz",
+                f"missing GUI dependency (pyobjc): {e}\n"
+                "install: pip install 'claude-statusbar[hud]'\n"
+                "or:      pip install pyobjc-framework-Cocoa pyobjc-framework-Quartz",
                 file=sys.stderr,
             )
             return 1
         hud.run(rest[1:])
         return 0
-    print(f"未知 hud 动作: {action} (支持 start/install/uninstall/stop)", file=sys.stderr)
+    print(f"unknown hud action: {action} (expected start/install/uninstall/stop)", file=sys.stderr)
     return 2
 
 
@@ -386,32 +386,44 @@ def main():
         if sub == "install-commands":
             from .setup import install_commands, install_skills, COMMANDS_DIR, SKILLS_DIR
             force = "--force" in rest
-            n, skipped = install_commands(force=force)
+            n, skipped, failed = install_commands(force=force)
             print(f"Installed {n} slash command(s) to {COMMANDS_DIR}")
             if skipped:
-                print("Skipped:")
+                print("Kept your edited version:")
                 for s in skipped:
                     print(f"  {s}")
                 print("Use `cs install-commands --force` to overwrite.")
-            s_n, s_skipped = install_skills(force=force)
+            if failed:
+                print("Could not install:")
+                for s in failed:
+                    print(f"  {s}")
+            s_n, s_skipped, s_failed = install_skills(force=force)
             if s_n:
                 print(f"Installed {s_n} skill(s) to {SKILLS_DIR}")
             if s_skipped:
-                print("Skill skipped:")
+                print("Kept your edited skill:")
                 for s in s_skipped:
+                    print(f"  {s}")
+            if s_failed:
+                print("Could not install skill:")
+                for s in s_failed:
                     print(f"  {s}")
             print("Try /statusbar in Claude Code, or just say `switch theme to nord`.")
             return 0
         if sub == "install-skill":
             from .setup import install_skills, SKILLS_DIR
             force = "--force" in rest
-            n, skipped = install_skills(force=force)
+            n, skipped, failed = install_skills(force=force)
             print(f"Installed {n} skill(s) to {SKILLS_DIR}")
             if skipped:
-                print("Skipped:")
+                print("Kept your edited version:")
                 for s in skipped:
                     print(f"  {s}")
                 print("Use `cs install-skill --force` to overwrite.")
+            if failed:
+                print("Could not install:")
+                for s in failed:
+                    print(f"  {s}")
             print("Try saying `switch theme to nord` in Claude Code.")
             return 0
 
