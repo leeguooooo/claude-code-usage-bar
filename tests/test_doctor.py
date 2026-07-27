@@ -19,6 +19,17 @@ def _isolated(monkeypatch, tmp_path):
     return home
 
 
+@pytest.fixture(autouse=True)
+def _no_real_render(monkeypatch):
+    """`cs doctor` shells out to a real `cs render` for its smoke test. Tests
+    must never actually spawn it: the child inherits the real HOME (escaping the
+    tmp sandbox above) and can lazily start a daemon."""
+    import subprocess
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda argv, **kw: subprocess.CompletedProcess(argv, 0, b"bar", b""))
+
+
 def test_doctor_runs_clean_when_nothing_exists(capsys, _isolated):
     """No settings.json, no cache, no config — every line should still
     render without raising."""
@@ -83,3 +94,73 @@ def test_doctor_lists_installed_slash_commands(capsys, _isolated):
     assert "statusbar.md" in out
     assert "statusbar-style.md" in out
     assert "other-thing.md" not in out
+
+
+# ---------------------------------------------------------------------------
+# Render smoke test (issue #36). Every other doctor check inspects state and
+# can be green while rendering is dead — this one actually renders.
+# ---------------------------------------------------------------------------
+def _cache_with_payload(home):
+    cache = home / ".cache" / "claude-statusbar" / "last_stdin.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"session_id": "s1"}), encoding="utf-8")
+    return cache
+
+
+def test_smoke_test_reports_ok_when_render_succeeds(capsys, _isolated, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(subprocess, "run",
+                        lambda argv, **kw: subprocess.CompletedProcess(argv, 0, b"5h 12%", b""))
+    doctor._render_smoke_test(_cache_with_payload(_isolated))
+    out = capsys.readouterr().out
+    assert "render smoke test" in out and "ok" in out
+
+
+def test_smoke_test_surfaces_crash(capsys, _isolated, monkeypatch):
+    """The exact issue #36 symptom must be reported, not hidden behind green."""
+    import subprocess
+    tb = (b'Traceback (most recent call last):\n'
+          b'  File "claude_statusbar/render_thin.py", line 68, in _pkg_mtime\n'
+          b'ValueError: max() iterable argument is empty\n')
+    monkeypatch.setattr(subprocess, "run",
+                        lambda argv, **kw: subprocess.CompletedProcess(argv, 1, b"", tb))
+    doctor._render_smoke_test(_cache_with_payload(_isolated))
+    out = capsys.readouterr().out
+    assert "CRASHED" in out
+    assert "ValueError: max() iterable argument is empty" in out
+
+
+def test_smoke_test_flags_blank_output(capsys, _isolated, monkeypatch):
+    """Exit 0 but nothing rendered still means a blank status line."""
+    import subprocess
+    monkeypatch.setattr(subprocess, "run",
+                        lambda argv, **kw: subprocess.CompletedProcess(argv, 0, b"  \n", b""))
+    doctor._render_smoke_test(_cache_with_payload(_isolated))
+    assert "rendered nothing" in capsys.readouterr().out
+
+
+def test_smoke_test_skips_without_cache(capsys, _isolated):
+    doctor._render_smoke_test(_isolated / ".cache" / "nope.json")
+    assert "skipped" in capsys.readouterr().out
+
+
+def test_smoke_test_never_raises_when_subprocess_explodes(capsys, _isolated, monkeypatch):
+    import subprocess
+    def _boom(*a, **kw):
+        raise OSError("exec format error")
+    monkeypatch.setattr(subprocess, "run", _boom)
+    doctor._render_smoke_test(_cache_with_payload(_isolated))
+    assert "could not run" in capsys.readouterr().out
+
+
+def test_render_argv_uses_binary_directly_when_frozen(monkeypatch):
+    import sys as _s
+    monkeypatch.setattr(_s, "frozen", True, raising=False)
+    monkeypatch.setattr(_s, "executable", "/home/u/.local/bin/cs")
+    assert doctor._render_argv() == ["/home/u/.local/bin/cs", "render"]
+
+
+def test_render_argv_uses_dash_m_when_not_frozen(monkeypatch):
+    import sys as _s
+    monkeypatch.delattr(_s, "frozen", raising=False)
+    assert doctor._render_argv()[1:] == ["-m", "claude_statusbar.cli", "render"]

@@ -9,6 +9,20 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.32.2 — 2026-07-27
+
+**Fixes a crash that broke the status line for every standalone-binary user ([#36](https://github.com/leeguooooo/claude-code-usage-bar/issues/36)).**
+
+Once the daemon had run at least once, `cs render` died on *every* tick with `ValueError: max() iterable argument is empty` — the bar flashed and vanished in Claude Code. `_pkg_mtime()` scanned the package dir for `.py` files to detect a daemon running stale code, but a PyInstaller onefile build has none (modules live in the PYZ archive), so `max()` got an empty iterable and raised `ValueError`, which the `except OSError` guard did not catch. Affected every binary release (v3.30.0–v3.32.1); pip/uv installs were never affected.
+
+Frozen builds now use the executable's own mtime, so the stale-daemon detection keeps working there — re-running `install.sh` replaces the binary, which is exactly the "installed code is newer than the daemon" signal it needs.
+
+**`cs doctor` now actually renders.** It reported all-green while the status line was dead, because every check inspected state and none exercised the render path. It now runs a real `cs render` with your cached payload and prints the traceback when it crashes — this class of bug can't hide behind a green report again.
+
+Thanks to [@gasbasd](https://github.com/gasbasd) for a report that pinpointed the root cause, the trigger condition, and the fix.
+
+---
+
 ## v3.32.1 — 2026-07-22
 
 **Patch: `cs --version` program name + test determinism.** `cs --version` now derives its program name from `basename(argv[0])` rather than argparse's `%(prog)s` — Python 3.14 rewrites `%(prog)s` to `python3.x -m module` under `-m`, which mangled the prefix. The three aliases (`cs` / `cstatus` / `claude-statusbar`) now each show their real name on every Python version. Also made `test_preview` deterministic by forcing the demo dataset instead of depending on the machine's cached stdin (which can legitimately have no warm cache or cost).
