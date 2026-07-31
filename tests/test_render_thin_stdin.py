@@ -107,3 +107,25 @@ def test_session_id_survives_the_bounded_read(monkeypatch):
 ])
 def test_payload_completeness_check(buf, expected):
     assert render_thin._payload_is_complete(buf) is expected
+
+
+def test_session_env_injection_includes_columns(monkeypatch):
+    monkeypatch.setenv("COLUMNS", "41")
+    stamped = json.loads(render_thin._inject_session_env(PAYLOAD))
+    assert stamped["_cs_env"]["COLUMNS"] == "41"
+
+
+def test_cached_output_clips_after_displacement_suffix(tmp_path, monkeypatch, capsys):
+    rendered = tmp_path / "rendered.ansi"
+    meta = tmp_path / "meta.json"
+    rendered.write_text("1234567890\n", encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_consume_stdin", lambda: None)
+    monkeypatch.setattr(render_thin, "_session_paths",
+                        lambda _sid: (tmp_path, rendered, meta))
+    monkeypatch.setattr(render_thin, "_read_meta", lambda _path: {})
+    monkeypatch.setattr(render_thin, "_is_fresh", lambda _meta: True)
+    monkeypatch.setattr(render_thin, "_displacement_suffix", lambda: " SUFFIX")
+    monkeypatch.setenv("COLUMNS", "8")
+
+    assert render_thin.render() == 0
+    assert capsys.readouterr().out == "1234567…\n"

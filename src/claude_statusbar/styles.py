@@ -10,6 +10,7 @@ Adding a new style:
 
 from typing import Optional
 
+from ._display import clip_line, clip_lines, visible_width
 from .themes import Theme, get_theme
 
 RESET = "\033[0m"
@@ -561,25 +562,8 @@ def render_activity_line(activity, *, theme: Theme, use_color: bool = True,
 
 
 def _clip_width(s: str, limit: int) -> str:
-    """Truncate `s` to `limit` display columns, appending … when cut.
-
-    Wide East-Asian glyphs count as two columns, so a CJK preview clips at the
-    same visual width as an ASCII one.
-    """
-    from unicodedata import east_asian_width
-
-    def w(ch):
-        return 2 if east_asian_width(ch) in ("W", "F") else 1
-
-    if sum(w(ch) for ch in s) <= limit:
-        return s
-    out, used = [], 0
-    for ch in s:
-        if used + w(ch) > limit - 1:
-            break
-        out.append(ch)
-        used += w(ch)
-    return "".join(out) + "…"
+    """Back-compatible wrapper around shared ANSI-aware clipping."""
+    return clip_line(s, limit)
 
 
 def render_party_line(party, *, theme: Theme, use_color: bool = True) -> str:
@@ -828,6 +812,7 @@ def render(style: str, **kwargs) -> str:
     append an 'activity' line (todos / active tool / session stats) plus one
     bottom line per running subagent. All extra lines are style-agnostic.
     """
+    max_width = kwargs.pop("max_width", None)
     show_pb = kwargs.pop("show_project_branch", False)
     info = kwargs.pop("identity", None)
     dirty = kwargs.pop("identity_dirty", None)
@@ -855,7 +840,42 @@ def render(style: str, **kwargs) -> str:
     use_color = kwargs.get("use_color", True)
 
     fn = RENDERERS.get(style, render_classic)
-    out = fn(**kwargs)
+    render_kwargs = dict(kwargs)
+    out = fn(**render_kwargs)
+
+    # Preserve core quota/model signal before hard clipping. Optional segments
+    # disappear in stable least-important-first order; selected style stays put.
+    if (max_width is not None and max_width > 0
+            and visible_width(out.split("\n", 1)[0]) > max_width):
+        degradation = (
+            {"cache_age_text": ""},
+            {"lang_body": ""},
+            {"cost_text": ""},
+            {"balance_text": "", "balance_pct": None, "balance_amount": ""},
+            {"forecast_5h": "", "forecast_7d": ""},
+            {"projection_5h": "", "projection_7d": ""},
+        )
+        for replacements in degradation:
+            render_kwargs.update(replacements)
+            out = fn(**render_kwargs)
+            if visible_width(out.split("\n", 1)[0]) <= max_width:
+                break
+        else:
+            # Context tokens go last, and in two steps: drop the window
+            # denominator first — "Opus 5(139.3k/1.0M)" → "Opus 5(139.3k)" buys
+            # ~6 columns and keeps the number people actually read. A ~70-col
+            # pane on a 1M-context model lands exactly here, so dropping
+            # straight to a bare model name loses the count for no reason.
+            import re
+            model = str(render_kwargs.get("model", ""))
+            m = re.search(r"\s*\(([^()\n]*)/[^()\n]*\)$", model)
+            if m:
+                head = model[:m.start()]
+                for candidate in (f"{head}({m.group(1)})", head):
+                    render_kwargs["model"] = candidate
+                    out = fn(**render_kwargs)
+                    if visible_width(out.split("\n", 1)[0]) <= max_width:
+                        break
 
     if show_pb and info is not None:
         version_text = _statusbar_version() if show_version else ""
@@ -882,9 +902,8 @@ def render(style: str, **kwargs) -> str:
 
     # Dedicated egress-IP risk warning — appears only above the risk threshold
     # (ip_risk.SHOW_THRESHOLD), amber for suspicious, red for bad. May be
-    # multi-line (summary + action); each sub-line is colored separately so a
-    # long warning wraps cleanly instead of being truncated. Not part of the
-    # git identity line: network state isn't repo identity.
+    # multi-line (summary + action); each sub-line is colored separately, then
+    # final width clipping applies per physical line. Not part of git identity.
     def _emit_risk(text, level):
         nonlocal out
         if not text:
@@ -917,7 +936,7 @@ def render(style: str, **kwargs) -> str:
             for agline in render_agent_lines(
                     activity.agents, theme=theme, use_color=use_color):
                 out = out + "\n" + agline
-    return out
+    return clip_lines(out, max_width)
 
 
 def list_styles() -> list[str]:
