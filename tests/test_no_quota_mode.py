@@ -10,12 +10,24 @@ Detection is a pure function of the process environment + an explicit
 override, so these tests feed env dicts directly.
 """
 
+import pytest
+
 from claude_statusbar import core
 
 
 def test_relay_base_url_triggers_no_quota():
     """ANTHROPIC_BASE_URL pointing at a third-party relay → no-quota mode."""
     assert core.is_no_quota_mode({"ANTHROPIC_BASE_URL": "https://relay.example.com"}) is True
+
+
+@pytest.mark.parametrize("base_url", [
+    "HTTP://LOCALHOST:8787",
+    "http://127.0.0.1:8787",
+    "http://127.42.0.9:8787",
+    "http://[::1]:8787",
+])
+def test_loopback_base_url_still_triggers_no_quota(base_url):
+    assert core.is_no_quota_mode({"ANTHROPIC_BASE_URL": base_url}) is True
 
 
 def test_official_base_url_does_not_trigger():

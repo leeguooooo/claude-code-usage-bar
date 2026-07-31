@@ -61,6 +61,28 @@ def test_relay_env_forces_no_quota_layout(tmp_path, monkeypatch, capsys):
     assert "7d[" not in out
 
 
+def test_loopback_proxy_keeps_no_quota_without_fp_warning(
+        tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:17870")
+    monkeypatch.delenv("CS_API_MODE", raising=False)
+    _write_config(tmp_path, show_fp_risk=True)
+
+    import claude_statusbar.config as config
+    monkeypatch.setattr(
+        config, "CONFIG_PATH",
+        tmp_path / ".claude" / "claude-statusbar.json")
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_payload_with_quota()))
+    from claude_statusbar.core import main
+    main(use_color=False, _suppress_side_effects=True)
+
+    out = capsys.readouterr().out
+    assert "ctx[" in out
+    assert "5h[" not in out
+    assert "7d[" not in out
+    assert "third-party relay" not in out
+    assert "account-ban risk" not in out
+
+
 def test_official_env_keeps_quota_layout(tmp_path, monkeypatch, capsys):
     """No relay env → unchanged: 5h/7d bars render, no ctx bar."""
     monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
