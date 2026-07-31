@@ -198,8 +198,14 @@ def parse_stdin_data() -> Dict[str, Any]:
             result['context_used_pct'] = cw.get('used_percentage', 0)
             result['context_remaining_pct'] = cw.get('remaining_percentage', 100)
             result['context_window_size'] = cw.get('context_window_size', 0)
-            result['total_input_tokens'] = cw.get('total_input_tokens', 0)
-            result['total_output_tokens'] = cw.get('total_output_tokens', 0)
+            if 'total_input_tokens' in cw:
+                result['total_input_tokens'] = cw.get('total_input_tokens')
+            if 'total_output_tokens' in cw:
+                result['total_output_tokens'] = cw.get('total_output_tokens')
+            # Preserve absent vs explicit null: current_usage is authoritative
+            # when present, while null is a lifecycle sentinel after /compact.
+            if 'current_usage' in cw:
+                result['context_current_usage'] = cw.get('current_usage')
 
         # Session cost
         cost = data.get('cost', {})
@@ -255,14 +261,18 @@ def _leading_int(token: str) -> int:
     return int(digits) if digits else 0
 
 
-def _claude_emits_rate_limits(version) -> bool:
-    """True when `version` (Claude Code's reported version) is new enough to emit
-    official rate_limits. Tolerates suffixes ('2.1.80-beta') and junk (→ False)."""
+def _claude_version_at_least(version, minimum) -> bool:
+    """Compare Claude Code versions while tolerating suffixes and junk."""
     if not version:
         return False
     parts = tuple(_leading_int(p) for p in str(version).split(".")[:3])
     parts = parts + (0,) * (3 - len(parts))
-    return parts >= _RATE_LIMITS_MIN_VERSION
+    return parts >= minimum
+
+
+def _claude_emits_rate_limits(version) -> bool:
+    """True when Claude Code is new enough to emit official rate_limits."""
+    return _claude_version_at_least(version, _RATE_LIMITS_MIN_VERSION)
 
 
 def is_no_quota_mode(env: Dict[str, str], *, override: str = "auto") -> bool:
@@ -727,24 +737,65 @@ def _env_context_window_override(reported_size: float, env=None) -> Optional[int
     return None
 
 
-def _exact_used_tokens(stdin_data: Dict[str, Any]) -> Optional[int]:
-    """Context tokens as Claude Code reported them, or None when unavailable.
+def _token_count(value) -> Optional[int]:
+    """A nonnegative integer token count, rejecting bools/floats/strings."""
+    if type(value) is not int or value < 0:
+        return None
+    return value
 
-    None means "no usable signal" — an older Claude Code that omits the
-    totals, a relay payload that zeroes them, or a malformed value. Callers
-    fall back to deriving the count from the percentage.
+
+def _exact_used_tokens(stdin_data: Dict[str, Any]) -> Optional[int]:
+    """Authoritative input-side context tokens from current_usage, or None.
+
+    None is "no authoritative signal", never zero: the key may be absent
+    (fresh tick, old Claude Code), an explicit null (lifecycle sentinel
+    right after /compact), or malformed. Callers fall back to the
+    cross-checked totals, then to the reported percentage.
     """
+    if 'context_current_usage' not in stdin_data:
+        return None
+    current = stdin_data.get('context_current_usage')
+    if current is None or not isinstance(current, dict):
+        return None
     total = 0
-    for key in ('total_input_tokens', 'total_output_tokens'):
-        try:
-            total += int(stdin_data.get(key, 0) or 0)
-        except (TypeError, ValueError):
+    for key in ('input_tokens', 'cache_creation_input_tokens',
+                'cache_read_input_tokens'):
+        raw = current.get(key, 0)
+        count = _token_count(raw)
+        if count is None:
             return None
-    return total or None
+        total += count
+    return total
+
+
+# used_percentage is an integer percentage, so an honest totals reading can
+# sit up to ~1% off it; a little slack on top covers the two fields being
+# captured a tick apart. Anything further out means totals do not describe
+# the current context at all.
+_TOTALS_PCT_TOLERANCE = 1.5
+
+
+def _cross_checked_totals(stdin_data: Dict[str, Any], size: float,
+                          pct: Optional[float]) -> Optional[int]:
+    """total_input_tokens, but only when it agrees with used_percentage.
+
+    Totals silently change meaning across Claude Code versions and lifecycle
+    ticks — 2.1.220 still sends the cumulative session counter (tens of
+    millions on a long session) on the first ticks of a resume, before
+    current_usage appears. A version gate can't track that, so totals are
+    believed only when consistent with the percentage Claude Code itself
+    displays; otherwise the caller derives tokens from that percentage.
+    """
+    total = _token_count(stdin_data.get('total_input_tokens'))
+    if total is None or pct is None:
+        return None
+    if abs(total / size * 100.0 - pct) <= _TOTALS_PCT_TOLERANCE:
+        return total
+    return None
 
 
 def _context_window_usage(stdin_data: Dict[str, Any],
-                          env=None) -> Tuple[Optional[float], int, int]:
+                          env=None) -> Tuple[Optional[float], int, Optional[int]]:
     """Return (ctx_pct, ctx_size, ctx_used) for renderer/model suffix.
 
     Claude sometimes sends null for context_window.used_percentage. Treat that
@@ -774,22 +825,31 @@ def _context_window_usage(stdin_data: Dict[str, Any],
     # 10k on a 1M-context one, where the bar steps 60.0k → 70.0k and can sit
     # ~10k off the truth. `ctx_pct` itself stays as reported so the percentage
     # and its severity colour keep matching what Claude Code shows.
+    #
+    # Trust order: current_usage (authoritative, may honestly exceed the
+    # window while a compact is pending) → totals cross-checked against the
+    # percentage → the percentage itself → None ("unknown", renders as no
+    # suffix rather than a made-up 0).
     ctx_used = _exact_used_tokens(stdin_data)
     if ctx_used is None:
-        ctx_used = int(ctx_size_f * ctx_pct / 100) if ctx_pct is not None else 0
+        ctx_used = _cross_checked_totals(stdin_data, ctx_size_f, ctx_pct)
+    if ctx_used is None:
+        ctx_used = int(ctx_size_f * ctx_pct / 100) if ctx_pct is not None else None
 
     # Env override (#29): used tokens stay what stdin reported; the window and
     # the percentage are re-derived against the real (env-forced) size.
     override = _env_context_window_override(ctx_size_f, env)
     if override is not None and override != int(ctx_size_f):
-        if ctx_pct is not None:
+        if ctx_pct is not None and ctx_used is not None:
             ctx_pct = ctx_used / override * 100.0
         ctx_size_f = float(override)
-    return ctx_pct, int(ctx_size_f), int(ctx_used)
+    return ctx_pct, int(ctx_size_f), (int(ctx_used) if ctx_used is not None else None)
 
 
 def format_number(num: float) -> str:
     """Format number for detail display."""
+    if num >= 1_000_000_000:
+        return f"{num/1_000_000_000:.1f}B"
     if num >= 1_000_000:
         return f"{num/1_000_000:.1f}M"
     elif num >= 1_000:
@@ -1402,7 +1462,10 @@ def main(json_output: bool = False,
                     # Strip redundant size suffix like "(1M context)" from display_name
                     import re as _re
                     model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
-                    model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
+                    # Unknown usage (fresh tick / post-compact sentinel) shows
+                    # a bare model name — no suffix beats a made-up "(0/1.0M)".
+                    if ctx_used is not None:
+                        model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
                 countdown = get_countdown_emoji(minutes_to_reset)
 
@@ -1487,7 +1550,8 @@ def main(json_output: bool = False,
                 if ctx_size > 0:
                     import re as _re
                     model = _re.sub(r'\s*\([^)]*context[^)]*\)', '', model)
-                    model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
+                    if ctx_used is not None:
+                        model = f"{model}({format_number(ctx_used)}/{format_number(ctx_size)})"
 
                 if json_output:
                     print(json.dumps({
