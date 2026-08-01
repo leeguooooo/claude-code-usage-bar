@@ -9,6 +9,19 @@ For a quick overview of the latest release, see the
 
 ---
 
+## Unreleased
+
+**Windows: statusLine no longer written (or daily-reverted) to a shell-dead backslash path ([#42](https://github.com/leeguooooo/claude-code-usage-bar/issues/42)).**
+
+Claude Code executes the `statusLine` command through a POSIX shell (Git Bash on Windows), where `\` is an escape character — `C:\Users\me\cs.EXE` execs as `C:Usersmecs.EXE` and dies with exit 127 even though the file exists. `_resolve_cs_command()` returned `shutil.which()`'s backslash path verbatim, so on Windows the bar was broken from the very first write, and the daily self-heal reverted any hand-fix within 24h because it compared command strings for equality against that same poisoned path.
+
+- Paths are now written with forward slashes (valid in sh *and* cmd.exe), double-quoted when they contain spaces (double because cmd.exe has no single-quote semantics).
+- The daily self-heal now repairs only *broken* entries instead of anything that differs from today's canonical form: a working hand-fix, the fast/inline choice, and user-added CLI flags all survive. Repairs replace only the executable token — the argument tail is preserved verbatim (the old pass silently stripped flags like `--no-auto-update`). Bare `cs` is still upgraded to an absolute path once (GUI-launched Claude Code PATH gaps), and dead paths are still re-resolved.
+- Already-poisoned installs heal themselves on the next daily pass: a backslash executable is rewritten in place to forward slashes.
+- `cs doctor` gained a **statusLine shell test**: it runs the *configured* settings.json command string through `sh` — the render smoke test builds its own argv, which is exactly why this class of breakage stayed invisible. On Windows a backslash command is flagged statically.
+
+---
+
 ## v3.32.3 — 2026-07-27
 
 **Installer polish — three papercuts visible on every re-install.**

@@ -12,9 +12,10 @@ installs.
 
 import json
 import os
+import shlex
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional, Tuple
 
 from .cache import atomic_write_text
@@ -46,6 +47,62 @@ def _normalize_command_name(name: str) -> str:
         if name.endswith(ext):
             return name[: -len(ext)]
     return name
+
+
+def _is_windows() -> bool:
+    """Module-level so tests can monkeypatch the platform."""
+    return os.name == "nt"
+
+
+def _shell_path(p: str) -> str:
+    """Make a path safe to embed in the statusLine command string.
+
+    Claude Code executes that string through a POSIX shell (Git Bash on
+    Windows), where `\\` is an escape character: `C:\\Users\\me\\cs.EXE`
+    execs as `C:Usersmecs.EXE` and dies with exit 127 even though the file
+    exists (issue #42). Forward slashes work in every shell involved —
+    sh, and cmd.exe too for full paths.
+
+    Quoting uses double quotes, not shlex.quote: shlex emits single quotes,
+    which sh honors but cmd.exe does not treat as quoting at all.
+    """
+    if "\\" in p:
+        p = PureWindowsPath(p).as_posix()
+    if " " in p:
+        return f'"{p}"'
+    return p
+
+
+def _command_tokens(cmd: str) -> list:
+    """Tokenize a statusLine command without destroying Windows paths.
+
+    shlex.split(posix=True) treats `\\` as an escape — the exact mangling
+    this module exists to prevent — so a poisoned `C:\\Users\\me\\cs.EXE`
+    entry would tokenize to garbage, read as foreign, and be exempted from
+    healing. Non-posix mode preserves backslashes but leaves quote marks
+    attached to tokens; strip those.
+    """
+    try:
+        tokens = shlex.split(cmd.strip(), posix=False)
+    except ValueError:  # unbalanced quotes — degrade to whitespace split
+        tokens = cmd.strip().split()
+    return [t.strip('"\'') for t in tokens]
+
+
+def _split_command(cmd: str) -> Tuple[str, str]:
+    """Split into (executable token, verbatim tail).
+
+    The tail keeps its original spacing and quoting so a repair can replace
+    only the executable and re-attach user-added flags untouched.
+    """
+    s = cmd.strip()
+    try:
+        raw = shlex.split(s, posix=False)
+    except ValueError:
+        raw = s.split()
+    if not raw:
+        return "", ""
+    return raw[0].strip('"\''), s[len(raw[0]):]
 
 
 def _resolve_cs_command() -> str:
@@ -100,7 +157,7 @@ def _statusline_config(fast: bool = False, refresh_interval: int = DEFAULT_REFRE
     countdown actually animates. Without it, Claude Code only re-renders
     on activity (turn complete, tool use), and time-based segments freeze.
     """
-    cmd = _resolve_cs_command()
+    cmd = _shell_path(_resolve_cs_command())
     if fast:
         cmd = f"{cmd} render"
     return {
@@ -131,7 +188,16 @@ def _is_our_statusline(entry: object) -> bool:
         return False
     if _invokes_our_module(cmd):
         return True
-    name = _normalize_command_name(Path(cmd.strip().split()[0]).name)  # strip args + path + .exe shim
+    tokens = _command_tokens(cmd)
+    if not tokens:
+        return False
+    # PureWindowsPath understands both separators, so a backslash entry is
+    # recognized as ours on any platform — it has to be, or the daily heal
+    # would treat a poisoned Windows entry as foreign and never fix it.
+    try:
+        name = _normalize_command_name(PureWindowsPath(tokens[0]).name)
+    except ValueError:
+        return False
     return name in OUR_COMMAND_NAMES
 
 
@@ -171,10 +237,60 @@ def _existing_uses_render(existing) -> bool:
     cmd = existing.get("command")
     if not isinstance(cmd, str):
         return False
-    parts = cmd.strip().split()
+    parts = _command_tokens(cmd)
     # `cs render`, and the module form `<python> -m claude_statusbar.cli render`
     # — in both, `render` is the last token.
     return len(parts) >= 2 and parts[-1] == "render"
+
+
+def _repair_command(cmd: str) -> Optional[str]:
+    """Return a repaired command string, or None when `cmd` is healthy.
+
+    Used by the daily self-heal for entries that are already ours. Drift is
+    defined as *broken*, not *different from today's canonical form* — the
+    old string-equality check reverted any Windows hand-fix back to a
+    backslash path every 24h (issue #42) and silently stripped user-added
+    CLI flags. A repair only ever replaces the executable token; the
+    argument tail survives verbatim.
+
+    Broken means one of:
+      - Windows + backslashes in the executable: the file may exist, but
+        Claude Code runs the string through Git Bash's sh, where `\\` is an
+        escape — shell-dead despite Path(...).is_file() saying healthy, so
+        this check must come before any filesystem probe.
+      - bare name (`cs`): works in a terminal, but GUI-launched Claude Code
+        often has a narrower PATH — upgrade to the absolute path.
+      - the executable path no longer exists (moved/reinstalled elsewhere).
+    """
+    tok0, tail = _split_command(cmd)
+    if not tok0:
+        return None
+
+    if _is_windows() and "\\" in tok0:
+        healed = PureWindowsPath(tok0).as_posix()
+        if Path(healed).is_file():
+            return _shell_path(healed) + tail
+        tok0 = healed  # separators fixed but target gone too — re-resolve below
+
+    if _invokes_our_module(cmd):
+        # Deliberate user choice (see _invokes_our_module) — never rewritten.
+        return None
+
+    if "/" not in tok0 and "\\" not in tok0:
+        candidate = _shell_path(_resolve_cs_command())
+        if candidate.strip('"') == tok0:
+            return None  # resolver found nothing better than the bare name
+        return candidate + tail
+
+    if not Path(tok0).is_file():
+        # Trust the resolver here: it already verified its non-fallback
+        # candidates, and second-guessing it would leave dead entries dead.
+        candidate = _shell_path(_resolve_cs_command())
+        if candidate.strip('"') == tok0:
+            return None
+        return candidate + tail
+
+    return None
 
 
 def ensure_statusline_configured(fast: Optional[bool] = None) -> Tuple[bool, str]:
@@ -220,22 +336,44 @@ def ensure_statusline_configured(fast: Optional[bool] = None) -> Tuple[bool, str
             f"manually if you want claude-statusbar."
         )
 
-    # Ours already. Determine effective_fast:
-    # - fast=None  → preserve user's existing choice
-    # - fast=bool  → respect it as an explicit user request
+    # Ours already.
     if fast is None:
-        effective_fast = _existing_uses_render(existing)
-    else:
-        effective_fast = fast
+        # Daily self-heal: repair only what is broken, never churn what
+        # merely differs from today's canonical form (fast/inline choice,
+        # user-added flags, hand-fixed separators all survive — issue #42).
+        changed = False
+        existing_cmd = existing.get("command")
+        if isinstance(existing_cmd, str):
+            repaired = _repair_command(existing_cmd)
+            if repaired is not None and repaired != existing_cmd:
+                existing["command"] = repaired
+                changed = True
+        existing_refresh = existing.get("refreshInterval")
+        if not (isinstance(existing_refresh, (int, float)) and existing_refresh > 0):
+            existing["refreshInterval"] = DEFAULT_REFRESH_INTERVAL
+            changed = True
+        if not changed:
+            return False, "statusLine already configured"
+        settings["statusLine"] = existing
+        if _write_settings(settings):
+            return True, (
+                f"Refreshed statusLine command to "
+                f"{existing.get('command')!r} in {SETTINGS_PATH}"
+            )
+        return False, f"Could not write to {SETTINGS_PATH}"
+
+    # Explicit `cs --setup [--fast|--inline]`: the user asked for a rewrite,
+    # so force the canonical form. This is the one path allowed to drop
+    # custom flags — an explicit request, unlike the daily pass above.
     existing_refresh = existing.get("refreshInterval")
     if isinstance(existing_refresh, (int, float)) and existing_refresh > 0:
         effective_refresh = int(existing_refresh)
     else:
         effective_refresh = DEFAULT_REFRESH_INTERVAL
-    desired = _statusline_config(fast=effective_fast, refresh_interval=effective_refresh)
+    desired = _statusline_config(fast=fast, refresh_interval=effective_refresh)
 
     # The module form is a deliberate choice (see `_invokes_our_module`), not
-    # drift — the daily repair pass must not rewrite it back to the console
+    # drift — even an explicit setup must not rewrite it back to the console
     # script. Keep the command, still refresh refreshInterval.
     existing_cmd = existing.get("command")
     if isinstance(existing_cmd, str) and _invokes_our_module(existing_cmd):
