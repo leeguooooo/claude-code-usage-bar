@@ -186,6 +186,14 @@ def test_module_form_untouched_by_daily_pass(settings, monkeypatch):
     assert data["statusLine"]["command"] == mod_cmd
 
 
+def test_module_form_backslash_interpreter_is_posixized_when_missing(monkeypatch):
+    """A missing module interpreter still needs to survive Git Bash parsing."""
+    monkeypatch.setattr(setup_mod, "_is_windows", lambda: True)
+    cmd = r"C:\missing\python.exe -m claude_statusbar.cli render --flag"
+    assert setup_mod._repair_command(cmd) == \
+        "C:/missing/python.exe -m claude_statusbar.cli render --flag"
+
+
 # ---------------------------------------------------------------------------
 # explicit setup still force-writes the canonical form
 # ---------------------------------------------------------------------------

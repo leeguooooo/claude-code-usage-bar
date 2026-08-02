@@ -270,6 +270,11 @@ def _repair_command(cmd: str) -> Optional[str]:
         healed = PureWindowsPath(tok0).as_posix()
         if Path(healed).is_file():
             return _shell_path(healed) + tail
+        if _invokes_our_module(cmd):
+            # A module-form command cannot be safely replaced with the `cs`
+            # console script, but its interpreter still needs shell-safe
+            # separators. Keep `-m claude_statusbar...` and every argument.
+            return _shell_path(healed) + tail
         tok0 = healed  # separators fixed but target gone too — re-resolve below
 
     if _invokes_our_module(cmd):

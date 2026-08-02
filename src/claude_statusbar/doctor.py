@@ -125,8 +125,9 @@ def _statusline_shell_check(cmd: str, cache: Path) -> None:
     This check runs what Claude Code actually runs.
     """
     import subprocess
+    from .setup import _is_windows
 
-    if os.name == "nt" and "\\" in cmd:
+    if _is_windows() and "\\" in cmd:
         # No need to exec anything — sh will mangle this before the OS ever
         # sees a path. Diagnosable statically.
         _line("statusLine shell test",
@@ -337,6 +338,9 @@ def run() -> int:
     try:
         if sl_cmd:
             _statusline_shell_check(sl_cmd, cache)
+        else:
+            _line("statusLine shell test",
+                  _dim("skipped — no statusLine entry recognized as ours"))
     except Exception as e:
         _line("statusLine shell test", _dim(f"check skipped: {e}"))
 
