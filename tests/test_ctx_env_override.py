@@ -80,15 +80,36 @@ def test_no_stdin_context_stays_hidden_even_with_env():
         == (None, 0, 0)
 
 
-def test_null_pct_keeps_token_fallback_and_overridden_size():
+def test_null_pct_keeps_exact_input_usage_and_overridden_size():
     ctx_pct, ctx_size, ctx_used = _usage(
-        {"context_window_size": 200_000, "context_used_pct": None,
-         "total_input_tokens": 1200, "total_output_tokens": 34},
+        {"context_window_size": 1_000_000, "context_used_pct": None,
+         "context_current_usage": {
+             "input_tokens": 40_000,
+             "cache_creation_input_tokens": 3_824,
+             "cache_read_input_tokens": 20_000,
+             "output_tokens": 999_999,
+         }},
         env={"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000"},
     )
     assert ctx_pct is None          # unknown stays unknown
     assert ctx_size == 400_000      # but the window itself is corrected
-    assert ctx_used == 1234
+    assert ctx_used == 63_824       # output tokens never occupy context
+
+
+def test_exact_input_usage_rescales_against_override():
+    ctx_pct, ctx_size, ctx_used = _usage(
+        {"context_window_size": 1_000_000, "context_used_pct": 6,
+         "context_current_usage": {
+             "input_tokens": 40_000,
+             "cache_creation_input_tokens": 3_824,
+             "cache_read_input_tokens": 20_000,
+             "output_tokens": 999_999,
+         }},
+        env={"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000"},
+    )
+    assert ctx_size == 400_000
+    assert ctx_used == 63_824
+    assert ctx_pct == pytest.approx(15.956)
 
 
 # --- CLAUDE_CODE_DISABLE_1M_CONTEXT ------------------------------------------
