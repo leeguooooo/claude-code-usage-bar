@@ -160,6 +160,24 @@ def test_totals_consistent_with_pct_are_trusted_exactly():
     assert ctx_used == 63_824
 
 
+def test_totals_at_tolerance_boundary_are_trusted():
+    _, _, ctx_used = core._context_window_usage({
+        "context_window_size": 1_000_000,
+        "context_used_pct": 6,
+        "total_input_tokens": 75_000,
+    })
+    assert ctx_used == 75_000
+
+
+def test_totals_past_tolerance_boundary_fall_back_to_pct():
+    _, _, ctx_used = core._context_window_usage({
+        "context_window_size": 1_000_000,
+        "context_used_pct": 6,
+        "total_input_tokens": 75_100,
+    })
+    assert ctx_used == 60_000
+
+
 @pytest.mark.parametrize("version", ["", "junk", "2.1.1"])
 def test_current_usage_wins_without_reliable_version(version):
     _, _, ctx_used = core._context_window_usage({
