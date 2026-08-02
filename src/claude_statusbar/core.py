@@ -1097,15 +1097,6 @@ def main(json_output: bool = False,
         hot=parse_hex_color(cfg.color_hot) if cfg.color_hot else None,
     )
 
-    # Auto-compact: if terminal narrower than threshold, force hairline
-    if cfg.auto_compact_width > 0 and chosen_style != "hairline":
-        try:
-            term_w = os.get_terminal_size().columns
-            if term_w < cfg.auto_compact_width:
-                chosen_style = "hairline"
-        except OSError:
-            pass
-
     stdin_data = parse_stdin_data()
 
     # No-quota mode (third-party relay / Bedrock / Vertex): official 5h/7d quota
@@ -1118,6 +1109,13 @@ def main(json_output: bool = False,
     # this session's, so reading it would mis-detect no-quota mode per session.
     _session_env = stdin_data.get('_session_env')
     _effective_env = _session_env if isinstance(_session_env, dict) else os.environ
+    from ._display import clip_lines as _clip_lines
+    from ._display import terminal_width as _terminal_width
+    max_width = _terminal_width(_effective_env)
+    # Auto-compact and final clipping share one per-session width source.
+    if (cfg.auto_compact_width > 0 and chosen_style != "hairline"
+            and max_width is not None and max_width < cfg.auto_compact_width):
+        chosen_style = "hairline"
     _api_mode = _cfg.resolve_api_mode(cfg, env=_effective_env)
     no_quota = is_no_quota_mode(_effective_env, override=_api_mode)
     # Heuristic fallback only when the env signal missed (and not force-disabled):
@@ -1388,6 +1386,7 @@ def main(json_output: bool = False,
                     density=cfg.density, show_weekly=cfg.show_weekly,
                     ctx_pct=ctx_pct,
                     shimmer_phase=shimmer_phase,
+                    max_width=max_width,
                     no_quota=True,
                     balance_text=balance_text,
                     balance_pct=balance_pct,
@@ -1515,6 +1514,7 @@ def main(json_output: bool = False,
                     density=cfg.density, show_weekly=cfg.show_weekly,
                     ctx_pct=ctx_pct,
                     shimmer_phase=shimmer_phase,
+                    max_width=max_width,
                     **projection_kwargs,
                     **forecast_kwargs,
                     **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
@@ -1573,6 +1573,7 @@ def main(json_output: bool = False,
                         density=cfg.density, show_weekly=cfg.show_weekly,
                         ctx_pct=ctx_pct,
                         shimmer_phase=shimmer_phase,
+                        max_width=max_width,
                         quota_stale=quota_stale,
                         **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                         **activity_kwargs,
@@ -1587,7 +1588,8 @@ def main(json_output: bool = False,
                                  "bypass": bypass},
                     }))
                 else:
-                    print(f"⚠ Run inside Claude Code statusLine for rate-limit data | {model}")
+                    warning = f"⚠ Run inside Claude Code statusLine for rate-limit data | {model}"
+                    print(_clip_lines(warning, max_width))
 
     except Exception as e:
         reset_time = calculate_reset_time(reset_hour=reset_hour).replace(" ", "")
@@ -1606,6 +1608,7 @@ def main(json_output: bool = False,
                 warning_threshold=warning_threshold,
                 critical_threshold=critical_threshold,
                 density=cfg.density, show_weekly=cfg.show_weekly,
+                max_width=max_width,
                 **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
             ))
 

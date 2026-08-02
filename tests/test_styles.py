@@ -2,6 +2,7 @@
 
 import pytest
 
+from claude_statusbar._display import visible_width
 from claude_statusbar.styles import (
     DENSITY_PAD,
     RENDERERS,
@@ -56,6 +57,64 @@ def test_every_combination_renders(style, theme):
 def test_no_color_strips_all_ansi(style):
     out = render(style, theme=get_theme("graphite"), use_color=False, **SAMPLE)
     assert "\033[" not in out, f"{style} leaked ANSI when use_color=False"
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+@pytest.mark.parametrize("use_color", [False, True])
+def test_max_width_caps_every_physical_line(style, use_color):
+    out = render(
+        style, theme=get_theme("graphite"), use_color=use_color,
+        max_width=38, cost_text="123.45", cache_age_text="COLD",
+        forecast_5h="→99%", forecast_7d="→98%",
+        projection_5h="→97%", projection_7d="→96%",
+        fp_line_text="⚠ third-party relay warning with long action text",
+        fp_line_level="warn", **SAMPLE,
+    )
+    assert all(visible_width(line) <= 38 for line in out.splitlines())
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_max_width_is_noop_when_output_already_fits(style):
+    kwargs = dict(theme=get_theme("graphite"), use_color=False, **SAMPLE)
+    assert render(style, **kwargs, max_width=500) == render(style, **kwargs)
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_context_suffix_is_complete_or_omitted(style):
+    out = render(
+        style, theme=get_theme("graphite"), use_color=False, max_width=34,
+        cost_text="123.45", cache_age_text="COLD", **SAMPLE,
+    )
+    assert "45.0k/1.0M" not in out or "(45.0k/1.0M)" in out
+    assert all(fragment not in out for fragment in ("(45.0k/", "45.0k/1.0…"))
+
+
+def test_context_denominator_drops_before_the_whole_count():
+    """A width that fits "(45.0k)" but not "(45.0k/1.0M)" keeps the count."""
+    sample = dict(SAMPLE, lang_body="")  # nothing optional left to sacrifice
+    full = render("capsule", theme=get_theme("graphite"), use_color=False,
+                  **sample)
+    width = visible_width(full.split("\n", 1)[0]) - 4  # loses "/1.0M", not more
+    out = render("capsule", theme=get_theme("graphite"), use_color=False,
+                 max_width=width, **sample)
+    assert "(45.0k)" in out
+    assert "45.0k/1.0M" not in out
+
+
+def test_optional_degradation_order_is_stable(monkeypatch):
+    calls = []
+
+    def probe(**kwargs):
+        calls.append((kwargs.get("cache_age_text"), kwargs.get("lang_body")))
+        return "0123456789" + kwargs.get("cache_age_text", "") + kwargs.get("lang_body", "")
+
+    monkeypatch.setitem(RENDERERS, "probe", probe)
+    out = render(
+        "probe", max_width=10, cache_age_text="CACHE", lang_body="LANG",
+        theme=get_theme("graphite"), use_color=False,
+    )
+    assert calls[:3] == [("CACHE", "LANG"), ("", "LANG"), ("", "")]
+    assert out == "0123456789"
 
 
 def test_unknown_style_falls_back_to_classic():

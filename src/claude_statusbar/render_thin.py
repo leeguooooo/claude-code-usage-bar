@@ -23,6 +23,8 @@ import json
 import os
 import sys
 import time
+
+from ._display import clip_lines, terminal_width
 from pathlib import Path
 
 # Same constants as daemon.py — keep in sync. Duplicated rather than
@@ -295,6 +297,7 @@ _SESSION_ENV_KEYS = (
     "CS_API_MODE",
     "CLAUDE_CODE_USE_BEDROCK",
     "CLAUDE_CODE_USE_VERTEX",
+    "COLUMNS",
 )
 
 
@@ -426,7 +429,8 @@ def _fallback_inline() -> int:
     buf = _io.StringIO()
     with contextlib.redirect_stdout(buf):
         core_main()
-    sys.stdout.write(_append_suffix(buf.getvalue(), _displacement_suffix()))
+    content = _append_suffix(buf.getvalue(), _displacement_suffix())
+    sys.stdout.write(clip_lines(content, terminal_width(os.environ)))
     return 0
 
 
@@ -454,8 +458,11 @@ def render() -> int:
     meta = _read_meta(meta_path)
     if meta is not None and _is_fresh(meta):
         try:
-            content = rendered_path.read_text(encoding="utf-8")
-            sys.stdout.write(_append_suffix(content, _displacement_suffix()))
+            content = _append_suffix(
+                rendered_path.read_text(encoding="utf-8"),
+                _displacement_suffix(),
+            )
+            sys.stdout.write(clip_lines(content, terminal_width(os.environ)))
             return 0
         except OSError:
             # rendered.ansi disappeared between the meta read and the read.
