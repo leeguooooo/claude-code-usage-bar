@@ -11,6 +11,7 @@ timezone — and surfaces "this setup is fingerprintable, ban risk" so the
 user can make an informed call (the robust fix is the official endpoint).
 """
 import os
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -21,16 +22,20 @@ _MARKED_TIMEZONES = {"Asia/Shanghai", "Asia/Urumqi"}
 
 
 def _relay_host(env: Dict[str, str]) -> Optional[str]:
-    """The relay host when ANTHROPIC_BASE_URL points off the official API,
-    else None (official / unset). Same host-parsing as no-quota detection."""
+    """Remote relay host, or None for official, loopback, or unset URLs."""
     base = (env.get("ANTHROPIC_BASE_URL") or "").strip()
     if not base:
         return None
     from urllib.parse import urlparse
     parsed = urlparse(base if "//" in base else "//" + base)
     host = (parsed.hostname or "").strip().rstrip(".").lower()
-    if not host or host == _OFFICIAL_API_HOST:
+    if not host or host == _OFFICIAL_API_HOST or host == "localhost":
         return None
+    try:
+        if ip_address(host).is_loopback:
+            return None
+    except ValueError:
+        pass
     return host
 
 
