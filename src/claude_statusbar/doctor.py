@@ -114,6 +114,62 @@ def _render_smoke_test(cache: Path) -> None:
     _line("render smoke test", f"ok — {len(out)} bytes rendered")
 
 
+def _statusline_shell_check(cmd: str, cache: Path) -> None:
+    """Exec the *configured* settings.json command string through `sh`.
+
+    The render smoke test above builds its own argv, so it stays green even
+    when the configured string itself is shell-dead — exactly issue #42: a
+    backslash Windows path passes every filesystem check, but Claude Code
+    runs the statusLine string through Git Bash's sh, which eats the
+    backslashes (`C:\\Users\\me\\cs.EXE` → `C:Usersmecs.EXE`, exit 127).
+    This check runs what Claude Code actually runs.
+    """
+    import subprocess
+    from .setup import _is_windows
+
+    if _is_windows() and "\\" in cmd:
+        # No need to exec anything — sh will mangle this before the OS ever
+        # sees a path. Diagnosable statically.
+        _line("statusLine shell test",
+              _red("backslash path — Git Bash eats `\\` before exec; "
+                   "run: cs --setup"), ok=False)
+        return
+
+    sh = shutil.which("sh")
+    if sh is None:
+        _line("statusLine shell test",
+              _dim("skipped — no sh on PATH to emulate Claude Code's exec"))
+        return
+
+    payload = b"{}"
+    try:
+        if cache.exists():
+            payload = cache.read_bytes()
+    except OSError:
+        pass
+
+    try:
+        proc = subprocess.run([sh, "-c", cmd], input=payload,
+                              capture_output=True, timeout=30)
+    except Exception as e:
+        _line("statusLine shell test",
+              _red(f"could not run: {type(e).__name__}: {e}"), ok=False)
+        return
+
+    if proc.returncode != 0:
+        stderr = (proc.stderr or b"").decode("utf-8", "replace").strip()
+        tail = stderr.splitlines()[-1] if stderr else f"exit {proc.returncode}"
+        _line("statusLine shell test",
+              _red(f"exit {proc.returncode} — {tail}"), ok=False)
+        print(f"      {_dim('the configured command fails in the shell Claude Code uses')}")
+        return
+    if not (proc.stdout or b"").strip():
+        _line("statusLine shell test",
+              _red("rendered nothing — status line would be blank"), ok=False)
+        return
+    _line("statusLine shell test", "ok — configured command renders via sh")
+
+
 _ISSUES_URL = "https://github.com/leeguooooo/claude-code-usage-bar/issues"
 
 
@@ -143,6 +199,7 @@ def run() -> int:
     _line("python", f"{sys.version.split()[0]}  ({sys.executable})")
 
     # --- ~/.claude/settings.json statusLine entry ---
+    sl_cmd = None  # set when the entry is ours; drives the shell test below
     settings_path = Path.home() / ".claude" / "settings.json"
     if settings_path.exists():
         try:
@@ -155,6 +212,8 @@ def run() -> int:
             cmd = sl["command"]
             from .setup import _is_our_statusline, _existing_uses_render
             ours = _is_our_statusline(sl)
+            if ours:
+                sl_cmd = cmd
             _line("statusLine entry",
                   f"{cmd}  {_green('(ours)') if ours else _red('(not ours)')}",
                   ok=ours)
@@ -272,6 +331,18 @@ def run() -> int:
         _render_smoke_test(cache)
     except Exception as e:  # doctor must never die on its own check
         _line("render smoke test", _dim(f"check skipped: {e}"))
+
+    # --- statusLine shell test ---
+    # The smoke test proves *our code* renders; this proves the *configured
+    # command string* survives the shell Claude Code execs it through.
+    try:
+        if sl_cmd:
+            _statusline_shell_check(sl_cmd, cache)
+        else:
+            _line("statusLine shell test",
+                  _dim("skipped — no statusLine entry recognized as ours"))
+    except Exception as e:
+        _line("statusLine shell test", _dim(f"check skipped: {e}"))
 
     # --- terminal ---
     try:

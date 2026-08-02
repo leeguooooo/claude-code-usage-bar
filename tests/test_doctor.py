@@ -38,6 +38,8 @@ def test_doctor_runs_clean_when_nothing_exists(capsys, _isolated):
     out = capsys.readouterr().out
     assert "cs doctor" in out
     assert "version" in out
+    assert "statusLine shell test" in out
+    assert "no statusLine entry recognized as ours" in out
 
 
 def test_doctor_runs_when_settings_is_corrupt(capsys, _isolated):
@@ -164,3 +166,14 @@ def test_render_argv_uses_dash_m_when_not_frozen(monkeypatch):
     import sys as _s
     monkeypatch.delattr(_s, "frozen", raising=False)
     assert doctor._render_argv()[1:] == ["-m", "claude_statusbar.cli", "render"]
+
+
+def test_shell_check_uses_patchable_windows_probe(
+        capsys, _isolated, monkeypatch):
+    from claude_statusbar import setup as setup_mod
+    monkeypatch.setattr(setup_mod, "_is_windows", lambda: True)
+    doctor._statusline_shell_check(
+        r"C:\Users\me\Scripts\cs.EXE", _isolated / "missing.json")
+    out = capsys.readouterr().out
+    assert "backslash path" in out
+    assert "run: cs --setup" in out
