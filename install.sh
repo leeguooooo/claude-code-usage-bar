@@ -11,13 +11,17 @@
 #
 # What it does (full disclosure):
 #   1. Detects your OS + CPU arch and downloads the matching prebuilt `cs`
-#      binary from the latest GitHub Release (a single self-contained
-#      executable — no Python needed on your machine).
+#      bundle from the latest GitHub Release (self-contained — no Python
+#      needed on your machine). The installed bundle uses PyInstaller onedir,
+#      not onefile, so the once-per-second status render never extracts `_MEI*`
+#      runtime copies into your temp directory.
 #   2. Verifies the SHA-256 checksum published alongside it.
 #   3. Installs it to ~/.local/bin (no sudo; everything under $HOME) and, with
 #      your [y/N] consent, adds ~/.local/bin to PATH in your shell rc.
 #   4. Runs `cs --setup` to wire the Claude Code statusLine + slash commands.
-#   5. On macOS, if the Claude desktop app is installed, also registers the
+#   5. Removes inactive `_MEI*` directories leaked by legacy onefile versions,
+#      after stopping the old daemon and verifying no process has them open.
+#   6. On macOS, if the Claude desktop app is installed, also registers the
 #      floating desktop HUD to auto-start on login (`cs hud install`) — the
 #      macOS binary bundles the HUD, so this needs no Python. One command wires
 #      up both the terminal statusLine and the desktop panel.
@@ -33,13 +37,20 @@ set -euo pipefail
 
 REPO="leeguooooo/claude-code-usage-bar"
 INSTALL_DIR="${CS_INSTALL_DIR:-$HOME/.local/bin}"
+BUNDLE_ROOT="${CS_BUNDLE_ROOT:-$HOME/.local/lib/claude-statusbar}"
 FALLBACK_URL="https://raw.githubusercontent.com/${REPO}/main/web-install.sh"
 
 # Scratch dir for the downloaded tarball, cleaned up on any exit. Declared here
 # (not inside the function that fills it) so the trap can still see it — see the
 # note at the mktemp call.
 TMP_DIR=""
-cleanup() { [ -n "${TMP_DIR:-}" ] && rm -rf "$TMP_DIR"; return 0; }
+INSTALL_STAGE=""
+INSTALLED_BUNDLE_DIR=""
+cleanup() {
+    [ -n "${TMP_DIR:-}" ] && rm -rf "$TMP_DIR"
+    [ -n "${INSTALL_STAGE:-}" ] && rm -rf "$INSTALL_STAGE"
+    return 0
+}
 trap cleanup EXIT
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; RED='\033[0;31m'; NC='\033[0m'
@@ -119,6 +130,99 @@ sha256_of() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# stop_old_daemon — stop the legacy onefile daemon before replacing the
+# launcher. Its `_MEI*` directory can be hours old while still in active use,
+# so age alone is never a safe cleanup criterion.
+# ---------------------------------------------------------------------------
+stop_old_daemon() {
+    if [ -x "$INSTALL_DIR/cs" ]; then
+        "$INSTALL_DIR/cs" daemon stop >/dev/null 2>&1 || true
+        # The HUD is another long-lived frozen process. Stop it before old
+        # onedir versions are pruned; the installer restarts it below when the
+        # Claude desktop app is present.
+        "$INSTALL_DIR/cs" hud stop >/dev/null 2>&1 || true
+    fi
+}
+
+# BSD mv follows a destination symlink to a directory unless `-h` is passed;
+# GNU mv uses `-T` for the same no-follow replacement semantics.
+replace_path_atomically() {
+    local source="$1" target="$2"
+    if [ "$(uname -s)" = "Darwin" ]; then
+        mv -fh "$source" "$target"
+    else
+        mv -fT "$source" "$target"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# install_onedir_bundle SOURCE_DIR — copy a release bundle into a content-
+# addressed version directory and atomically repoint ~/.local/bin/cs through a
+# stable `current` symlink. A failed copy can never leave a half-written CLI.
+# Sets INSTALLED_BUNDLE_DIR to the final bundle directory.
+# ---------------------------------------------------------------------------
+install_onedir_bundle() {
+    local source_dir="$1"
+    mkdir -p "$INSTALL_DIR" "$BUNDLE_ROOT"
+
+    INSTALL_STAGE="$(mktemp -d "$BUNDLE_ROOT/.install.XXXXXX")"
+    cp -R "$source_dir/." "$INSTALL_STAGE/"
+    chmod 0755 "$INSTALL_STAGE/cs"
+
+    local version_line version build_id final_dir next_link
+    version_line="$("$INSTALL_STAGE/cs" --version)"
+    version="${version_line##* }"
+    case "$version" in
+        ''|*[!A-Za-z0-9._-]*) err "Invalid cs version in release bundle: $version_line"; exit 1 ;;
+    esac
+    build_id="$(sha256_of "$INSTALL_STAGE/cs" | cut -c1-12)"
+    final_dir="$BUNDLE_ROOT/v${version}-${build_id}"
+
+    if [ -d "$final_dir" ]; then
+        rm -rf "$INSTALL_STAGE"
+    else
+        mv "$INSTALL_STAGE" "$final_dir"
+    fi
+    INSTALL_STAGE=""
+
+    stop_old_daemon
+
+    # `current` must remain a symlink owned by this installer. Refuse to move a
+    # real directory out of the way: it may contain user data from a custom
+    # CS_BUNDLE_ROOT.
+    if [ -e "$BUNDLE_ROOT/current" ] && [ ! -L "$BUNDLE_ROOT/current" ]; then
+        err "$BUNDLE_ROOT/current exists and is not a symlink; refusing to replace it."
+        exit 1
+    fi
+    next_link="$BUNDLE_ROOT/.current.$$"
+    ln -s "$final_dir" "$next_link"
+    replace_path_atomically "$next_link" "$BUNDLE_ROOT/current"
+
+    # Atomic rename replaces either a previous symlink or the legacy regular
+    # binary without ever exposing a missing `cs` path to Claude Code.
+    next_link="$INSTALL_DIR/.cs.$$"
+    ln -s "$BUNDLE_ROOT/current/cs" "$next_link"
+    replace_path_atomically "$next_link" "$INSTALL_DIR/cs"
+    ln -sfn "$INSTALL_DIR/cs" "$INSTALL_DIR/claude-statusbar"
+    ln -sfn "$INSTALL_DIR/cs" "$INSTALL_DIR/cstatus"
+
+    INSTALLED_BUNDLE_DIR="$final_dir"
+}
+
+# ---------------------------------------------------------------------------
+# prune_old_bundles KEEP_DIR — the new daemon is already running before this
+# executes, so no process needs a previous onedir version.
+# ---------------------------------------------------------------------------
+prune_old_bundles() {
+    local keep_dir="$1" old
+    for old in "$BUNDLE_ROOT"/v*; do
+        [ -e "$old" ] || continue
+        [ "$old" = "$keep_dir" ] && continue
+        [ -d "$old" ] && [ ! -L "$old" ] && rm -rf "$old"
+    done
+}
+
 main() {
     command -v curl >/dev/null 2>&1 || { err "curl is required."; exit 1; }
 
@@ -126,7 +230,9 @@ main() {
     asset="$(detect_asset)"
     [ -n "$asset" ] || fall_back_to_pip
 
-    local base="https://github.com/${REPO}/releases/latest/download"
+    # Override is used by the offline installer integration test. Normal users
+    # always take the GitHub Release URL.
+    local base="${CS_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/latest/download}"
     # NOTE: the scratch dir must be a global, not a `local`. The EXIT trap runs
     # after this function has already returned, so a local `tmp` is out of scope
     # by then — under `set -u` that ended the install with a bare
@@ -156,14 +262,31 @@ main() {
 
     say "Extracting..."
     tar -xzf "$tmp/$asset" -C "$tmp"
-    [ -f "$tmp/cs" ] || { err "Archive did not contain a 'cs' binary."; exit 1; }
-
-    mkdir -p "$INSTALL_DIR"
-    install -m 0755 "$tmp/cs" "$INSTALL_DIR/cs"
-    # Convenience aliases as symlinks so `claude-statusbar` / `cstatus` also work.
-    ln -sf "$INSTALL_DIR/cs" "$INSTALL_DIR/claude-statusbar"
-    ln -sf "$INSTALL_DIR/cs" "$INSTALL_DIR/cstatus"
-    ok "✓ Installed cs → $INSTALL_DIR/cs"
+    local install_mode bundle_dir
+    if [ -x "$tmp/cs/cs" ]; then
+        install_mode="onedir"
+        install_onedir_bundle "$tmp/cs"
+        bundle_dir="$INSTALLED_BUNDLE_DIR"
+        ok "✓ Installed cs bundle → $bundle_dir"
+        ok "✓ Linked cs → $INSTALL_DIR/cs"
+    elif [ -f "$tmp/cs" ]; then
+        # Transition compatibility: `main/install.sh` can be newer than the
+        # latest Release for a short window while CI is still building the
+        # first onedir asset. Keep old releases installable, but do not pretend
+        # they have fixed the onefile extraction problem.
+        install_mode="legacy-onefile"
+        bundle_dir=""
+        stop_old_daemon
+        mkdir -p "$INSTALL_DIR"
+        rm -f "$INSTALL_DIR/cs"
+        install -m 0755 "$tmp/cs" "$INSTALL_DIR/cs"
+        ln -sfn "$INSTALL_DIR/cs" "$INSTALL_DIR/claude-statusbar"
+        ln -sfn "$INSTALL_DIR/cs" "$INSTALL_DIR/cstatus"
+        warn "Installed a legacy onefile asset; update again after the new onedir Release finishes building."
+    else
+        err "Archive did not contain a 'cs' bundle."
+        exit 1
+    fi
 
     # Ensure the install dir is on PATH.
     if ! command -v cs >/dev/null 2>&1 || [ "$(command -v cs)" != "$INSTALL_DIR/cs" ]; then
@@ -182,7 +305,19 @@ main() {
     export PATH="$INSTALL_DIR:$PATH"
 
     say "Wiring Claude Code statusLine (cs --setup)..."
-    "$INSTALL_DIR/cs" --setup || warn "cs --setup reported an issue; run it manually if the bar doesn't appear."
+    local setup_ok=1
+    if ! "$INSTALL_DIR/cs" --setup; then
+        setup_ok=0
+        warn "cs --setup reported an issue; run it manually if the bar doesn't appear."
+    fi
+
+    if [ "$install_mode" = "onedir" ]; then
+        # The new process is onedir, so this scan cannot create another `_MEI`.
+        # cleanup.py refuses to delete unless lsof proves the legacy directory
+        # inactive; if that proof is unavailable, it leaves everything alone.
+        "$INSTALL_DIR/cs" -m claude_statusbar.cleanup || true
+        [ "$setup_ok" -eq 1 ] && prune_old_bundles "$bundle_dir"
+    fi
 
     # macOS: if the Claude *desktop* app is installed, wire the floating HUD too,
     # so a single install covers BOTH surfaces — the terminal statusLine and the

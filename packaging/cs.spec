@@ -6,12 +6,15 @@ Build from the repo root:
     pip install pyinstaller
     pyinstaller packaging/cs.spec --noconfirm
 
-Produces a single-file executable at dist/cs. Zero runtime deps means this is a
-small, self-contained binary: no Python install required on the target machine.
+Produces an onedir bundle at dist/cs/ with the executable at dist/cs/cs. The
+bundle still has zero runtime dependencies, but it deliberately does *not* use
+PyInstaller onefile: ``cs render`` is invoked every second, and onefile extracts
+its Python runtime into a fresh ``_MEI*`` directory on every invocation. If the
+status-line host kills a slow startup, PyInstaller never reaches its cleanup
+handler and those directories accumulate indefinitely.
 
-The desktop HUD (`cs hud`) is intentionally NOT bundled — it needs PyObjC, which
-is macOS-GUI-heavy and platform-specific. `cs hud` in the binary prints a hint to
-install the pip extra instead.
+The desktop HUD (`cs hud`) is bundled in the macOS onedir release, including its
+PyObjC frameworks. Linux excludes those platform-specific modules.
 """
 import os, sys
 from PyInstaller.utils.hooks import copy_metadata, collect_submodules
@@ -39,6 +42,7 @@ hiddenimports = [
     "claude_statusbar._git_refresh",
     "claude_statusbar._balance_refresh",
     "claude_statusbar._ip_risk_refresh",
+    "claude_statusbar.cleanup",
 ]
 
 # The HUD (`cs hud`) is macOS-only (PyObjC). On darwin we bundle it INTO the
@@ -93,9 +97,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="cs",
     debug=False,
     bootloader_ignore_signals=False,
@@ -108,4 +111,13 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="cs",
 )

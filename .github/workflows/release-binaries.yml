@@ -1,7 +1,7 @@
 name: Release binaries
 
-# Builds the standalone `cs` binary for each platform and attaches it to the
-# GitHub Release, so users can `curl … install.sh | bash` with no Python/pip.
+# Builds the standalone onedir `cs` bundle for each platform and attaches it to
+# the GitHub Release, so users can `curl … install.sh | bash` with no Python/pip.
 #
 # Fires when a Release is published (the existing per-tag release flow), and can
 # be run manually against an existing tag via the Actions tab.
@@ -62,12 +62,15 @@ jobs:
 
       - name: Smoke-test the binary
         run: |
-          ./dist/cs --version
-          ./dist/cs styles >/dev/null
+          ./dist/cs/cs --version
+          ./dist/cs/cs styles >/dev/null
           # Exercise the `-m` self-spawn shim the daemon relies on.
-          ./dist/cs -m claude_statusbar._ip_risk_refresh || true
+          ./dist/cs/cs -m claude_statusbar._ip_risk_refresh || true
+          # The hot-path binary must be onedir. A onefile regression would
+          # recreate the disk leak fixed after v3.32.3.
+          test -d ./dist/cs/_internal
           # macOS: verify the HUD (pyobjc) actually got bundled — non-GUI check.
-          if [ "$RUNNER_OS" = "macOS" ]; then ./dist/cs hud check; fi
+          if [ "$RUNNER_OS" = "macOS" ]; then ./dist/cs/cs hud check; fi
 
       - name: Package (tar.gz + sha256)
         run: |
