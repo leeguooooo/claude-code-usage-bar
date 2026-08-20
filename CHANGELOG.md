@@ -9,7 +9,26 @@ For a quick overview of the latest release, see the
 
 ---
 
-## Unreleased
+## v3.32.4 — 2026-08-20
+
+**Standalone installs no longer leak PyInstaller `_MEI*` runtimes on every status refresh.**
+
+The macOS release binary included Python and PyObjC in PyInstaller onefile
+mode. `cs render` runs once per second, so each tick first extracted roughly
+11 MB into the user temp directory. A status-line timeout could kill the
+bootloader before its exit cleanup, leaving thousands of `_MEI*` directories
+and tens of gigabytes behind.
+
+- Release assets now contain a self-contained PyInstaller onedir bundle. The
+  CLI still needs no system Python, but the 1 Hz render path reuses the installed
+  runtime instead of extracting a new copy.
+- `install.sh` installs content-addressed versions below
+  `~/.local/lib/claude-statusbar`, atomically switches `~/.local/bin/cs`, starts
+  the new daemon, and removes superseded bundles only after setup succeeds.
+- After an onedir upgrade, the installer removes legacy `cs` `_MEI*` orphans.
+  Cleanup is macOS-only and fail-closed: it requires the old Python/PyObjC
+  signature, a ten-minute age, a leak cohort, current-user ownership, and an
+  `lsof` snapshot proving that no process has the directory open.
 
 **Windows: statusLine no longer written (or daily-reverted) to a shell-dead backslash path ([#42](https://github.com/leeguooooo/claude-code-usage-bar/issues/42)).**
 

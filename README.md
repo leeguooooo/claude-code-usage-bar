@@ -19,6 +19,13 @@ freshness — inline in Claude Code's status line, or a floating HUD on the desk
 
 </div>
 
+> [!IMPORTANT]
+> **macOS standalone users should upgrade to v3.32.4 now.** Older onefile
+> releases could leave a new ~11 MB PyInstaller `_MEI*` runtime directory on
+> every one-second refresh that was killed during startup. Re-running the
+> installer switches to an onedir bundle and safely removes inactive leftovers:
+> `curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash`
+
 Claude Code tells you almost nothing about where you stand against your rate limits.
 `claude-statusbar` puts the numbers that matter on one quiet line at the bottom of your
 terminal — so you never switch context to a separate window to answer *"how much have I
