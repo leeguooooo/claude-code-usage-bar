@@ -2,7 +2,13 @@ import os
 import subprocess
 from pathlib import Path
 
-from claude_statusbar.cleanup import _active_mei_dirs, cleanup_legacy_mei_dirs
+from claude_statusbar import cleanup as cleanup_mod
+from claude_statusbar import daemon
+from claude_statusbar.cleanup import (
+    CleanupResult,
+    _active_mei_dirs,
+    cleanup_legacy_mei_dirs,
+)
 
 
 def _legacy_dir(root: Path, name: str, *, mtime: float) -> Path:
@@ -125,3 +131,25 @@ def test_open_file_inventory_fails_closed_on_lsof_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: Result())
     assert _active_mei_dirs(tmp_path) is None
+
+
+def test_daemon_maintenance_retries_legacy_cleanup(monkeypatch):
+    logs = []
+    monkeypatch.setattr(
+        cleanup_mod,
+        "cleanup_legacy_mei_dirs",
+        lambda: CleanupResult(removed=4, bytes_freed=4096),
+    )
+    monkeypatch.setattr(daemon, "_log", logs.append)
+
+    daemon._gc_legacy_mei_dirs()
+
+    assert logs == ["gc'd 4 legacy _MEI dirs (4096 bytes)"]
+
+
+def test_daemon_maintenance_contains_cleanup_failure(monkeypatch):
+    def fail():
+        raise RuntimeError("lsof unavailable")
+
+    monkeypatch.setattr(cleanup_mod, "cleanup_legacy_mei_dirs", fail)
+    daemon._gc_legacy_mei_dirs()  # must not escape into the render loop

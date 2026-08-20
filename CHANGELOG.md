@@ -9,6 +9,17 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.32.5 — 2026-08-20
+
+**Fresh legacy `_MEI*` leftovers now age out automatically after upgrade.**
+
+The v3.32.4 installer safely skipped runtime directories younger than ten
+minutes, but its cleanup ran only once. The onedir daemon now retries the same
+fail-closed cleanup at startup and every 30 minutes, so directories that were
+too fresh during installation are removed after they become eligible.
+
+---
+
 ## v3.32.4 — 2026-08-20
 
 **Standalone installs no longer leak PyInstaller `_MEI*` runtimes on every status refresh.**

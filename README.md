@@ -20,7 +20,7 @@ freshness — inline in Claude Code's status line, or a floating HUD on the desk
 </div>
 
 > [!IMPORTANT]
-> **macOS standalone users should upgrade to v3.32.4 now.** Older onefile
+> **macOS standalone users should upgrade to v3.32.5 now.** Older onefile
 > releases could leave a new ~11 MB PyInstaller `_MEI*` runtime directory on
 > every one-second refresh that was killed during startup. Re-running the
 > installer switches to an onedir bundle and safely removes inactive leftovers:

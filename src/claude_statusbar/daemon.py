@@ -560,6 +560,30 @@ def _gc_orphan_tmp_files() -> None:
         pass
 
 
+def _gc_legacy_mei_dirs() -> None:
+    """Retry cleanup of legacy onefile runtimes from the long-lived daemon.
+
+    The installer deliberately skips directories younger than ten minutes to
+    avoid racing a process that has only just started extracting. A one-shot
+    installer cleanup would leave those fresh orphans behind forever. The
+    onedir daemon runs this once at startup and every maintenance interval, so
+    skipped directories age into eligibility without reintroducing work on the
+    per-render hot path.
+    """
+    try:
+        from .cleanup import cleanup_legacy_mei_dirs
+        result = cleanup_legacy_mei_dirs()
+        if result.removed:
+            _log(
+                f"gc'd {result.removed} legacy _MEI dirs "
+                f"({result.bytes_freed} bytes)"
+            )
+    except Exception:
+        # Maintenance must never take down the render daemon. cleanup.py is
+        # fail-closed already; this also contains unexpected platform errors.
+        pass
+
+
 def _gc_old_sessions() -> None:
     """Drop session dirs that haven't been touched for SESSION_GC_AFTER_S.
 
@@ -683,6 +707,7 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
                     pass
             if t0 - last_maint > GC_INTERVAL_S:
                 _gc_orphan_tmp_files()
+                _gc_legacy_mei_dirs()
                 # The daemon is the long-lived process, so it owns the periodic
                 # auto-update check (the per-render path suppresses side effects
                 # in daemon mode). check_for_updates is 24h-throttled and only
