@@ -20,7 +20,7 @@
 </div>
 
 > [!IMPORTANT]
-> **macOS 独立二进制用户请立即升级到 v3.32.4。**旧版 onefile 每秒启动一次刷新进程；
+> **macOS 独立二进制用户请立即升级到 v3.32.5。**旧版 onefile 每秒启动一次刷新进程；
 > 进程若在启动阶段被终止，可能遗留一份约 11 MB 的 PyInstaller `_MEI*` 运行目录。重新执行安装命令会切换到 onedir，
 > 并安全清理没有进程占用的旧目录：
 > `curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash`
