@@ -275,3 +275,11 @@ def test_legacy_full_dump_still_loads(tmp_path: Path):
     p.write_text(json.dumps({**asdict(cfg_mod.StatusbarConfig()),
                              "show_project_branch": False}), encoding="utf-8")
     assert cfg_mod.load_config(p).show_project_branch is False
+
+
+def test_auto_upgrade_defaults_on_and_is_togglable(tmp_path: Path):
+    assert cfg_mod.StatusbarConfig().auto_upgrade is True
+    p = tmp_path / "c.json"
+    cfg = cfg_mod.set_value("auto_upgrade", "false", p)
+    assert cfg.auto_upgrade is False
+    assert json.loads(p.read_text()) == {"auto_upgrade": False}

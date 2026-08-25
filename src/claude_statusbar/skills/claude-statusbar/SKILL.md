@@ -31,6 +31,7 @@ give a short confirmation (one line, no lecture).
 | Wipe config | `cs config reset` |
 | Install / first-time setup | `cs --setup` |
 | Upgrade / update to latest version | `cs upgrade` — NEVER guess `uv tool install` / `pip install -U` / `pipx upgrade`: it detects the install channel that is actually running `cs` and picks the right one (many users don't have uv at all) |
+| Turn auto-upgrade off | `cs config set auto_upgrade false` (default `true` — a detached once-a-day check upgrades every install channel, binaries included; `CLAUDE_STATUSBAR_NO_UPDATE=1` also wins) |
 | Enable fast mode (daemon) | `cs --setup --fast` |
 | Disable fast mode | `cs daemon stop` then re-run `cs --setup` |
 | Toggle session cost display | `cs config set show_cost true\|false` |

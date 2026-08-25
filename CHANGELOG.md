@@ -9,6 +9,33 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.36.0 — 2026-08-25
+
+**The standalone binary keeps itself up to date now, like every other install.**
+
+Binary installs were the one channel excluded from the daily background
+upgrade: the rule was "never pipe curl|sh behind the user's back". Two things
+changed that calculus — the upgrade is now pinned to a specific release tag
+and verifies what actually landed (v3.35.4), so an unattended run can no
+longer leave a different build behind; and being excluded meant binary users
+sat on stale versions indefinitely, which is its own kind of harm.
+
+- Auto-upgrade runs once a day in a detached process, on every channel.
+- It still refuses when this copy doesn't own the `cs` on PATH — upgrading a
+  duplicate would hijack someone else's install (v3.35.2).
+- New `auto_upgrade` config key (default `true`) turns it off without an env
+  var: `cs config set auto_upgrade false`. `CLAUDE_STATUSBAR_NO_UPDATE=1`
+  still overrides everything.
+
+**The installer no longer deletes the bundle the upgrade is running from.**
+`prune_old_bundles` removed every previous onedir version on the assumption
+that nothing could still be inside one. An unattended upgrade *is* inside one,
+and a PyInstaller onedir binary dlopens its libraries lazily — pruning it
+mid-run could kill the upgrade in progress. The updater passes its own bundle
+in `CS_KEEP_BUNDLE_DIR`; the next upgrade collects it once it is empty.
+
+---
+
 ## v3.35.4 — 2026-08-25
 
 **The upgrade now checks what it installed instead of announcing what it meant to.**

@@ -232,12 +232,19 @@ install_onedir_bundle() {
 # ---------------------------------------------------------------------------
 # prune_old_bundles KEEP_DIR — the new daemon is already running before this
 # executes, so no process needs a previous onedir version.
+#
+# One exception: an unattended `cs upgrade` runs *out of* an old bundle, and a
+# PyInstaller onedir binary dlopens its libraries lazily — deleting that dir
+# mid-run can kill the upgrade while it is still working. The updater passes
+# its own bundle in CS_KEEP_BUNDLE_DIR; the next upgrade prunes it once nothing
+# is running inside it.
 # ---------------------------------------------------------------------------
 prune_old_bundles() {
     local keep_dir="$1" old
     for old in "$BUNDLE_ROOT"/v*; do
         [ -e "$old" ] || continue
         [ "$old" = "$keep_dir" ] && continue
+        [ -n "${CS_KEEP_BUNDLE_DIR:-}" ] && [ "$old" = "$CS_KEEP_BUNDLE_DIR" ] && continue
         [ -d "$old" ] && [ ! -L "$old" ] && rm -rf "$old"
     done
 }

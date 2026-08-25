@@ -275,6 +275,13 @@ def _run_installer(version: Optional[str] = None) -> bool:
     """
     import os
     env = dict(os.environ)
+    if _is_frozen():
+        # The installer prunes old bundle dirs, and during an unattended
+        # upgrade *this* process is executing out of one of them. A PyInstaller
+        # onedir binary dlopens its libraries lazily, so deleting that dir
+        # mid-run can kill the upgrade it is performing. Tell the installer to
+        # spare it; the next upgrade prunes it once nothing is inside.
+        env["CS_KEEP_BUNDLE_DIR"] = str(Path(sys.executable).resolve().parent)
     if version:
         env["CS_RELEASE_BASE_URL"] = (
             f"https://github.com/{GITHUB_REPO}/releases/download/v{version}"
@@ -320,9 +327,17 @@ def auto_upgrade() -> bool:
         return False
 
     if _is_frozen():
-        # Never auto-run a curl|sh installer behind the user's back. Binary
-        # users still see the `↑<newver>` hint and can re-run install.sh.
-        return False
+        # Binary installs auto-upgrade too (opt out with
+        # CLAUDE_STATUSBAR_NO_UPDATE=1 or `cs config set auto_upgrade false`).
+        # The installer is pinned to the version we resolved and the result is
+        # verified, so an unattended run can't quietly leave a different build
+        # behind — the failure mode that made this path suspect to begin with.
+        latest = get_latest_version()
+        if latest is None or not compare_versions(get_current_version(), latest):
+            return False
+        if not _run_installer(latest):
+            return False
+        return installed_version_on_path() == latest
 
     if _run_upgrade(get_upgrade_command()):
         return True
@@ -406,10 +421,6 @@ def spawn_background_upgrade_check() -> None:
     On a successful upgrade the on-disk package mtime changes, and the daemon's
     code-drift detection (render_thin._is_fresh) restarts it onto new code.
     """
-    if _is_frozen():
-        # A frozen binary can't pip-upgrade itself; skip the background check
-        # entirely (the `↑<newver>` hint still surfaces new releases).
-        return
     if is_shadow_install():
         # A duplicate install must not upgrade itself into an entry point
         # another install owns. See is_shadow_install.
@@ -444,7 +455,8 @@ def check_and_upgrade() -> Tuple[bool, str]:
     else:
         return (
             False,
-            f"Update available (v{latest}) but auto-upgrade failed. Run: pip install --upgrade claude-statusbar",
+            f"Update available (v{latest}) but auto-upgrade failed. "
+            f"Run `cs upgrade` to see why.",
         )
 
 

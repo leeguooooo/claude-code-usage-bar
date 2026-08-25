@@ -264,3 +264,76 @@ def test_pypi_check_bypasses_the_cdn_edge_cache(monkeypatch):
     assert updater.get_latest_version() == "9.9.9"
     assert seen["url"].startswith(updater.PYPI_URL + "?")
     assert seen["url"] != updater.PYPI_URL
+
+
+def test_frozen_auto_upgrade_runs_pinned_and_verifies(monkeypatch):
+    # Binary installs auto-upgrade now. The guard that makes that safe is the
+    # same one `cs upgrade` uses: pin the download, then check what landed.
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.35.2")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.36.0")
+    ran = []
+    monkeypatch.setattr(updater, "_run_installer",
+                        lambda v=None: ran.append(v) or True)
+    monkeypatch.setattr(updater, "installed_version_on_path", lambda: "3.36.0")
+
+    assert updater.auto_upgrade() is True
+    assert ran == ["3.36.0"]
+
+
+def test_frozen_auto_upgrade_reports_failure_when_another_version_lands(monkeypatch):
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.35.2")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.36.0")
+    monkeypatch.setattr(updater, "_run_installer", lambda v=None: True)
+    monkeypatch.setattr(updater, "installed_version_on_path", lambda: "3.35.2")
+
+    assert updater.auto_upgrade() is False
+
+
+def test_frozen_auto_upgrade_skips_when_already_current(monkeypatch):
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.36.0")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.36.0")
+
+    def boom(v=None):
+        raise AssertionError("no reinstall when already on the latest")
+
+    monkeypatch.setattr(updater, "_run_installer", boom)
+    assert updater.auto_upgrade() is False
+
+
+def test_frozen_auto_upgrade_still_refuses_to_hijack(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: True)
+
+    def boom(v=None):
+        raise AssertionError("a shadow install must never upgrade itself")
+
+    monkeypatch.setattr(updater, "_run_installer", boom)
+    assert updater.auto_upgrade() is False
+
+
+def test_installer_spares_the_bundle_it_is_running_from(monkeypatch, tmp_path):
+    # An unattended upgrade executes out of a bundle the installer would
+    # otherwise delete out from under it.
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    bundle = tmp_path / "v3.35.2-abc"
+    bundle.mkdir()
+    monkeypatch.setattr(updater.sys, "executable", str(bundle / "cs"))
+    seen = {}
+
+    class _R:
+        returncode = 0
+
+    def fake_run(cmd, timeout=None, env=None, **kw):
+        seen["env"] = env
+        return _R()
+
+    monkeypatch.setattr(updater.subprocess, "run", fake_run)
+    assert updater._run_installer("3.36.0") is True
+    assert seen["env"]["CS_KEEP_BUNDLE_DIR"] == str(bundle)
+    assert "releases/download/v3.36.0" in seen["env"]["CS_RELEASE_BASE_URL"]

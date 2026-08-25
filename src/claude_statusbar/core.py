@@ -655,6 +655,13 @@ def check_for_updates(session_id: str = ''):
         return
 
     try:
+        from .config import load_config
+        if not load_config().auto_upgrade:
+            return
+    except Exception:
+        pass  # a broken config must never wedge the update check
+
+    try:
         cache_dir = Path.home() / '.cache' / 'claude-statusbar'
         cache_dir.mkdir(parents=True, exist_ok=True)
         marker = cache_dir / 'last_update_check'

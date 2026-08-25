@@ -108,6 +108,9 @@ class StatusbarConfig:
     color_hot: Optional[str] = None
     # Worktree marker color on the identity line (theme.wt by default).
     color_worktree: Optional[str] = None
+    # Keep cs current on its own, once a day, in a detached background process.
+    # CLAUDE_STATUSBAR_NO_UPDATE=1 still wins over this.
+    auto_upgrade: bool = True
 
 
 def _to_bool(v):
@@ -164,6 +167,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         color_warn=raw.get("color_warn") or None,
         color_hot=raw.get("color_hot") or None,
         color_worktree=raw.get("color_worktree") or None,
+        auto_upgrade=_to_bool(raw.get("auto_upgrade", True)),
     )
 
 
@@ -223,6 +227,7 @@ VALID_KEYS = {
     "cache_ttl_seconds", "api_mode",
     "warning_threshold", "critical_threshold",
     "color_ok", "color_warn", "color_hot", "color_worktree",
+    "auto_upgrade",
 }
 _VALID_API_MODE = {"auto", "on", "off"}
 _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_balance",
@@ -234,7 +239,7 @@ _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_balance",
               "show_ip_risk", "show_fp_risk",
               "show_duration", "show_lines", "show_ahead_behind", "show_version",
               "bar_shimmer", "show_forecast", "show_projection",
-              "show_mode", "mode_gradient"}
+              "show_mode", "mode_gradient", "auto_upgrade"}
 _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds"}
 _COLOR_KEYS = {"color_ok", "color_warn", "color_hot", "color_worktree"}
