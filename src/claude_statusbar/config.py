@@ -167,11 +167,46 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
     )
 
 
+def sparse_dict(cfg: StatusbarConfig) -> dict:
+    """The config as *only* the keys that differ from the defaults.
+
+    Writing every field (the old behavior) froze whatever the defaults happened
+    to be on the day the file was first written: one `cs config set <anything>`
+    stamped all ~35 values into JSON, and every later change to a default was
+    then invisible to that user forever. `show_project_branch` shipped default
+    off and flipped to on hours later — anyone who wrote a config in between
+    kept the second line hidden for months, with no way to tell why.
+
+    Storing only real choices makes the file mean "what I changed", so
+    unmentioned keys keep following the code's default.
+    """
+    defaults = asdict(StatusbarConfig())
+    return {k: v for k, v in asdict(cfg).items() if v != defaults[k]}
+
+
+def explicit_keys(path: Optional[Path] = None) -> set:
+    """Keys actually present in the config file — i.e. deliberate choices.
+
+    Everything else is following the default. `cs config show` uses this to
+    say which is which, so a stale value can never masquerade as a default.
+    """
+    path = CONFIG_PATH if path is None else path
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    return set(raw) & VALID_KEYS if isinstance(raw, dict) else set()
+
+
 def save_config(cfg: StatusbarConfig, path: Optional[Path] = None) -> None:
-    """Persist config atomically — Ctrl+C mid-write must not corrupt JSON."""
+    """Persist config atomically — Ctrl+C mid-write must not corrupt JSON.
+
+    Only non-default values are written; see `sparse_dict`.
+    """
     path = CONFIG_PATH if path is None else path
     from .cache import atomic_write_text
-    atomic_write_text(path, json.dumps(asdict(cfg), indent=2, ensure_ascii=False) + "\n")
+    atomic_write_text(
+        path, json.dumps(sparse_dict(cfg), indent=2, ensure_ascii=False) + "\n")
 
 
 VALID_KEYS = {
@@ -284,6 +319,21 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
         setattr(cfg, key, value)
     else:
         setattr(cfg, key, value)
+    save_config(cfg, path)
+    return cfg
+
+
+def unset_value(key: str, path: Optional[Path] = None) -> StatusbarConfig:
+    """Drop a key from the config file so it follows the code default again.
+
+    The counterpart to `set_value`: with sparse storage, "no opinion" is a
+    state the file can actually express, and this is how you get back to it.
+    """
+    path = CONFIG_PATH if path is None else path
+    if key not in VALID_KEYS:
+        raise KeyError(f"unknown config key: {key} (valid: {sorted(VALID_KEYS)})")
+    cfg = load_config(path)
+    setattr(cfg, key, getattr(StatusbarConfig(), key))
     save_config(cfg, path)
     return cfg
 

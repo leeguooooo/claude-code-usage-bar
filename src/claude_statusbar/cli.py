@@ -37,39 +37,37 @@ def _run_config_subcommand(rest):
 
     if action == "show":
         cfg = cfg_mod.load_config()
-        print(f"style               = {cfg.style}")
-        print(f"theme               = {cfg.theme}")
-        print(f"density             = {cfg.density}")
-        print(f"auto_compact_width  = {cfg.auto_compact_width or '(disabled)'}")
-        print(f"show_weekly         = {cfg.show_weekly}")
-        print(f"show_language       = {cfg.show_language}")
-        print(f"show_cost           = {cfg.show_cost}")
-        print(f"show_balance        = {cfg.show_balance}")
-        print(f"balance_bar         = {cfg.balance_bar}")
-        print(f"show_cache_age      = {cfg.show_cache_age}")
-        print(f"show_project_branch = {cfg.show_project_branch}")
-        print(f"show_party          = {cfg.show_party}")
-        print(f"show_ahead_behind   = {cfg.show_ahead_behind}")
-        print(f"show_todos          = {cfg.show_todos}")
-        print(f"show_tools          = {cfg.show_tools}")
-        print(f"show_tool_rollup    = {cfg.show_tool_rollup}")
-        print(f"show_agents         = {cfg.show_agents}")
-        print(f"show_duration       = {cfg.show_duration}")
-        print(f"show_lines          = {cfg.show_lines}")
-        print(f"show_version        = {cfg.show_version}")
-        print(f"show_mode           = {cfg.show_mode}")
-        print(f"mode_gradient       = {cfg.mode_gradient}")
-        print(f"bar_shimmer         = {cfg.bar_shimmer}")
-        print(f"show_forecast       = {cfg.show_forecast}")
-        print(f"show_projection     = {cfg.show_projection}")
-        print(f"cache_ttl_seconds   = {cfg.cache_ttl_seconds}")
-        print(f"warning_threshold   = {cfg.warning_threshold}")
-        print(f"critical_threshold  = {cfg.critical_threshold}")
-        print(f"color_ok            = {cfg.color_ok or '(theme default)'}")
-        print(f"color_warn          = {cfg.color_warn or '(theme default)'}")
-        print(f"color_hot           = {cfg.color_hot or '(theme default)'}")
-        print(f"color_worktree      = {cfg.color_worktree or '(theme default)'}")
+        # Which keys the file actually carries. A value you chose and a value
+        # that merely follows the default look identical otherwise — and that
+        # ambiguity is exactly what hid a stale `show_project_branch = False`
+        # for months after the default flipped.
+        chosen = cfg_mod.explicit_keys()
+
+        def line(key, rendered=None):
+            value = rendered if rendered is not None else getattr(cfg, key)
+            # Placeholders like "(theme default)" already say it; a second
+            # "(default)" next to them just reads as noise.
+            placeholder = str(value).startswith("(")
+            mark = "" if key in chosen or placeholder else "   (default)"
+            print(f"{key:<20}= {value}{mark}")
+
+        line("style"); line("theme"); line("density")
+        line("auto_compact_width", cfg.auto_compact_width or "(disabled)")
+        for key in ("show_weekly", "show_language", "show_cost", "show_balance",
+                    "balance_bar", "show_cache_age", "show_project_branch",
+                    "show_party", "show_ahead_behind", "show_todos",
+                    "show_tools", "show_tool_rollup", "show_agents",
+                    "show_duration", "show_lines", "show_version", "show_mode",
+                    "mode_gradient", "bar_shimmer", "show_forecast",
+                    "show_projection", "cache_ttl_seconds",
+                    "warning_threshold", "critical_threshold"):
+            line(key)
+        for key in ("color_ok", "color_warn", "color_hot", "color_worktree"):
+            line(key, getattr(cfg, key) or "(theme default)")
         print(f"\nfile: {cfg_mod.CONFIG_PATH}")
+        print("      only keys you changed are stored; the rest follow the "
+              "code default and move with it.")
+        print("      `cs config unset <key>` returns a key to the default.")
         return 0
 
     if action == "set":
@@ -96,6 +94,18 @@ def _run_config_subcommand(rest):
             return 2
         return 0
 
+    if action == "unset":
+        if len(args) != 1:
+            print("usage: cs config unset <key>", file=sys.stderr)
+            return 2
+        try:
+            new_cfg = cfg_mod.unset_value(args[0])
+        except (KeyError, ValueError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(f"{args[0]} = {getattr(new_cfg, args[0])}  (now following the default)")
+        return 0
+
     if action == "reset":
         # Delete the config file → load_config() falls back to defaults.
         # Idempotent: missing file is success.
@@ -110,7 +120,7 @@ def _run_config_subcommand(rest):
             return 2
         return 0
 
-    print(f"unknown config action: {action} (try: show / set / get / reset)",
+    print(f"unknown config action: {action} (try: show / set / get / unset / reset)",
           file=sys.stderr)
     return 2
 

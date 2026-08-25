@@ -51,7 +51,17 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `color_ok` / `color_warn` / `color_hot` / `color_worktree` | hex, `null` | Override the theme's severity colors / worktree-marker hue; empty string restores the theme default |
 | `api_mode` | `auto` / `on` / `off` | No-quota mode (see [No-quota mode](no-quota-mode.md)); `CS_API_MODE` env overrides |
 
-Full per-key detail is in the [segment reference](segments.md) or `cs config show`. Set with `cs config set <key> <value>`; `cs config reset` restores defaults.
+Full per-key detail is in the [segment reference](segments.md) or
+`cs config show`. Set with `cs config set <key> <value>`;
+`cs config unset <key>` returns one key to the default; `cs config reset`
+restores all of them.
+
+**The file stores only what you changed.** Keys you never set stay out of it and
+keep following the code's default, so a default that improves in a later release
+reaches you. (Before v3.34.0 every key was written on every save, which froze the
+defaults as they stood the day you first ran `cs config set` — anything that
+changed afterwards never arrived.) `cs config show` marks each value that is
+merely following the default, so a stored choice can't masquerade as one.
 
 ## Environment variables
 

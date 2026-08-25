@@ -1,6 +1,7 @@
 """Tests for ~/.claude/claude-statusbar.json read/write/resolve."""
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -208,3 +209,69 @@ def test_cache_ttl_seconds_persists(tmp_path: Path):
     assert cfg_mod.load_config(p).cache_ttl_seconds == 3600
     cfg_mod.set_value("cache_ttl_seconds", "300", p)
     assert cfg_mod.load_config(p).cache_ttl_seconds == 300
+
+
+def test_save_stores_only_what_differs_from_defaults(tmp_path: Path):
+    # The whole point: an untouched key must NOT be frozen into the file, or a
+    # later change to its default can never reach this user.
+    cfg = cfg_mod.StatusbarConfig(style="capsule")
+    cfg_mod.save_config(cfg, tmp_path / "c.json")
+    raw = json.loads((tmp_path / "c.json").read_text())
+    assert raw == {"style": "capsule"}
+
+
+def test_a_flipped_default_reaches_users_who_never_set_it(tmp_path: Path):
+    # Regression for show_project_branch: it shipped default-off, flipped to
+    # default-on hours later, and every user who had written a config in
+    # between kept the old value forever because save_config dumped all keys.
+    p = tmp_path / "c.json"
+    cfg_mod.save_config(cfg_mod.StatusbarConfig(theme="nord"), p)
+    assert "show_project_branch" not in json.loads(p.read_text())
+
+    # The key is absent, so whatever the current default is, that's what a
+    # later release hands this user.
+    loaded = cfg_mod.load_config(p)
+    assert loaded.show_project_branch is cfg_mod.StatusbarConfig().show_project_branch
+    assert loaded.theme == "nord"
+
+
+def test_deliberate_non_default_choice_survives(tmp_path: Path):
+    p = tmp_path / "c.json"
+    cfg_mod.set_value("show_project_branch", "false", p)
+    assert json.loads(p.read_text()) == {"show_project_branch": False}
+    assert cfg_mod.load_config(p).show_project_branch is False
+
+
+def test_unset_returns_a_key_to_the_default(tmp_path: Path):
+    p = tmp_path / "c.json"
+    cfg_mod.set_value("show_project_branch", "false", p)
+    cfg_mod.set_value("theme", "nord", p)
+
+    cfg = cfg_mod.unset_value("show_project_branch", p)
+
+    assert cfg.show_project_branch is cfg_mod.StatusbarConfig().show_project_branch
+    raw = json.loads(p.read_text())
+    assert "show_project_branch" not in raw   # gone, not stored as the default
+    assert raw == {"theme": "nord"}           # other choices untouched
+
+
+def test_unset_rejects_unknown_keys(tmp_path: Path):
+    with pytest.raises(KeyError):
+        cfg_mod.unset_value("nope", tmp_path / "c.json")
+
+
+def test_explicit_keys_reports_only_stored_choices(tmp_path: Path):
+    p = tmp_path / "c.json"
+    cfg_mod.set_value("theme", "nord", p)
+    assert cfg_mod.explicit_keys(p) == {"theme"}
+    assert cfg_mod.explicit_keys(tmp_path / "missing.json") == set()
+
+
+def test_legacy_full_dump_still_loads(tmp_path: Path):
+    # Files written by older versions carry every key; they must keep working,
+    # and their values must still win (we can't tell a real choice from a
+    # frozen old default, so we never guess).
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({**asdict(cfg_mod.StatusbarConfig()),
+                             "show_project_branch": False}), encoding="utf-8")
+    assert cfg_mod.load_config(p).show_project_branch is False

@@ -27,6 +27,7 @@ give a short confirmation (one line, no lecture).
 | Show all 27 combinations | `cs preview` |
 | Filter preview to one style/theme | `cs preview --style <s>` or `cs preview --theme <t>` |
 | Diagnose problem | `cs doctor` |
+| Return one key to its default | `cs config unset <key>` (the config stores only what you changed) |
 | Wipe config | `cs config reset` |
 | Install / first-time setup | `cs --setup` |
 | Upgrade / update to latest version | `cs upgrade` — NEVER guess `uv tool install` / `pip install -U` / `pipx upgrade`: it detects the install channel that is actually running `cs` and picks the right one (many users don't have uv at all) |

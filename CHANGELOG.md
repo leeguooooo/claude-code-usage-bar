@@ -9,6 +9,36 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.34.0 — 2026-08-25
+
+**Your config now stores only what you changed — so improved defaults actually reach you.**
+
+Every save used to dump all ~35 keys to JSON. One `cs config set style capsule`
+froze whatever the defaults happened to be that day, and every later change to
+a default was invisible to you forever. `show_project_branch` shipped default
+*off* and flipped to *on* hours later: anyone who wrote a config in that window
+kept the project/branch line hidden for months, with nothing in the file or the
+UI to explain why.
+
+- **Sparse storage.** Only values that differ from the default are written.
+  A key you never touched stays out of the file and keeps following the code,
+  so it moves when the default moves. Your existing file is rewritten on the
+  next `cs config set` — values are preserved exactly; only the redundant ones
+  disappear.
+- **`cs config unset <key>`.** The counterpart to `set`: drops a key so it
+  follows the default again. With sparse storage "no opinion" is finally a
+  state the file can express.
+- **`cs config show` says which is which.** Values that merely follow the
+  default are marked `(default)`; anything unmarked is a choice you stored. A
+  stale value can no longer masquerade as a default.
+
+Old full-dump config files keep working unchanged. Their stored values still
+win — a deliberate `false` and a frozen old default are indistinguishable, so
+nothing is guessed on your behalf; `cs config show` now makes them visible and
+`cs config unset` clears the ones you didn't mean.
+
+---
+
 ## v3.33.1 — 2026-08-25
 
 **The standalone binary could not make a single HTTPS request — and said so nowhere.**
