@@ -447,7 +447,9 @@ def check_and_upgrade() -> Tuple[bool, str]:
         return False, "Unable to check for updates"
 
     if not compare_versions(current, latest):
-        return False, f"Already up to date (v{current})"
+        # Nothing to do is a success. Reporting it as a failure means the
+        # detached checker exits 1 on every ordinary day.
+        return True, f"Already up to date (v{current})"
 
     # New version available, try to upgrade
     if auto_upgrade():

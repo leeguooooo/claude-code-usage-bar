@@ -337,3 +337,12 @@ def test_installer_spares_the_bundle_it_is_running_from(monkeypatch, tmp_path):
     assert updater._run_installer("3.36.0") is True
     assert seen["env"]["CS_KEEP_BUNDLE_DIR"] == str(bundle)
     assert "releases/download/v3.36.0" in seen["env"]["CS_RELEASE_BASE_URL"]
+
+
+def test_check_and_upgrade_treats_up_to_date_as_success(monkeypatch):
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.36.0")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.36.0")
+
+    ok, msg = updater.check_and_upgrade()
+
+    assert ok is True and "Already up to date" in msg
