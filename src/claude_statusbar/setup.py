@@ -486,6 +486,79 @@ def _packaged_skills_dir() -> Path:
     return here.parent / "skills"
 
 
+# Where we record the checksum of every doc file we install, so a later
+# upgrade can tell "the user edited this" from "we shipped a newer version".
+# Without it the installer could only compare against the *current* bundled
+# file, so any upstream change looked exactly like a user edit — and every
+# doc froze at whatever version was installed first. One user's SKILL.md sat
+# at v3.5.0 for 29 releases while the installer told them, every single time,
+# that it was keeping *their* edit.
+INSTALLED_DOCS_MANIFEST = (
+    Path.home() / ".cache" / "claude-statusbar" / "installed_docs.json"
+)
+
+
+def _sha(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _read_manifest() -> dict:
+    try:
+        data = json.loads(INSTALLED_DOCS_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _record_installed(dst: Path, text: str) -> None:
+    """Remember what we wrote, so the next upgrade knows it was ours."""
+    data = _read_manifest()
+    data[str(dst)] = _sha(text)
+    try:
+        INSTALLED_DOCS_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+        from .cache import atomic_write_text as _awt
+        _awt(INSTALLED_DOCS_MANIFEST,
+             json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    except OSError:
+        pass  # a missing manifest only costs us one conservative skip
+
+
+def _install_doc(src: Path, dst: Path, force: bool) -> str:
+    """Copy one bundled doc to `dst`. Returns 'installed' / 'skipped' / an
+    error string.
+
+    The decision that matters is the middle one: when the file on disk differs
+    from what we ship, is that the user's work or just an old version of ours?
+    The manifest answers it. No manifest entry (installs predating it) means
+    we genuinely don't know — so we keep the file and say so honestly, rather
+    than either clobbering an edit or blaming the user for our own staleness.
+    """
+    try:
+        new_text = src.read_text(encoding="utf-8")
+    except OSError as e:
+        return f"{dst}: {e}"
+
+    if dst.exists() and not force:
+        try:
+            current = dst.read_text(encoding="utf-8")
+        except OSError as e:
+            return f"{dst}: {e}"
+        if current == new_text:
+            _record_installed(dst, new_text)
+            return "installed"
+        if _read_manifest().get(str(dst)) != _sha(current):
+            return "skipped"  # user's own edit, or provenance unknown
+
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    except OSError as e:
+        return f"{dst}: {e}"
+    _record_installed(dst, new_text)
+    return "installed"
+
+
 def install_commands(force: bool = False) -> Tuple[int, list, list]:
     """Copy bundled slash commands into ~/.claude/commands/.
 
@@ -508,22 +581,13 @@ def install_commands(force: bool = False) -> Tuple[int, list, list]:
     failed: list = []
 
     for src in sorted(src_dir.glob("*.md")):
-        name = src.name
-        dst = COMMANDS_DIR / name
-        if dst.exists() and not force:
-            try:
-                if dst.read_text(encoding="utf-8") == src.read_text(encoding="utf-8"):
-                    installed += 1
-                    continue
-            except OSError:
-                pass
-            skipped.append(str(dst))
-            continue
-        try:
-            shutil.copy2(src, dst)
+        outcome = _install_doc(src, COMMANDS_DIR / src.name, force)
+        if outcome == "installed":
             installed += 1
-        except OSError as e:
-            failed.append(f"{dst}: {e}")
+        elif outcome == "skipped":
+            skipped.append(str(COMMANDS_DIR / src.name))
+        else:
+            failed.append(outcome)
     return installed, skipped, failed
 
 
@@ -549,23 +613,14 @@ def install_skills(force: bool = False) -> Tuple[int, list, list]:
         src = skill_dir / "SKILL.md"
         if not src.is_file():
             continue
-        dst_dir = SKILLS_DIR / skill_dir.name
-        dst = dst_dir / "SKILL.md"
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        if dst.exists() and not force:
-            try:
-                if dst.read_text(encoding="utf-8") == src.read_text(encoding="utf-8"):
-                    installed += 1
-                    continue
-            except OSError:
-                pass
-            skipped.append(str(dst))
-            continue
-        try:
-            shutil.copy2(src, dst)
+        dst = SKILLS_DIR / skill_dir.name / "SKILL.md"
+        outcome = _install_doc(src, dst, force)
+        if outcome == "installed":
             installed += 1
-        except OSError as e:
-            failed.append(f"{dst}: {e}")
+        elif outcome == "skipped":
+            skipped.append(str(dst))
+        else:
+            failed.append(outcome)
     return installed, skipped, failed
 
 
@@ -605,7 +660,9 @@ def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = True
             if n:
                 print(f"✓ Installed {n} slash command(s) to {COMMANDS_DIR}")
             if skipped:
-                print(f"  Kept your edited version (use --force to overwrite):")
+                print("  Kept these — they differ from the shipped version "
+                      "and we can't prove we wrote them (`cs --setup --force` "
+                      "takes ours):")
                 for s in skipped:
                     print(f"    {s}")
             if failed:
@@ -622,7 +679,9 @@ def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = True
             if s_n:
                 print(f"✓ Installed {s_n} skill(s) to {SKILLS_DIR}")
             if s_skipped:
-                print(f"  Kept your edited skill (use --force to overwrite):")
+                print("  Kept this skill — it differs from the shipped "
+                      "version and we can't prove we wrote it "
+                      "(`cs --setup --force` takes ours):")
                 for s in s_skipped:
                     print(f"    {s}")
             if s_failed:
@@ -633,6 +692,24 @@ def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = True
     if fast:
         # Spin up the daemon now so the next status-line tick benefits.
         # Failure isn't fatal — render_thin will lazy-spawn anyway.
+        #
+        # When an OS service is installed, hand the process to *it* instead of
+        # spawning our own: whoever takes the pidfile first is the daemon that
+        # runs, and if that's us, launchd's job exits 0, stands down (KeepAlive
+        # is SuccessfulExit:false by design), and nothing supervises the daemon
+        # we just started — while `cs daemon install` promised a crash restart.
+        try:
+            from . import service as _svc
+            if _svc.is_installed():
+                adopted, adopt_msg = _svc.adopt_running_daemon()
+                if adopted:
+                    if verbose:
+                        print(f"✓ {adopt_msg}")
+                    return 0 if (statusline_ok and cmds_ok) else 1
+                if verbose:
+                    print(f"! {adopt_msg}; starting the daemon directly")
+        except Exception:
+            pass  # service check must never block setup
         try:
             from . import daemon as _d
             rc = _d.cmd_start(detach=True)

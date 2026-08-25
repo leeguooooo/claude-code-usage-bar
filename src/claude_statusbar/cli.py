@@ -400,7 +400,7 @@ def main():
             n, skipped, failed = install_commands(force=force)
             print(f"Installed {n} slash command(s) to {COMMANDS_DIR}")
             if skipped:
-                print("Kept your edited version:")
+                print("Kept (differs from the shipped version, provenance unknown):")
                 for s in skipped:
                     print(f"  {s}")
                 print("Use `cs install-commands --force` to overwrite.")
@@ -412,7 +412,7 @@ def main():
             if s_n:
                 print(f"Installed {s_n} skill(s) to {SKILLS_DIR}")
             if s_skipped:
-                print("Kept your edited skill:")
+                print("Kept (differs from the shipped version, provenance unknown):")
                 for s in s_skipped:
                     print(f"  {s}")
             if s_failed:
@@ -427,7 +427,7 @@ def main():
             n, skipped, failed = install_skills(force=force)
             print(f"Installed {n} skill(s) to {SKILLS_DIR}")
             if skipped:
-                print("Kept your edited version:")
+                print("Kept (differs from the shipped version, provenance unknown):")
                 for s in skipped:
                     print(f"  {s}")
                 print("Use `cs install-skill --force` to overwrite.")

@@ -184,3 +184,30 @@ def test_frozen_upgrade_confirms_up_to_date(monkeypatch):
 
     assert ok is False
     assert "is up to date" in msg
+
+
+def test_pypi_check_bypasses_the_cdn_edge_cache(monkeypatch):
+    # pypi.org/pypi/<pkg>/json is CDN-cached; a bare URL can hand back the
+    # version you just replaced for minutes after publishing.
+    seen = {}
+
+    class _Resp:
+        def read(self):
+            return b'{"info": {"version": "9.9.9"}}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(url, timeout=None):
+        seen["url"] = url
+        return _Resp()
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(updater, "_cache_latest_version", lambda v: None)
+
+    assert updater.get_latest_version() == "9.9.9"
+    assert seen["url"].startswith(updater.PYPI_URL + "?")
+    assert seen["url"] != updater.PYPI_URL

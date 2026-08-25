@@ -29,6 +29,7 @@ from typing import Any
 def _green(s: str) -> str:  return f"\x1b[32m{s}\x1b[0m" if _ansi_ok() else s
 def _red(s: str)   -> str:  return f"\x1b[31m{s}\x1b[0m" if _ansi_ok() else s
 def _dim(s: str)   -> str:  return f"\x1b[2m{s}\x1b[0m"  if _ansi_ok() else s
+def _yellow(s: str)-> str:  return f"\x1b[33m{s}\x1b[0m" if _ansi_ok() else s
 
 
 def _ansi_ok() -> bool:
@@ -38,7 +39,10 @@ def _ansi_ok() -> bool:
 
 
 def _line(label: str, value: Any, *, ok: bool = True) -> None:
-    mark = _green("✓") if ok else _red("✗")
+    # ok=None is the third state: working, but not the way it claims to be.
+    # Flattening it into ✓ is how "installed, launchd state: not running" got
+    # a green check for weeks.
+    mark = _yellow("!") if ok is None else (_green("✓") if ok else _red("✗"))
     print(f"  {mark} {label:<22} {value}")
 
 
@@ -317,7 +321,15 @@ def run() -> int:
     try:
         from . import service as _svc
         ok, msg = _svc.status()
-        if ok:
+        if ok and not _svc.is_supervising():
+            # Installed but idle: a daemon started by something else holds the
+            # pidfile, so the service manager's own job exited and stood down.
+            # The daemon runs, but nothing will restart it if it dies — a ✓
+            # here read as "supervised" when it wasn't.
+            _line("service", _yellow(
+                f"{msg} — the running daemon is NOT the service's own job, so "
+                f"a crash won't be restarted. Fix: cs --setup"), ok=None)
+        elif ok:
             _line("service", msg, ok=True)
         else:
             _line("service", _dim(msg))

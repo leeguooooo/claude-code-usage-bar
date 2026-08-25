@@ -62,7 +62,14 @@ def get_current_version() -> str:
 def get_latest_version() -> Optional[str]:
     """Get latest version from PyPI"""
     try:
-        with urllib.request.urlopen(PYPI_URL, timeout=5) as response:
+        # Cache-buster: pypi.org/pypi/<pkg>/json sits behind a CDN whose edge
+        # nodes can serve a stale `info.version` for minutes after a release —
+        # long enough for `cs upgrade`, run right after publishing, to report
+        # the version it just replaced. A varying query string misses the edge
+        # cache and asks the origin.
+        import time as _t
+        url = f"{PYPI_URL}?t={int(_t.time())}"
+        with urllib.request.urlopen(url, timeout=5) as response:
             data = json.loads(response.read().decode())
             latest = data["info"]["version"]
             _cache_latest_version(latest)

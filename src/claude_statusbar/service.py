@@ -169,6 +169,24 @@ def _macos_install() -> Tuple[bool, str]:
     )
 
 
+def _macos_kickstart() -> Tuple[bool, str]:
+    """Make launchd's own job the running daemon.
+
+    `-k` kills any current instance of the job first; the fresh one then takes
+    the pidfile. Without this, whoever spawned a daemon first (the installer,
+    or a render-path lazy spawn) owns the pidfile, launchd's instance exits 0
+    saying "already running", and — because KeepAlive is `SuccessfulExit:false`
+    by design — launchd stands down for good. The daemon stays up but nothing
+    supervises it, while `cs daemon install` promised "re-spawned if it
+    crashes". Handing the process to launchd is what makes that true.
+    """
+    uid = os.getuid()
+    rc, _, err = _launchctl("kickstart", "-k", f"gui/{uid}/{LAUNCHD_LABEL}")
+    if rc != 0:
+        return False, f"launchctl kickstart failed: {err.strip()}"
+    return True, "daemon handed to launchd (it now owns and supervises it)"
+
+
 def _macos_uninstall() -> Tuple[bool, str]:
     plist_path = launchd_plist_path()
     if not plist_path.exists():
@@ -198,6 +216,11 @@ def _macos_status() -> Tuple[bool, str]:
             state = ls.split("=", 1)[1].strip()
             break
     return True, f"installed ({plist_path}), launchd state: {state}"
+
+
+def _macos_is_running() -> bool:
+    ok, msg = _macos_status()
+    return ok and "launchd state: running" in msg
 
 
 # ---------------------------------------------------------------------------
@@ -326,4 +349,51 @@ def status() -> Tuple[bool, str]:
         return _macos_status()
     if plat == "linux":
         return _linux_status()
+    return False, f"unsupported platform {sys.platform!r}"
+
+
+def is_installed() -> bool:
+    plat = _platform()
+    if plat == "macos":
+        return launchd_plist_path().exists()
+    if plat == "linux":
+        return systemd_unit_path().exists()
+    return False
+
+
+def is_supervising() -> bool:
+    """True when the service manager's own job is the daemon that's running.
+
+    A daemon started by anything else (the installer, a render-path lazy
+    spawn) is alive but unsupervised: launchd's job has already exited 0 and
+    stood down, systemd's unit is inactive. `cs doctor` needs to tell these
+    apart, because only one of them survives a crash.
+    """
+    plat = _platform()
+    if plat == "macos":
+        return _macos_is_running()
+    if plat == "linux":
+        ok, msg = _linux_status()
+        return ok and "systemd state: active" in msg
+    return False
+
+
+def adopt_running_daemon() -> Tuple[bool, str]:
+    """Make the service manager own the daemon process.
+
+    Called after the installer would otherwise spawn its own detached daemon.
+    No-op when no service is installed, or when it is already supervising.
+    """
+    if not is_installed():
+        return False, "no service installed"
+    if is_supervising():
+        return True, "already supervised"
+    plat = _platform()
+    if plat == "macos":
+        return _macos_kickstart()
+    if plat == "linux":
+        rc, _, err = _systemctl_user("restart", SYSTEMD_UNIT)
+        if rc != 0:
+            return False, f"systemctl restart failed: {err.strip()}"
+        return True, "daemon handed to systemd (it now owns and supervises it)"
     return False, f"unsupported platform {sys.platform!r}"

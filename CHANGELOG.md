@@ -9,6 +9,45 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.35.0 — 2026-08-25
+
+**Three things that had been quietly wrong, all the same shape: the code
+couldn't tell your intent from its own staleness, so it froze — and blamed you.**
+
+**Slash commands and the skill were frozen at whatever version you installed
+first.** `install_skills` compared the file on disk to the *currently bundled*
+copy: shipping a newer SKILL.md looked exactly like a user edit, so it was
+kept — and the installer announced, every single upgrade, that it was
+preserving "your edited skill". One install sat at v3.5.0 for 29 releases,
+missing 13 config keys that had shipped since; the agent reading that skill
+had no idea `show_project_branch`, `show_ip_risk`, `api_mode` or
+`color_worktree` existed. The installer now records a checksum of everything
+it writes, so an upgrade can tell "we wrote this and you never touched it"
+(replace it) from "you edited this" (keep it). Files predating the manifest
+have unknown provenance: they are still kept, but the message says that
+plainly instead of asserting an edit you never made. `cs --setup --force`
+takes the shipped version.
+
+**A daemon with a LaunchAgent installed was running unsupervised.** Setup
+spawned its own detached daemon, which took the pidfile; launchd's own job
+then exited 0 and stood down — correct behavior for `KeepAlive:
+{SuccessfulExit: false}`, which exists to stop a restart loop. The result was
+a live daemon nothing would restart, while `cs daemon install` had promised
+exactly that. Setup now hands the process to the service manager
+(`launchctl kickstart -k` / `systemctl --user restart`) whenever one is
+installed, instead of racing it.
+
+**`cs doctor` printed a green ✓ next to "launchd state: not running".** It had
+two states, ✓ and ✗, so "working, but not the way it claims" had nowhere to
+go. There is now a third: a yellow `!` for exactly that case, naming the fix.
+
+Also: the PyPI version check appends a cache-buster. `pypi.org/pypi/<pkg>/json`
+sits behind a CDN that can serve a stale `info.version` for minutes after a
+release — long enough for `cs upgrade`, run right after publishing, to report
+the version it just replaced.
+
+---
+
 ## v3.34.0 — 2026-08-25
 
 **Your config now stores only what you changed — so improved defaults actually reach you.**
