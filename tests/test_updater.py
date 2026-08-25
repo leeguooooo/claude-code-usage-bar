@@ -171,20 +171,37 @@ def test_frozen_upgrade_actually_runs_the_installer(monkeypatch):
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.32.5")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
     ran = []
-    monkeypatch.setattr(updater, "_run_installer", lambda: ran.append(1) or True)
+    monkeypatch.setattr(updater, "_run_installer",
+                        lambda v=None: ran.append(v) or True)
+    monkeypatch.setattr(updater, "installed_version_on_path", lambda: "3.33.0")
 
     ok, msg = updater.upgrade_current_install()
 
-    assert ran == [1]
+    assert ran == ["3.33.0"], "the installer must be pinned to the target tag"
     assert ok is True
     assert "Upgraded" in msg and "3.33.0" in msg
+
+
+def test_frozen_upgrade_reports_when_a_different_version_landed(monkeypatch):
+    # `releases/latest/download` lags after a release: an upgrade to 3.35.3
+    # once re-installed 3.35.2 and announced success anyway.
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.35.2")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.35.3")
+    monkeypatch.setattr(updater, "_run_installer", lambda v=None: True)
+    monkeypatch.setattr(updater, "installed_version_on_path", lambda: "3.35.2")
+
+    ok, msg = updater.upgrade_current_install()
+
+    assert ok is False
+    assert "3.35.2 is what installed" in msg
 
 
 def test_frozen_upgrade_failure_hands_back_the_manual_command(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.32.5")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
-    monkeypatch.setattr(updater, "_run_installer", lambda: False)
+    monkeypatch.setattr(updater, "_run_installer", lambda v=None: False)
 
     ok, msg = updater.upgrade_current_install()
 
@@ -197,7 +214,7 @@ def test_frozen_upgrade_does_not_reinstall_when_current(monkeypatch):
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
 
-    def boom():
+    def boom(v=None):
         raise AssertionError("must not re-download when already latest")
 
     monkeypatch.setattr(updater, "_run_installer", boom)
@@ -212,7 +229,7 @@ def test_frozen_upgrade_unreachable_pypi_never_runs_the_installer(monkeypatch):
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
     monkeypatch.setattr(updater, "get_latest_version", lambda: None)
 
-    def boom():
+    def boom(v=None):
         raise AssertionError("never reinstall on a failed version check")
 
     monkeypatch.setattr(updater, "_run_installer", boom)

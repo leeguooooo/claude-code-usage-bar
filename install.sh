@@ -249,8 +249,11 @@ main() {
     asset="$(detect_asset)"
     [ -n "$asset" ] || fall_back_to_pip
 
-    # Override is used by the offline installer integration test. Normal users
-    # always take the GitHub Release URL.
+    # CS_RELEASE_BASE_URL pins the download to one release. `cs upgrade` sets it
+    # to the exact tag it decided to install, because `releases/latest/download`
+    # lags for a while after publishing — long enough for an upgrade to fetch
+    # the version it was upgrading away from. Also used by the offline
+    # installer integration test.
     local base="${CS_RELEASE_BASE_URL:-https://github.com/${REPO}/releases/latest/download}"
     # NOTE: the scratch dir must be a global, not a `local`. The EXIT trap runs
     # after this function has already returned, so a local `tmp` is out of scope
@@ -287,7 +290,7 @@ main() {
         install_onedir_bundle "$tmp/cs"
         bundle_dir="$INSTALLED_BUNDLE_DIR"
         ok "✓ Installed cs bundle → $bundle_dir"
-        ok "✓ Linked cs → $INSTALL_DIR/cs"
+        ok "✓ Linked cs → $INSTALL_DIR/cs ($("$INSTALL_DIR/cs" --version 2>/dev/null || echo 'version unknown'))"
         warn_about_duplicate_installs
     elif [ -f "$tmp/cs" ]; then
         # Transition compatibility: `main/install.sh` can be newer than the

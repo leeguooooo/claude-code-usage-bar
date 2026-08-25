@@ -20,7 +20,8 @@ import importlib.metadata as metadata
 DIST_NAME = "claude-statusbar"
 PYPI_URL = "https://pypi.org/pypi/claude-statusbar/json"
 # One-liner that re-installs the standalone binary from the latest GitHub Release.
-INSTALL_SH_URL = "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh"
+GITHUB_REPO = "leeguooooo/claude-code-usage-bar"
+INSTALL_SH_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/install.sh"
 BINARY_UPGRADE_HINT = f"curl -fsSL {INSTALL_SH_URL} | bash"
 
 
@@ -261,20 +262,52 @@ def _run_upgrade(cmd) -> bool:
 _INSTALLER_TIMEOUT_S = 600
 
 
-def _run_installer() -> bool:
+def _run_installer(version: Optional[str] = None) -> bool:
     """Run install.sh, letting its output through so the user watches it work.
+
+    Pins the download to `version`'s own tag rather than trusting
+    `releases/latest/download`: that pointer lags for a while after a release,
+    and the installer never checks that what it fetched is what was asked for.
+    Observed: an upgrade to 3.35.3 quietly re-installed 3.35.2 and reported
+    success. The installer already honors CS_RELEASE_BASE_URL.
 
     Only ever called from an explicit `cs upgrade` — never unattended.
     """
+    import os
+    env = dict(os.environ)
+    if version:
+        env["CS_RELEASE_BASE_URL"] = (
+            f"https://github.com/{GITHUB_REPO}/releases/download/v{version}"
+        )
     try:
         result = subprocess.run(
             ["sh", "-c", BINARY_UPGRADE_HINT],
             timeout=_INSTALLER_TIMEOUT_S,
+            env=env,
         )
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         logging.error(f"binary installer failed: {e}")
         return False
+
+
+def installed_version_on_path() -> Optional[str]:
+    """The version of the `cs` that PATH resolves to, by asking it.
+
+    The running process can't report this after an upgrade — it is still the
+    old binary in memory. Asking the installed one is the only way to know
+    what actually landed.
+    """
+    entry = path_entrypoint()
+    if entry is None:
+        return None
+    try:
+        out = subprocess.run([str(entry), "--version"], capture_output=True,
+                             text=True, timeout=15)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    parts = (out.stdout or out.stderr).strip().split()
+    return parts[-1] if parts else None
 
 
 def auto_upgrade() -> bool:
@@ -327,14 +360,29 @@ def upgrade_current_install() -> Tuple[bool, str]:
         # frozen install — that one runs unattended, and *that* is the case
         # "never pipe curl|sh behind the user's back" was written for.
         print(f"Upgrading the standalone binary v{current} → v{latest}...")
-        if _run_installer():
-            return True, (
-                f"Upgraded the standalone binary to v{latest}. "
-                f"Restart Claude Code to pick it up."
+        if not _run_installer(latest):
+            return False, (
+                f"Upgrade to v{latest} failed. Run it manually to see why:\n"
+                f"  {BINARY_UPGRADE_HINT}"
             )
-        return False, (
-            f"Upgrade to v{latest} failed. Run it manually to see why:\n"
-            f"  {BINARY_UPGRADE_HINT}"
+        # Verify rather than announce. The installer exiting 0 only means it
+        # installed *something* — it once installed the version we were
+        # upgrading away from, and this line claimed success anyway.
+        landed = installed_version_on_path()
+        if landed is None:
+            return True, (
+                f"Ran the installer for v{latest}, but could not read the "
+                f"installed version back. Check `cs --version`."
+            )
+        if landed != latest:
+            return False, (
+                f"Asked for v{latest} but v{landed} is what installed. "
+                f"The release assets may still be publishing — try again in "
+                f"a minute."
+            )
+        return True, (
+            f"Upgraded the standalone binary to v{landed}. "
+            f"Restart Claude Code to pick it up."
         )
 
     cmd = get_upgrade_command()

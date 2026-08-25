@@ -9,6 +9,26 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.35.4 — 2026-08-25
+
+**The upgrade now checks what it installed instead of announcing what it meant to.**
+
+v3.35.3 made `cs upgrade` run the installer. On its first real run the
+installer fetched from `releases/latest/download` — a pointer that lags for a
+while after publishing — and re-installed the version being upgraded *away
+from*, while `cs upgrade` reported "Upgraded to v3.35.3." Exit code 0, wrong
+binary, confident message.
+
+- The upgrade pins the download to the tag it decided on
+  (`releases/download/v<version>`), so it can't be handed a stale asset.
+- Afterwards it asks the installed `cs` for its version and compares. A
+  mismatch is reported as a failure that says which version actually landed,
+  not as success.
+- `install.sh` prints the version it just linked, so the same mistake is
+  visible from the outside too.
+
+---
+
 ## v3.35.3 — 2026-08-25
 
 **`cs upgrade` now upgrades a standalone binary instead of describing how.**
