@@ -9,6 +9,42 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.33.0 — 2026-08-25
+
+**The identity line now opens with the git worktree you're actually in.**
+
+A linked worktree used to render as a mute `[worktree]` tag tucked in after the
+branch — the same grey as the separators around it, i.e. invisible exactly when
+it mattered. It now *leads* the line, in a hue of its own, carrying the
+worktree's name and how many worktrees the repo has in total:
+
+```
+⧉ wt-party-slot (3)  ⤷ claude-code-usage-bar  ⎇ codex/party-status-slot-isolation ●
+```
+
+- **Its own color.** `Theme` gained a `wt` field, set per theme (violet on
+  graphite/dracula/catppuccin/tokyo-night, cyan on the already-purple twilight,
+  deep violet on the light linen/sakura, grey on mono). "This is not the main
+  checkout" is a different kind of fact from ok/warn/hot and must not be read as
+  a severity. Override with `cs config set color_worktree "#bd93f9"`.
+- **The name is read from disk, not from stdin.** Claude Code only sends
+  `workspace.git_worktree` for worktrees it created itself, so hand-made
+  `git worktree add` checkouts showed nothing. The name now comes from the
+  `gitdir:` path in the checkout's `.git` file, which is always there.
+- **`(3)` is the repo's worktree total**, counted from `.git/worktrees/`.
+  Entries whose checkout has been deleted but never pruned are excluded — a
+  number you can't trust is worse on a status line than no number.
+- **Less repetition.** A redundant repo prefix is trimmed
+  (`repo-wt-x` → `wt-x`), and a name that would only repeat the branch or the
+  repo collapses to a bare `⧉ worktree`.
+- **The repo stays the anchor.** Inside a worktree without a repo name on
+  stdin, the project used to render as the worktree's own directory name; it
+  now resolves to the main repo's name.
+
+Pure filesystem work — no `git` subprocess, ~0.3 ms per render.
+
+---
+
 ## v3.32.5 — 2026-08-20
 
 **Fresh legacy `_MEI*` leftovers now age out automatically after upgrade.**
