@@ -430,6 +430,29 @@ def _stats_segment(duration_text: str, lines_text: str, *, theme: Theme,
     return f" {MUTE}·{RESET} " + sep.join(segs)
 
 
+def _worktree_label(info) -> str:
+    """Display name for a linked worktree checkout.
+
+    The worktree's own name, with a redundant repo prefix trimmed
+    (``repo-wt-x`` → ``wt-x``) since the repo already anchors the line.
+    Falls back to a bare ``worktree`` when the name is unknown, or when it
+    would only repeat the branch / repo already printed next to it.
+    """
+    name = (getattr(info, "worktree_name", None) or "").strip()
+    if not name:
+        return "worktree"
+    from .identity import strip_repo_prefix  # lazy: keeps the hot path lean
+    project = (getattr(info, "project_name", "") or "").strip()
+    name = strip_repo_prefix(name, project)
+    if name in (project, (getattr(info, "branch", "") or "")):
+        name = "worktree"
+    # Total linked worktrees on this repo, this one included — the thing you
+    # actually forget once you keep parallel checkouts around. A plain total,
+    # not an ordinal: "which one of N am I" is already answered by the name.
+    total = getattr(info, "worktree_count", 0) or 0
+    return f"{name} ({total})" if total else name
+
+
 def render_identity_line(info, *, theme: Theme, dirty,
                          ahead=None, behind=None,
                          duration_text: str = "", lines_text: str = "",
@@ -444,9 +467,11 @@ def render_identity_line(info, *, theme: Theme, dirty,
     arrows render only for nonzero directions and only inside a git repo.
     `duration_text`/`lines_text` are the session stats, shown here (next to the
     project) rather than on the live-activity line. When the checkout is a
-    linked git worktree (`info.is_worktree`), a bare ``[worktree]`` marker is
-    appended after the branch — a boolean signal only; the branch already
-    says which worktree it is, so the name isn't repeated.
+    linked git worktree (`info.is_worktree`), a ``⧉ <name>`` marker in the
+    theme's dedicated worktree hue (`theme.wt`) *leads* the line — before the
+    repo — so "I am not in the main checkout" is the first thing read, never
+    something you scan past. The name collapses to a bare ``⧉ worktree`` when
+    it would only repeat the branch or the repo.
 
     `cwd_text` (show_cwd, #30) is the session's working directory; it's
     appended after the branch only when it adds information — skipped when it
@@ -458,6 +483,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
 
     if not use_color:
         head = f"⤷ {info.project_name}"
+        if info.is_worktree:
+            head = f"⧉ {_worktree_label(info)} {head}"
         if not info.in_git:
             tail = " (no git)"
         else:
@@ -466,8 +493,6 @@ def render_identity_line(info, *, theme: Theme, dirty,
             tail = f" ⎇ {branch}{dot}"
             if ab:
                 tail += f" {ab}"
-        if info.is_worktree:
-            tail += " [worktree]"
         if cwd_text and cwd_text != info.project_name:
             tail += f" · {cwd_text}"
         ver = f" · v{version_text}" if version_text else ""
@@ -483,6 +508,11 @@ def render_identity_line(info, *, theme: Theme, dirty,
     # Project name in full ink — it's the line's identity anchor (user
     # feedback 2026-07-02: mute made it near-invisible). The ⤷ stays mute.
     head = f"{MUTE}⤷ {RESET}{INK}{info.project_name}{RESET}"
+    if info.is_worktree:
+        # Leads the line, in its own hue — not mute: "this is not the main
+        # checkout" is the one fact here you must never scan past (it's what
+        # stops a commit landing on the wrong tree).
+        head = f"{_fg(theme.wt)}⧉ {_worktree_label(info)}{RESET} " + head
     if not info.in_git:
         body = f" {MUTE}{ITAL}(no git){RESET}"
     else:
@@ -496,8 +526,6 @@ def render_identity_line(info, *, theme: Theme, dirty,
         if ab:
             # Soft accent (not bare mute) — a gentle "unpushed/behind work" nudge.
             body += f" {_fg(theme.s_ok)}{ab}{RESET}"
-    if info.is_worktree:
-        body += f" {MUTE}[worktree]{RESET}"
     if cwd_text and cwd_text != info.project_name:
         body += f" {MUTE}·{RESET} {INK}{cwd_text}{RESET}"
     # Version: the faintest thing on the line — edge (darkest grey) + dim

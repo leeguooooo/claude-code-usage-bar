@@ -1095,6 +1095,7 @@ def main(json_output: bool = False,
         ok=parse_hex_color(cfg.color_ok) if cfg.color_ok else None,
         warn=parse_hex_color(cfg.color_warn) if cfg.color_warn else None,
         hot=parse_hex_color(cfg.color_hot) if cfg.color_hot else None,
+        worktree=parse_hex_color(cfg.color_worktree) if cfg.color_worktree else None,
     )
 
     stdin_data = parse_stdin_data()

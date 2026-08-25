@@ -35,6 +35,12 @@ class Theme:
     pill_cost: RGB   # cost pill bg — separate from pill_lang to avoid collision
     pill_ink: RGB    # text color used on pill backgrounds
 
+    # Linked-git-worktree marker on the identity line. Its own hue on purpose:
+    # "this checkout is not the main one" is a different kind of fact from
+    # severity (ok/warn/hot) and must not be read as a warning. Defaults to a
+    # soft violet so custom/older Theme literals keep working.
+    wt: RGB = (170, 150, 220)
+
 
 BUILTIN_THEMES = [
     Theme(
@@ -45,6 +51,7 @@ BUILTIN_THEMES = [
         pill_5h=(38, 70, 83), pill_7d=(42, 56, 79),
         pill_model=(60, 47, 65), pill_lang=(52, 65, 47), pill_cost=(48, 56, 50),
         pill_ink=(238, 235, 224),
+        wt=(168, 152, 226),
     ),
     Theme(
         name="twilight",
@@ -54,6 +61,7 @@ BUILTIN_THEMES = [
         pill_5h=(58, 52, 90), pill_7d=(72, 46, 82),
         pill_model=(86, 52, 72), pill_lang=(50, 72, 90), pill_cost=(52, 68, 80),
         pill_ink=(245, 238, 250),
+        wt=(140, 206, 224),
     ),
     Theme(
         name="linen",
@@ -63,6 +71,7 @@ BUILTIN_THEMES = [
         pill_5h=(214, 200, 178), pill_7d=(222, 210, 196),
         pill_model=(208, 196, 200), pill_lang=(202, 210, 194), pill_cost=(198, 200, 192),
         pill_ink=(45, 40, 38),
+        wt=(118, 88, 176),
     ),
     Theme(
         name="nord",
@@ -72,6 +81,7 @@ BUILTIN_THEMES = [
         pill_5h=(46, 52, 64), pill_7d=(59, 66, 82),
         pill_model=(67, 76, 94), pill_lang=(46, 52, 64), pill_cost=(52, 58, 64),
         pill_ink=(229, 233, 240),
+        wt=(180, 142, 173),
     ),
     Theme(
         name="dracula",
@@ -81,6 +91,7 @@ BUILTIN_THEMES = [
         pill_5h=(40, 42, 54), pill_7d=(68, 71, 90),
         pill_model=(80, 50, 100), pill_lang=(50, 80, 60), pill_cost=(52, 70, 62),
         pill_ink=(248, 248, 242),
+        wt=(189, 147, 249),
     ),
     Theme(
         name="sakura",
@@ -90,6 +101,7 @@ BUILTIN_THEMES = [
         pill_5h=(245, 215, 220), pill_7d=(238, 200, 215),
         pill_model=(225, 210, 230), pill_lang=(220, 230, 215), pill_cost=(218, 222, 212),
         pill_ink=(75, 50, 60),
+        wt=(146, 100, 176),
     ),
     Theme(
         name="mono",
@@ -99,6 +111,7 @@ BUILTIN_THEMES = [
         pill_5h=(45, 45, 45), pill_7d=(60, 60, 60),
         pill_model=(75, 75, 75), pill_lang=(50, 50, 50), pill_cost=(60, 60, 60),
         pill_ink=(235, 235, 235),
+        wt=(190, 190, 190),
     ),
     Theme(
         name="catppuccin-mocha",
@@ -115,6 +128,7 @@ BUILTIN_THEMES = [
         pill_lang=(58, 70, 60),    # Surface0 + Green
         pill_cost=(70, 58, 48),    # Surface0 + Peach
         pill_ink=(205, 214, 244),  # Text
+        wt=(203, 166, 247),
     ),
     Theme(
         name="tokyo-night",
@@ -131,6 +145,7 @@ BUILTIN_THEMES = [
         pill_lang=(46, 60, 50),
         pill_cost=(58, 50, 44),
         pill_ink=(192, 202, 245),
+        wt=(187, 154, 247),
     ),
 ]
 
@@ -169,11 +184,12 @@ def apply_color_overrides(
     ok: Optional[RGB] = None,
     warn: Optional[RGB] = None,
     hot: Optional[RGB] = None,
+    worktree: Optional[RGB] = None,
 ) -> Theme:
-    """Return a Theme with severity colors overridden where provided.
+    """Return a Theme with user-overridable colors replaced where provided.
 
     Pure function — never mutates the input theme. Only `s_ok / s_warn /
-    s_hot` are overridable; ink/mute/edge/pill_* stay as the base theme
+    s_hot / wt` are overridable; ink/mute/edge/pill_* stay as the base theme
     designed them. Pass `None` for any color to leave it untouched.
     """
     overrides: dict = {}
@@ -183,6 +199,8 @@ def apply_color_overrides(
         overrides["s_warn"] = warn
     if hot is not None:
         overrides["s_hot"] = hot
+    if worktree is not None:
+        overrides["wt"] = worktree
     if not overrides:
         return theme
     return dataclasses.replace(theme, **overrides)

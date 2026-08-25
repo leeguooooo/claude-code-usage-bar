@@ -6,9 +6,11 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+# ".../<repo>/.git/worktrees/<name>" — the gitdir a linked worktree points at.
+_WT_GITDIR_RE = re.compile(r"^(?P<root>.+)/\.git/worktrees/(?P<name>[^/]+)$")
 
 
 def _resolve_gitdir(start: Path) -> Optional[Path]:
@@ -74,30 +76,105 @@ class IdentityInfo:
     worktree_name: Optional[str]
     toplevel: Optional[str]
     is_worktree: bool = False
+    # How many linked worktrees this repo has in total (this one included).
+    # 0 when unknown / not in a worktree.
+    worktree_count: int = 0
 
 
-def _detect_worktree(start: Path) -> bool:
-    """True when `start` sits inside a *linked* git worktree.
+class _Worktree(NamedTuple):
+    name: str          # this worktree's registered name
+    repo_name: str     # the main repo's directory name
+    registry: Path     # the main repo's `.git/worktrees/` dir
+
+
+def _parse_worktree(start: Path) -> Optional[_Worktree]:
+    """A `_Worktree` when `start` sits inside a *linked* git worktree, else
+    None.
 
     A linked worktree's `.git` is a FILE whose `gitdir:` points under the
     main repo's `.git/worktrees/<name>/`. A submodule's `.git` file points
     under `.git/modules/<name>/` instead — so the `worktrees` segment is
     what distinguishes a worktree from both a normal checkout (`.git` is a
     directory) and a submodule. Local + reliable; no dependency on Claude
-    Code passing `workspace_git_worktree`.
+    Code passing `workspace_git_worktree` (it omits the field for worktrees
+    it didn't create itself).
+
+    The main repo's directory name comes back too so the identity line can
+    show the *repo* as the anchor even when stdin carries no repo name —
+    otherwise a worktree checkout would masquerade as its own project. So
+    does the `.git/worktrees/` registry dir, which is the whole sibling list.
     """
     cur = start.resolve() if start.exists() else start
     for candidate in [cur, *cur.parents]:
         dotgit = candidate / ".git"
         if dotgit.is_dir():
-            return False
+            return None
         if dotgit.is_file():
             try:
                 text = dotgit.read_text(encoding="utf-8").strip()
             except OSError:
-                return False
-            return "worktrees/" in text or "worktrees\\" in text
-    return False
+                return None
+            if not text.startswith("gitdir:"):
+                return None
+            raw = text.split("gitdir:", 1)[1].strip()
+            m = _WT_GITDIR_RE.match(raw.replace("\\", "/").rstrip("/"))
+            if m is None:
+                return None  # submodule (.git/modules/...) or something else
+            repo_root = m.group("root").rstrip("/")
+            repo_name = os.path.basename(repo_root) or repo_root
+            return _Worktree(m.group("name"), repo_name,
+                             Path(raw).parent)
+    return None
+
+
+def count_live_worktrees(registry: Path) -> int:
+    """How many linked worktrees the repo owning `registry` still has.
+
+    `registry` is the main repo's `.git/worktrees/` dir — one entry per
+    linked worktree. Entries outlive their checkout: `rm -rf`-ing a worktree
+    dir leaves the entry behind until someone runs `git worktree prune`, so a
+    bare `len(listdir)` overcounts. Each entry's `gitdir` file points at the
+    checkout's `.git` file; if that path is gone, the entry is a prunable
+    ghost and must not be counted — a number you can't trust is worse on a
+    status line than no number at all.
+
+    Pure filesystem: one dir scan plus one small read per entry, no
+    subprocess. Returns 0 when the registry can't be read.
+    """
+    try:
+        entries = sorted(registry.iterdir())
+    except OSError:
+        return 0
+    live = 0
+    for entry in entries:
+        try:
+            gitdir = (entry / "gitdir").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue  # no gitdir file → not a usable worktree entry
+        if gitdir and Path(gitdir).exists():
+            live += 1
+    return live
+
+
+def _detect_worktree(start: Path) -> bool:
+    """True when `start` sits inside a linked git worktree."""
+    return _parse_worktree(start) is not None
+
+
+def strip_repo_prefix(name: str, anchor: str) -> str:
+    """``("repo-wt-x", "repo") -> "wt-x"``.
+
+    Worktree dirs are conventionally named after the repo they belong to.
+    The repo already anchors the identity line, so repeating it there costs
+    width and says nothing — drop it, but never reduce the name to nothing.
+    """
+    if not name or not anchor or name == anchor:
+        return name
+    for sep in ("-", "_", "."):
+        prefix = anchor + sep
+        if name.startswith(prefix) and len(name) > len(prefix):
+            return name[len(prefix):]
+    return name
 
 
 def _resolve_toplevel(start: Path) -> Optional[Path]:
@@ -122,21 +199,29 @@ def resolve_identity(stdin: dict) -> IdentityInfo:
     current_dir = stdin.get("workspace_current_dir")
     worktree_name = stdin.get("workspace_git_worktree")
 
+    start = Path(current_dir or project_dir or os.getcwd())
+    head = read_head(start)
+    toplevel = _resolve_toplevel(start) if head else None
+    # Trust the local filesystem first (works even when CC omits the field),
+    # fall back to the stdin hint for the rare case the cwd isn't on disk.
+    wt = _parse_worktree(start) if head else None
+    is_worktree = wt is not None or bool(worktree_name)
+    if wt is not None and not worktree_name:
+        worktree_name = strip_repo_prefix(wt.name, wt.repo_name)
+    worktree_count = count_live_worktrees(wt.registry) if wt is not None else 0
+
     if repo_name:
         project_name = repo_name
+    elif wt is not None:
+        # In a worktree the checkout dir names the *worktree*, not the repo —
+        # so the main repo's dir name is the honest anchor here.
+        project_name = wt.repo_name
     elif project_dir:
         project_name = os.path.basename(project_dir.rstrip("/")) or project_dir
     elif current_dir:
         project_name = os.path.basename(current_dir.rstrip("/")) or current_dir
     else:
         project_name = os.path.basename(os.getcwd()) or "?"
-
-    start = Path(current_dir or project_dir or os.getcwd())
-    head = read_head(start)
-    toplevel = _resolve_toplevel(start) if head else None
-    # Trust the local filesystem first (works even when CC omits the field),
-    # fall back to the stdin hint for the rare case the cwd isn't on disk.
-    is_worktree = (_detect_worktree(start) if head else False) or bool(worktree_name)
 
     return IdentityInfo(
         project_name=project_name,
@@ -146,6 +231,7 @@ def resolve_identity(stdin: dict) -> IdentityInfo:
         worktree_name=worktree_name,
         toplevel=str(toplevel) if toplevel else None,
         is_worktree=is_worktree,
+        worktree_count=worktree_count,
     )
 
 

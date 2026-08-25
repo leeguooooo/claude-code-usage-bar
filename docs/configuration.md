@@ -36,7 +36,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_cost` | bool, `false` | Append `$ X.XX` session cost (API-equivalent value for subscribers) |
 | `show_balance` / `balance_bar` | bool, `true` | No-quota relay balance as a fuel-gauge bar — auto-hidden if the relay doesn't support it |
 | `show_cache_age` | bool, `true` | `cache 4m23s` prompt-cache countdown (TTL auto-detected 5m/1h) |
-| `show_project_branch` | bool, `true` | Second line: project + branch + `●` dirty dot |
+| `show_project_branch` | bool, `true` | Second line: `⧉ worktree` (linked worktrees only) + project + branch + `●` dirty dot |
 | `show_ahead_behind` | bool, `false` | `↑2↓1` commits ahead/behind on the branch line |
 | `show_party` | bool, `true` | AgentParty / Codex bridge line (reads local cache only) |
 | `show_todos` | bool, `true` | Activity line: in-progress todo + `done/total` |
@@ -48,6 +48,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_mode` / `mode_gradient` | bool, `true` | `⚙` session-mode line + effort-tier gradient tint |
 | `show_weekly` / `show_language` | bool | Toggle the 7d bar / language-coach segment |
 | `bar_shimmer` | bool, `false` | Experimental twinkling starfield on bars (classic only) |
+| `color_ok` / `color_warn` / `color_hot` / `color_worktree` | hex, `null` | Override the theme's severity colors / worktree-marker hue; empty string restores the theme default |
 | `api_mode` | `auto` / `on` / `off` | No-quota mode (see [No-quota mode](no-quota-mode.md)); `CS_API_MODE` env overrides |
 
 Full per-key detail is in the [segment reference](segments.md) or `cs config show`. Set with `cs config set <key> <value>`; `cs config reset` restores defaults.

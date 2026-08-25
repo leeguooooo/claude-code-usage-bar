@@ -68,6 +68,7 @@ def _run_config_subcommand(rest):
         print(f"color_ok            = {cfg.color_ok or '(theme default)'}")
         print(f"color_warn          = {cfg.color_warn or '(theme default)'}")
         print(f"color_hot           = {cfg.color_hot or '(theme default)'}")
+        print(f"color_worktree      = {cfg.color_worktree or '(theme default)'}")
         print(f"\nfile: {cfg_mod.CONFIG_PATH}")
         return 0
 

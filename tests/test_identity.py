@@ -123,6 +123,25 @@ def test_detects_worktree_from_local_dotgit_file(tmp_path):
     info = resolve_identity({"workspace_current_dir": str(wt)})
     assert info.is_worktree is True
     assert info.branch == "feat-x"
+    # Name + repo anchor come from the gitdir path — Claude Code omits
+    # `git_worktree` for worktrees it didn't create itself.
+    assert info.worktree_name == "wt"
+    assert info.project_name == "main"
+
+
+def test_stdin_repo_name_still_wins_inside_a_worktree(tmp_path):
+    main = tmp_path / "main"
+    (main / ".git" / "worktrees" / "wt").mkdir(parents=True)
+    (main / ".git" / "worktrees" / "wt" / "HEAD").write_text(
+        "ref: refs/heads/feat-x\n")
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    (wt / ".git").write_text(
+        f"gitdir: {main / '.git' / 'worktrees' / 'wt'}\n")
+    info = resolve_identity({"workspace_current_dir": str(wt),
+                             "workspace_repo_name": "canonical-repo"})
+    assert info.project_name == "canonical-repo"
+    assert info.worktree_name == "wt"
 
 
 def test_normal_checkout_is_not_a_worktree(tmp_path):
@@ -200,3 +219,40 @@ def test_inflight_prevents_double_spawn(tmp_path, monkeypatch):
     with patch("subprocess.Popen") as popen:
         dirty_with_async_refresh("/z")
     popen.assert_not_called()
+
+
+def _make_worktree(tmp_path, name, *, live=True, branch="feat-x"):
+    """Register a linked worktree under `tmp_path/main` and return its dir."""
+    entry = tmp_path / "main" / ".git" / "worktrees" / name
+    entry.mkdir(parents=True)
+    (entry / "HEAD").write_text(f"ref: refs/heads/{branch}\n")
+    wt = tmp_path / name
+    (entry / "gitdir").write_text(f"{wt / '.git'}\n")
+    if live:
+        wt.mkdir()
+        (wt / ".git").write_text(f"gitdir: {entry}\n")
+    return wt
+
+
+def test_counts_live_worktrees_on_the_repo(tmp_path):
+    wt = _make_worktree(tmp_path, "wt-a")
+    _make_worktree(tmp_path, "wt-b")
+    _make_worktree(tmp_path, "wt-c")
+    info = resolve_identity({"workspace_current_dir": str(wt)})
+    assert info.worktree_count == 3
+
+
+def test_pruned_worktree_entries_are_not_counted(tmp_path):
+    # `rm -rf`-ing a worktree leaves its .git/worktrees/<name> entry behind
+    # until `git worktree prune` runs — a ghost, not a checkout.
+    wt = _make_worktree(tmp_path, "wt-a")
+    _make_worktree(tmp_path, "wt-gone", live=False)
+    info = resolve_identity({"workspace_current_dir": str(wt)})
+    assert info.worktree_count == 1
+
+
+def test_normal_checkout_has_no_worktree_count(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    info = resolve_identity({"workspace_current_dir": str(tmp_path)})
+    assert info.worktree_count == 0
