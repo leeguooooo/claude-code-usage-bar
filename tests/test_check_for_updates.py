@@ -112,6 +112,10 @@ def test_spawn_background_upgrade_check_is_detached(monkeypatch):
             captured["cmd"] = cmd
             captured["kw"] = kw
 
+    # This test is about the detach mechanics; the duplicate-install guard has
+    # its own tests below (and would otherwise bite here, since the test
+    # interpreter is never the install that owns `cs` on PATH).
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
     monkeypatch.setattr(updater.subprocess, "Popen", FakePopen)
     updater.spawn_background_upgrade_check()
     assert captured["cmd"][1:] == ["-m", "claude_statusbar.updater"]
@@ -121,3 +125,56 @@ def test_spawn_background_upgrade_check_is_detached(monkeypatch):
         raise OSError("no fork")
     monkeypatch.setattr(updater.subprocess, "Popen", boom)
     updater.spawn_background_upgrade_check()  # swallowed, no raise
+
+
+
+def test_shadow_install_detected_when_path_cs_is_elsewhere(monkeypatch, tmp_path):
+    """A duplicate install must recognise it doesn't own `cs`."""
+    import claude_statusbar.updater as updater
+    other = tmp_path / "binary-install" / "cs"
+    other.parent.mkdir(parents=True)
+    other.write_text("")
+    monkeypatch.setattr(updater, "path_entrypoint", lambda: other)
+    monkeypatch.setattr(updater.sys, "executable",
+                        str(tmp_path / "uv-install" / "python3"))
+    assert updater.is_shadow_install() is True
+
+
+def test_not_a_shadow_when_we_own_the_entrypoint(monkeypatch, tmp_path):
+    import claude_statusbar.updater as updater
+    home = tmp_path / "install"
+    home.mkdir()
+    monkeypatch.setattr(updater, "path_entrypoint", lambda: home / "cs")
+    monkeypatch.setattr(updater.sys, "executable", str(home / "python3"))
+    assert updater.is_shadow_install() is False
+
+
+def test_no_cs_on_path_is_not_a_shadow(monkeypatch):
+    import claude_statusbar.updater as updater
+    monkeypatch.setattr(updater, "path_entrypoint", lambda: None)
+    assert updater.is_shadow_install() is False
+
+
+def test_auto_upgrade_refuses_to_hijack_another_install(monkeypatch):
+    # The live failure: a leftover uv copy upgraded itself and rewrote
+    # ~/.local/bin/cs, replacing the standalone binary the user actually ran.
+    import claude_statusbar.updater as updater
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: True)
+
+    def boom(*a, **k):
+        raise AssertionError("must not upgrade a shadow install")
+
+    monkeypatch.setattr(updater, "_run_upgrade", boom)
+    assert updater.auto_upgrade() is False
+
+
+def test_background_check_skips_a_shadow_install(monkeypatch):
+    import claude_statusbar.updater as updater
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: True)
+
+    def boom(*a, **k):
+        raise AssertionError("must not even spawn the checker")
+
+    monkeypatch.setattr(updater.subprocess, "Popen", boom)
+    updater.spawn_background_upgrade_check()  # returns quietly

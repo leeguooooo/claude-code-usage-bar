@@ -9,6 +9,30 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.35.2 — 2026-08-25
+
+**A leftover `uv` install can take over your binary install, silently.**
+
+Every installation channel puts its entry point at the same place —
+`~/.local/bin/cs`. A `uv tool install claude-statusbar` from months ago sits
+harmlessly behind a standalone binary until the day it auto-upgrades: uv then
+rewrites that symlink to its own copy, and `cs` is a different install than it
+was yesterday. Nothing announces it. Seen live on one machine — twice in ten
+minutes, the second time re-creating a copy that had just been uninstalled,
+because a still-running daemon from the old copy ran the upgrade.
+
+- **A copy that doesn't own `cs` no longer auto-upgrades.** It would be
+  upgrading itself into someone else's install. An explicit `cs upgrade` still
+  does what you ask.
+- **`cs doctor` lists duplicate installs** when it finds more than one, naming
+  each, because "whichever upgrades last wins" is not something you can debug
+  without being told it's happening.
+- **`install.sh` warns** when a uv/pipx copy is present and prints the exact
+  uninstall command. It does not remove another package manager's package on
+  its own.
+
+---
+
 ## v3.35.1 — 2026-08-25
 
 **v3.35.0 handed the daemon to launchd; a render tick took it straight back.**

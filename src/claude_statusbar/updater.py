@@ -157,6 +157,60 @@ def _find_tool(name: str) -> Optional[str]:
     return None
 
 
+def path_entrypoint() -> Optional[Path]:
+    """Where `cs` on PATH actually lives, fully resolved. None if absent."""
+    found = shutil.which("cs") or shutil.which(DIST_NAME)
+    if not found:
+        return None
+    try:
+        return Path(found).resolve()
+    except OSError:
+        return None
+
+
+def is_shadow_install() -> bool:
+    """True when the `cs` on PATH belongs to a *different* installation.
+
+    Duplicate installs share one entry point: `~/.local/bin/cs`. A leftover
+    `uv tool install claude-statusbar` sitting behind a binary install is
+    harmless right up until it upgrades itself — uv then rewrites that shared
+    symlink to its own copy, and the install the user actually runs is
+    silently replaced. Observed live, twice: a stale uv 3.32.0 auto-upgraded
+    and took the entry point away from the standalone binary.
+
+    So a copy that doesn't own the entry point must never auto-upgrade: it
+    would be upgrading itself *into someone else's install*.
+    """
+    entry = path_entrypoint()
+    if entry is None:
+        return False  # nothing on PATH to shadow
+    try:
+        here = Path(sys.executable).resolve()
+    except OSError:
+        return False
+    return entry.parent != here.parent
+
+
+def find_duplicate_installs() -> list:
+    """Every claude-statusbar installation we can see on this machine.
+
+    They all compete for one `cs` on PATH, so more than one is a latent
+    takeover: the next auto-upgrade of any of them rewrites the shared symlink
+    to itself.
+    """
+    found = []
+    binary_dir = Path.home() / ".local" / "lib" / "claude-statusbar" / "current"
+    if binary_dir.exists():
+        found.append(f"standalone binary ({binary_dir})")
+    uv_dir = Path.home() / ".local" / "share" / "uv" / "tools" / DIST_NAME
+    if uv_dir.is_dir():
+        found.append(f"uv tool ({uv_dir})")
+    pipx_dir = Path.home() / ".local" / "pipx" / "venvs" / DIST_NAME
+    if pipx_dir.is_dir():
+        found.append(f"pipx ({pipx_dir})")
+    return found
+
+
 def get_upgrade_command(
     executable: str | Path | None = None,
 ) -> list[str]:
@@ -204,6 +258,13 @@ def _run_upgrade(cmd) -> bool:
 
 def auto_upgrade() -> bool:
     """Attempt automatic upgrade. Bounded by _UPGRADE_TIMEOUT_S per attempt."""
+    if is_shadow_install():
+        # Upgrading would relink the shared `cs` entry point to this copy,
+        # replacing whatever install the user actually uses. Never behind
+        # their back; an explicit `cs upgrade` still works.
+        logging.info("skipping auto-upgrade: not the install that owns `cs`")
+        return False
+
     if _is_frozen():
         # Never auto-run a curl|sh installer behind the user's back. Binary
         # users still see the `↑<newver>` hint and can re-run install.sh.
@@ -267,6 +328,10 @@ def spawn_background_upgrade_check() -> None:
     if _is_frozen():
         # A frozen binary can't pip-upgrade itself; skip the background check
         # entirely (the `↑<newver>` hint still surfaces new releases).
+        return
+    if is_shadow_install():
+        # A duplicate install must not upgrade itself into an entry point
+        # another install owns. See is_shadow_install.
         return
     try:
         subprocess.Popen(

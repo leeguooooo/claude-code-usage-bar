@@ -40,6 +40,25 @@ INSTALL_DIR="${CS_INSTALL_DIR:-$HOME/.local/bin}"
 BUNDLE_ROOT="${CS_BUNDLE_ROOT:-$HOME/.local/lib/claude-statusbar}"
 FALLBACK_URL="https://raw.githubusercontent.com/${REPO}/main/web-install.sh"
 
+# A pip/uv/pipx copy of claude-statusbar competes with this binary for the one
+# `cs` on PATH: whichever upgrades last rewrites the symlink and silently takes
+# over. We don't remove another package manager's package behind the user's
+# back, but staying quiet about it is how a stale uv 3.32.0 replaced a working
+# binary install without anyone noticing.
+warn_about_duplicate_installs() {
+    local found=""
+    [ -d "$HOME/.local/share/uv/tools/claude-statusbar" ] && found="uv tool"
+    [ -d "$HOME/.local/pipx/venvs/claude-statusbar" ] && found="${found:+$found and }pipx"
+    [ -n "$found" ] || return 0
+    warn "Another claude-statusbar install ($found) is also present."
+    echo "     Both compete for $INSTALL_DIR/cs — whichever upgrades last wins."
+    echo "     Remove the other one so upgrades stay predictable:"
+    [ -d "$HOME/.local/share/uv/tools/claude-statusbar" ] && \
+        echo "       uv tool uninstall claude-statusbar"
+    [ -d "$HOME/.local/pipx/venvs/claude-statusbar" ] && \
+        echo "       pipx uninstall claude-statusbar"
+}
+
 # Scratch dir for the downloaded tarball, cleaned up on any exit. Declared here
 # (not inside the function that fills it) so the trap can still see it — see the
 # note at the mktemp call.
@@ -269,6 +288,7 @@ main() {
         bundle_dir="$INSTALLED_BUNDLE_DIR"
         ok "✓ Installed cs bundle → $bundle_dir"
         ok "✓ Linked cs → $INSTALL_DIR/cs"
+        warn_about_duplicate_installs
     elif [ -f "$tmp/cs" ]; then
         # Transition compatibility: `main/install.sh` can be newer than the
         # latest Release for a short window while CI is still building the

@@ -317,6 +317,20 @@ def run() -> int:
     except Exception as e:
         _line("daemon", _dim(f"check skipped: {e}"))
 
+    # --- duplicate installs fighting over ~/.local/bin/cs ---
+    # Two installs share one entry point, and whichever upgrades last owns it.
+    # A leftover `uv tool install` silently replaced a user's binary install
+    # this way — twice — and nothing anywhere said a word.
+    try:
+        from .updater import find_duplicate_installs
+        dupes = find_duplicate_installs()
+        if len(dupes) > 1:
+            _line("installs", _yellow(
+                "more than one claude-statusbar is installed; whichever "
+                "upgrades last takes over `cs`: " + ", ".join(dupes)), ok=None)
+    except Exception:
+        pass
+
     # --- launchd / systemd service (Phase C) ---
     try:
         from . import service as _svc
