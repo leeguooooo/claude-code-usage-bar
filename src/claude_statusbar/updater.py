@@ -256,6 +256,27 @@ def _run_upgrade(cmd) -> bool:
         return False
 
 
+# The installer downloads a ~10-25 MB release asset; the 60s cap that suits a
+# pip/uv upgrade is too tight for it on a slow link.
+_INSTALLER_TIMEOUT_S = 600
+
+
+def _run_installer() -> bool:
+    """Run install.sh, letting its output through so the user watches it work.
+
+    Only ever called from an explicit `cs upgrade` — never unattended.
+    """
+    try:
+        result = subprocess.run(
+            ["sh", "-c", BINARY_UPGRADE_HINT],
+            timeout=_INSTALLER_TIMEOUT_S,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        logging.error(f"binary installer failed: {e}")
+        return False
+
+
 def auto_upgrade() -> bool:
     """Attempt automatic upgrade. Bounded by _UPGRADE_TIMEOUT_S per attempt."""
     if is_shadow_install():
@@ -288,21 +309,33 @@ def upgrade_current_install() -> Tuple[bool, str]:
     current = get_current_version()
 
     if _is_frozen():
-        # Don't silently pipe curl|sh; hand the user the exact command so they
-        # stay in control of the install (and any PATH prompt it may show).
         latest = get_latest_version()
         if latest is None:
             # A check that never reached PyPI is not "up to date" — saying so
             # hides exactly the case the user ran this command to find out.
-            headline = (
+            return False, (
                 f"Standalone binary v{current} — could not reach PyPI to check "
-                "for updates (network or TLS failure)."
+                f"for updates (network or TLS failure).\n"
+                f"Update manually with:\n  {BINARY_UPGRADE_HINT}"
             )
-        elif compare_versions(current, latest):
-            headline = f"Standalone binary v{current} — v{latest} available."
-        else:
-            headline = f"Standalone binary v{current} is up to date (per PyPI)."
-        return False, f"{headline}\nUpdate the binary with:\n  {BINARY_UPGRADE_HINT}"
+        if not compare_versions(current, latest):
+            return True, f"Standalone binary v{current} is the latest (per PyPI)."
+
+        # Do the upgrade. Running the installer is what `cs upgrade` means;
+        # printing the command and calling it a day was a command that named
+        # an action it didn't perform. `auto_upgrade` still refuses to touch a
+        # frozen install — that one runs unattended, and *that* is the case
+        # "never pipe curl|sh behind the user's back" was written for.
+        print(f"Upgrading the standalone binary v{current} → v{latest}...")
+        if _run_installer():
+            return True, (
+                f"Upgraded the standalone binary to v{latest}. "
+                f"Restart Claude Code to pick it up."
+            )
+        return False, (
+            f"Upgrade to v{latest} failed. Run it manually to see why:\n"
+            f"  {BINARY_UPGRADE_HINT}"
+        )
 
     cmd = get_upgrade_command()
 

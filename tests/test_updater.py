@@ -164,26 +164,62 @@ def test_frozen_upgrade_says_unreachable_not_up_to_date(monkeypatch):
     assert "up to date" not in msg
 
 
-def test_frozen_upgrade_reports_a_newer_release(monkeypatch):
+def test_frozen_upgrade_actually_runs_the_installer(monkeypatch):
+    # `cs upgrade` used to print the curl command and exit, so a user who ran
+    # it and then checked `cs --version` found nothing had changed.
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.32.5")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
+    ran = []
+    monkeypatch.setattr(updater, "_run_installer", lambda: ran.append(1) or True)
+
+    ok, msg = updater.upgrade_current_install()
+
+    assert ran == [1]
+    assert ok is True
+    assert "Upgraded" in msg and "3.33.0" in msg
+
+
+def test_frozen_upgrade_failure_hands_back_the_manual_command(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.32.5")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
+    monkeypatch.setattr(updater, "_run_installer", lambda: False)
 
     ok, msg = updater.upgrade_current_install()
 
     assert ok is False
-    assert "v3.33.0 available" in msg
+    assert "install.sh" in msg
 
 
-def test_frozen_upgrade_confirms_up_to_date(monkeypatch):
+def test_frozen_upgrade_does_not_reinstall_when_current(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
 
+    def boom():
+        raise AssertionError("must not re-download when already latest")
+
+    monkeypatch.setattr(updater, "_run_installer", boom)
+    ok, msg = updater.upgrade_current_install()
+
+    assert ok is True
+    assert "is the latest" in msg
+
+
+def test_frozen_upgrade_unreachable_pypi_never_runs_the_installer(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: None)
+
+    def boom():
+        raise AssertionError("never reinstall on a failed version check")
+
+    monkeypatch.setattr(updater, "_run_installer", boom)
     ok, msg = updater.upgrade_current_install()
 
     assert ok is False
-    assert "is up to date" in msg
+    assert "could not reach PyPI" in msg
 
 
 def test_pypi_check_bypasses_the_cdn_edge_cache(monkeypatch):

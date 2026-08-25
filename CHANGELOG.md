@@ -9,6 +9,27 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.35.3 — 2026-08-25
+
+**`cs upgrade` now upgrades a standalone binary instead of describing how.**
+
+On a binary install the command printed the `curl … install.sh | bash` line and
+exited — a command named after an action it did not perform. Run it, check
+`cs --version`, and nothing had changed. The rule it was honoring ("never pipe
+curl|sh behind the user's back") is about *unattended* upgrades; typing
+`cs upgrade` is the consent that rule exists to protect. `auto_upgrade` still
+refuses to touch a frozen install, which is the case that actually runs
+unattended.
+
+- Up to date → says so and exits 0, without printing an install command you
+  don't need.
+- Newer release → runs the installer, streaming its output so you watch it
+  work, then tells you to restart Claude Code.
+- Version check failed → refuses to reinstall on the strength of an answer it
+  never got, and hands you the manual command.
+
+---
+
 ## v3.35.2 — 2026-08-25
 
 **A leftover `uv` install can take over your binary install, silently.**
