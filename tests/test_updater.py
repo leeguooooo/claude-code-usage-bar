@@ -148,3 +148,39 @@ def test_upgrade_current_install_reports_manual_command(monkeypatch):
 
     assert ok is False
     assert "uv tool install --upgrade claude-statusbar" in msg
+
+
+def test_frozen_upgrade_says_unreachable_not_up_to_date(monkeypatch):
+    # A failed PyPI check must never be dressed up as good news — that's how
+    # the missing-CA-bundle bug stayed invisible for a month of releases.
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: None)
+
+    ok, msg = updater.upgrade_current_install()
+
+    assert ok is False
+    assert "could not reach PyPI" in msg
+    assert "up to date" not in msg
+
+
+def test_frozen_upgrade_reports_a_newer_release(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.32.5")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
+
+    ok, msg = updater.upgrade_current_install()
+
+    assert ok is False
+    assert "v3.33.0 available" in msg
+
+
+def test_frozen_upgrade_confirms_up_to_date(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
+
+    ok, msg = updater.upgrade_current_install()
+
+    assert ok is False
+    assert "is up to date" in msg

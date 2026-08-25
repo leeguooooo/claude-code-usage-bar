@@ -17,7 +17,8 @@ The desktop HUD (`cs hud`) is bundled in the macOS onedir release, including its
 PyObjC frameworks. Linux excludes those platform-specific modules.
 """
 import os, sys
-from PyInstaller.utils.hooks import copy_metadata, collect_submodules
+from PyInstaller.utils.hooks import (collect_data_files, collect_submodules,
+                                     copy_metadata)
 
 SPEC_DIR = os.path.dirname(os.path.abspath(SPECPATH))
 SRC = os.path.join(SPEC_DIR, "src")
@@ -31,10 +32,15 @@ datas = [
     (os.path.join(PKG, "skills"), "claude_statusbar/skills"),
 ]
 datas += copy_metadata("claude-statusbar")
+# certifi's cacert.pem — PyInstaller ships libssl but no CA store, and the
+# bundled OpenSSL's compile-time cert path doesn't exist on user machines.
+# packaging/pyi_entry.py points SSL_CERT_FILE at this on startup.
+datas += collect_data_files("certifi")
 
 # Modules that are only referenced as strings in `[sys.executable, "-m", ...]`
 # self-spawns, so PyInstaller's import graph might miss them.
 hiddenimports = [
+    "certifi",
     "claude_statusbar.cli",
     "claude_statusbar.core",
     "claude_statusbar.daemon",

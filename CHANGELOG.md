@@ -9,6 +9,41 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.33.1 — 2026-08-25
+
+**The standalone binary could not make a single HTTPS request — and said so nowhere.**
+
+PyInstaller bundles OpenSSL but not a certificate store, so the frozen `cs`
+looked for CAs at the *build runner's* compile-time path, which does not exist
+on any user machine. Every HTTPS call failed certificate verification, and
+since each call site swallows network errors, the failures were invisible:
+
+- `cs upgrade` answered "is up to date (per PyPI)" no matter how many releases
+  had shipped since.
+- The `↑<newver>` update hint never appeared for binary users.
+- The IP-risk probe cached nothing but `{"ok": false}`; relay-balance lookups
+  had the same fate.
+
+Fixed at the one place every invocation passes through — the frozen entry
+point now points `SSL_CERT_FILE` at a CA store that exists: certifi's bundle
+(now shipped inside the binary), falling back to the platform's system store.
+The `-m` self-spawns inherit it. An explicit `SSL_CERT_FILE` / `SSL_CERT_DIR`
+from the user is never overridden.
+
+And `cs upgrade` no longer reports an unreachable PyPI as good news — a check
+that never completed now says so, instead of claiming you are up to date.
+
+**If you are on a binary at v3.33.0 or older, `cs upgrade` cannot tell you
+about this release** — that is the bug. Re-run the installer once:
+
+```
+curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash
+```
+
+pip / uv / pipx installs were never affected.
+
+---
+
 ## v3.33.0 — 2026-08-25
 
 **The identity line now opens with the git worktree you're actually in.**

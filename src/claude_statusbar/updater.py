@@ -223,11 +223,17 @@ def upgrade_current_install() -> Tuple[bool, str]:
         # Don't silently pipe curl|sh; hand the user the exact command so they
         # stay in control of the install (and any PATH prompt it may show).
         latest = get_latest_version()
-        newer = latest and compare_versions(current, latest)
-        headline = (
-            f"Standalone binary v{current}"
-            + (f" — v{latest} available." if newer else " is up to date (per PyPI).")
-        )
+        if latest is None:
+            # A check that never reached PyPI is not "up to date" — saying so
+            # hides exactly the case the user ran this command to find out.
+            headline = (
+                f"Standalone binary v{current} — could not reach PyPI to check "
+                "for updates (network or TLS failure)."
+            )
+        elif compare_versions(current, latest):
+            headline = f"Standalone binary v{current} — v{latest} available."
+        else:
+            headline = f"Standalone binary v{current} is up to date (per PyPI)."
         return False, f"{headline}\nUpdate the binary with:\n  {BINARY_UPGRADE_HINT}"
 
     cmd = get_upgrade_command()
