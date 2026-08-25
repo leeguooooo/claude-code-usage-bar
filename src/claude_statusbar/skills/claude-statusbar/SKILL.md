@@ -54,6 +54,12 @@ give a short confirmation (one line, no lecture).
 | Set critical threshold | `cs config set critical_threshold <0-100>` |
 | Auto-collapse to hairline below width | `cs config set auto_compact_width <px>` |
 | Force / disable no-quota (API) mode | `cs config set api_mode <auto\|on\|off>` |
+| Show working directory | `cs config set show_cwd true\|false` + `cs config set cwd_style <basename\|full>` |
+| Relay balance fuel gauge | `cs config set show_balance true\|false` + `cs config set balance_bar true\|false` (no-quota mode only; auto-hidden when the relay has no balance API) |
+| Exit-IP purity segment | `cs config set show_ip_risk true\|false` |
+| Relay fingerprint-risk watermark | `cs config set show_fp_risk true\|false` |
+| Window-end projection `→NN%` | `cs config set show_projection true\|false` |
+| Worktree marker color | `cs config set color_worktree "#bd93f9"` (empty string restores the theme's hue) |
 
 ## No-quota mode (third-party relay / Bedrock / Vertex)
 

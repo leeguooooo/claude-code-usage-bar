@@ -378,6 +378,28 @@ def is_supervising() -> bool:
     return False
 
 
+def start_job() -> Tuple[bool, str]:
+    """Ask the service manager to start its job (without killing anything).
+
+    The lazy-spawn path calls this instead of launching a competing daemon:
+    only one process can hold the pidfile, and it should be the supervised one.
+    """
+    if not is_installed():
+        return False, "no service installed"
+    plat = _platform()
+    if plat == "macos":
+        rc, _, err = _launchctl("kickstart", f"gui/{os.getuid()}/{LAUNCHD_LABEL}")
+        if rc != 0:
+            return False, f"launchctl kickstart failed: {err.strip()}"
+        return True, "launchd started its job"
+    if plat == "linux":
+        rc, _, err = _systemctl_user("start", SYSTEMD_UNIT)
+        if rc != 0:
+            return False, f"systemctl start failed: {err.strip()}"
+        return True, "systemd started its unit"
+    return False, f"unsupported platform {sys.platform!r}"
+
+
 def adopt_running_daemon() -> Tuple[bool, str]:
     """Make the service manager own the daemon process.
 

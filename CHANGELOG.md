@@ -9,6 +9,34 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.35.1 — 2026-08-25
+
+**v3.35.0 handed the daemon to launchd; a render tick took it straight back.**
+
+`cs --setup` now kickstarts the service's own job — but one second later a
+status-line tick found the pidfile briefly free and lazy-spawned a competing
+daemon, which won it. launchd's instance exited 0 "already running" and stood
+down again, leaving the same unsupervised daemon v3.35.0 set out to fix. The
+lazy-spawn path now asks the service manager to start its job instead of
+racing it (falling back to a direct spawn only if the service manager refuses
+— an unsupervised daemon still beats no status bar).
+
+**Both shipped docs had a second copy that drifted.** `skills/` and `commands/`
+at the repo root (what GitHub and `npx skills add` serve) are separate files
+from `src/claude_statusbar/skills|commands/` (what the wheel and the binary
+install), with no sync step. The packaged SKILL.md had a dozen toggles the
+GitHub copy never mentioned; the packaged `statusbar-doctor.md` was still
+telling agents to fix a broken install with `pip install -U claude-statusbar`,
+which does nothing for a binary install. Both are back in sync, and a test now
+fails if they drift again.
+
+**Seven config keys were documented nowhere.** `show_cwd`, `show_ip_risk`,
+`show_fp_risk`, `show_balance`, `balance_bar`, `show_projection` and
+`color_worktree` existed only in the code and `docs/`; the skill an agent
+actually reads never mentioned them. Added.
+
+---
+
 ## v3.35.0 — 2026-08-25
 
 **Three things that had been quietly wrong, all the same shape: the code

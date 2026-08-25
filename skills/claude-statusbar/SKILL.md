@@ -1,6 +1,6 @@
 ---
 name: claude-statusbar
-description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install, upgrade (`cs upgrade` — the only supported upgrade path), or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age, or toggle the AgentParty/Codex bridge line. Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, AgentParty, Codex, show_party, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, or asks to install / upgrade / update / 升级 / configure / diagnose / customize the bottom status line in Claude Code or Codex/AgentParty workflows.
+description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install, upgrade (`cs upgrade` — the only supported upgrade path), or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age, toggle the AgentParty/Codex bridge line, or toggle the activity segments (todos, active tool, running subagents, session duration, lines changed, git ahead/behind). Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, AgentParty, Codex, show_party, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, todos / 待办, active tool, subagents / 子agent, session duration / 时长, lines changed / 行数, git ahead-behind / 领先落后, forecast / 预测 / 还能用多久, at-risk chip, show_forecast, or asks to install / upgrade / update / 升级 / configure / diagnose / customize the bottom status line in Claude Code or Codex/AgentParty workflows.
 ---
 
 # claude-statusbar control skill
@@ -37,11 +37,29 @@ give a short confirmation (one line, no lecture).
 | Toggle prompt-cache countdown | `cs config set show_cache_age true\|false` |
 | Toggle project + branch 2nd line | `cs config set show_project_branch true\|false` (default `true`) |
 | Toggle AgentParty/Codex bridge line | `cs config set show_party true\|false` (default `true`) |
+| Toggle todo progress (`▸ task 3/7`, 3rd line) | `cs config set show_todos true\|false` (default `true`) |
+| Toggle active-tool indicator `◐` (3rd line) | `cs config set show_tools true\|false` |
+| Toggle completed-tool rollup `✓ name×N` (3rd line) | `cs config set show_tool_rollup true\|false` (default off — volume tally) |
+| Toggle running-subagent bottom line(s) | `cs config set show_agents true\|false` (default off — Claude Code shows background agents natively) |
+| Toggle session duration `⏱` (on identity line) | `cs config set show_duration true\|false` |
+| Toggle lines added/removed `+/-` (on identity line) | `cs config set show_lines true\|false` |
+| Toggle git ahead/behind `↑↓` (on identity line) | `cs config set show_ahead_behind true\|false` |
+| Toggle the `bar_shimmer` twinkling starfield (experimental, classic only) | `cs config set bar_shimmer true\|false` (default off) |
+| Toggle the rate-limit forecast (→NN% projected use / ⚠eta warning) | `cs config set show_forecast true\|false` (default on) |
+| Toggle the faint version + update hint at the identity-line end (`· vX.Y.Z ↑new`) | `cs config set show_version true\|false` (default on) |
+| Toggle the ⚙ session-mode line (effort/thinking/fast/output-style) | `cs config set show_mode true\|false` (default on) |
+| Toggle the per-effort colour gradient on the mode line | `cs config set mode_gradient true\|false` (default on) |
 | Hide weekly bar | `cs config set show_weekly false` |
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |
 | Auto-collapse to hairline below width | `cs config set auto_compact_width <px>` |
 | Force / disable no-quota (API) mode | `cs config set api_mode <auto\|on\|off>` |
+| Show working directory | `cs config set show_cwd true\|false` + `cs config set cwd_style <basename\|full>` |
+| Relay balance fuel gauge | `cs config set show_balance true\|false` + `cs config set balance_bar true\|false` (no-quota mode only; auto-hidden when the relay has no balance API) |
+| Exit-IP purity segment | `cs config set show_ip_risk true\|false` |
+| Relay fingerprint-risk watermark | `cs config set show_fp_risk true\|false` |
+| Window-end projection `→NN%` | `cs config set show_projection true\|false` |
+| Worktree marker color | `cs config set color_worktree "#bd93f9"` (empty string restores the theme's hue) |
 
 ## No-quota mode (third-party relay / Bedrock / Vertex)
 

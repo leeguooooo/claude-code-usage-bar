@@ -61,3 +61,51 @@ def test_supervising_is_true_when_launchd_runs_the_job(monkeypatch):
         svc, "_macos_status",
         lambda: (True, "installed (/x.plist), launchd state: running"))
     assert svc.is_supervising() is True
+
+
+def test_lazy_spawn_defers_to_the_service_manager(monkeypatch):
+    # The hole this closes: `cs --setup` hands the daemon to launchd, then a
+    # render tick a second later spawns a competitor that wins the pidfile
+    # back, and launchd stands down again. Observed live on v3.35.0.
+    from claude_statusbar import daemon as dmn
+
+    monkeypatch.setattr(dmn, "read_pidfile", lambda: None)
+    monkeypatch.setattr(svc, "is_installed", lambda: True)
+    monkeypatch.setattr(svc, "start_job", lambda: (True, "launchd started its job"))
+
+    import subprocess
+    def boom(*a, **k):
+        raise AssertionError("lazy spawn must not race the service manager")
+    monkeypatch.setattr(subprocess, "Popen", boom)
+
+    assert dmn.spawn_if_dead() is True
+
+
+def test_lazy_spawn_still_works_when_no_service_is_installed(monkeypatch):
+    from claude_statusbar import daemon as dmn
+
+    monkeypatch.setattr(dmn, "read_pidfile", lambda: None)
+    monkeypatch.setattr(svc, "is_installed", lambda: False)
+    spawned = []
+    import subprocess
+    monkeypatch.setattr(subprocess, "Popen",
+                        lambda *a, **k: spawned.append(a) or object())
+
+    assert dmn.spawn_if_dead() is True
+    assert spawned, "without a service manager we are the only spawner"
+
+
+def test_lazy_spawn_falls_back_when_the_service_refuses(monkeypatch):
+    # Better an unsupervised daemon than no status bar at all.
+    from claude_statusbar import daemon as dmn
+
+    monkeypatch.setattr(dmn, "read_pidfile", lambda: None)
+    monkeypatch.setattr(svc, "is_installed", lambda: True)
+    monkeypatch.setattr(svc, "start_job", lambda: (False, "launchd is wedged"))
+    spawned = []
+    import subprocess
+    monkeypatch.setattr(subprocess, "Popen",
+                        lambda *a, **k: spawned.append(a) or object())
+
+    assert dmn.spawn_if_dead() is True
+    assert spawned

@@ -860,6 +860,25 @@ def spawn_if_dead(render_interval: float = DEFAULT_RENDER_INTERVAL) -> bool:
     pid = read_pidfile()
     if pid is not None and is_alive(pid) and _process_is_our_daemon(pid):
         return True
+
+    # If an OS service manager owns this daemon, ask *it* to start the job.
+    # Spawning our own would take the pidfile, whereupon launchd's instance
+    # exits 0 "already running" and — by design, KeepAlive is
+    # SuccessfulExit:false — stands down. The daemon would run unsupervised,
+    # which is exactly the state `cs --setup` just repaired. Observed live:
+    # `launchctl kickstart -k` handed the daemon over, then a render tick a
+    # second later lazy-spawned a competitor that won the pidfile back.
+    try:
+        from . import service as _svc
+        if _svc.is_installed():
+            started, _ = _svc.start_job()
+            if started:
+                return True
+            # Service manager refused — fall through to the direct spawn
+            # rather than leaving the user with no daemon at all.
+    except Exception:
+        pass
+
     try:
         import subprocess
         subprocess.Popen(
