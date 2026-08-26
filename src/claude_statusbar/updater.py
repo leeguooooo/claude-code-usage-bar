@@ -79,6 +79,44 @@ def get_latest_version() -> Optional[str]:
         return None
 
 
+GITHUB_LATEST_RELEASE_URL = (
+    f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+)
+
+
+def latest_release_tag() -> Optional[str]:
+    """Newest published GitHub Release version, or None.
+
+    The standalone binary is downloaded from GitHub Releases, so GitHub is the
+    authority on whether it is current. Asking PyPI was asking the wrong
+    service: its JSON index updates asynchronously after an upload, so for a
+    minute or two after every release `cs upgrade` answered with the version
+    it had just replaced — five times in one afternoon.
+    """
+    try:
+        req = urllib.request.Request(
+            GITHUB_LATEST_RELEASE_URL,
+            headers={"Accept": "application/vnd.github+json",
+                     "User-Agent": f"claude-statusbar/{get_current_version()}"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            tag = str(json.loads(response.read().decode())["tag_name"])
+        return tag.lstrip("v") or None
+    except (urllib.error.URLError, json.JSONDecodeError, KeyError, TimeoutError):
+        return None
+
+
+def resolve_latest_version() -> Optional[str]:
+    """The newest version available *through this install's own channel*.
+
+    Frozen binaries come from GitHub Releases; everything else from PyPI.
+    Falls back to the other source rather than reporting nothing at all.
+    """
+    if _is_frozen():
+        return latest_release_tag() or get_latest_version()
+    return get_latest_version()
+
+
 def compare_versions(current: str, latest: str) -> bool:
     """Compare versions (True if latest > current)"""
     try:
@@ -332,7 +370,7 @@ def auto_upgrade() -> bool:
         # The installer is pinned to the version we resolved and the result is
         # verified, so an unattended run can't quietly leave a different build
         # behind — the failure mode that made this path suspect to begin with.
-        latest = get_latest_version()
+        latest = resolve_latest_version()
         if latest is None or not compare_versions(get_current_version(), latest):
             return False
         if not _run_installer(latest):
@@ -357,17 +395,20 @@ def upgrade_current_install() -> Tuple[bool, str]:
     current = get_current_version()
 
     if _is_frozen():
-        latest = get_latest_version()
+        latest = resolve_latest_version()
         if latest is None:
-            # A check that never reached PyPI is not "up to date" — saying so
+            # A check that never completed is not "up to date" — saying so
             # hides exactly the case the user ran this command to find out.
             return False, (
-                f"Standalone binary v{current} — could not reach PyPI to check "
-                f"for updates (network or TLS failure).\n"
+                f"Standalone binary v{current} — could not reach GitHub or "
+                f"PyPI to check for updates (network or TLS failure).\n"
                 f"Update manually with:\n  {BINARY_UPGRADE_HINT}"
             )
         if not compare_versions(current, latest):
-            return True, f"Standalone binary v{current} is the latest (per PyPI)."
+            return True, (
+                f"Standalone binary v{current} is the latest "
+                f"(per GitHub Releases)."
+            )
 
         # Do the upgrade. Running the installer is what `cs upgrade` means;
         # printing the command and calling it a day was a command that named

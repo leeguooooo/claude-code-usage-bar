@@ -9,6 +9,24 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.40.1 — 2026-08-26
+
+**A binary install asks GitHub whether it's current, not PyPI.**
+
+The standalone binary is downloaded from GitHub Releases, but the version
+check queried PyPI — the wrong service, and a slow one: PyPI's JSON index
+updates asynchronously after an upload, so for a minute or two after every
+release `cs upgrade` answered with the version it had just replaced. That
+happened five times in one afternoon, twice sending a maintainer looking for
+a bug that wasn't there. The v3.35.x cache-buster only defeated the CDN edge,
+not PyPI's own indexing delay.
+
+Frozen installs now read `releases/latest` from the GitHub API and fall back
+to PyPI if that fails; pip / uv / pipx installs still ask PyPI, which is
+correctly *their* channel.
+
+---
+
 ## v3.40.0 — 2026-08-26
 
 **`⑂` is the default glyph now — the one that can actually take your theme color.**

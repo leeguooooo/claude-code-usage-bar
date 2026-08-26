@@ -151,16 +151,17 @@ def test_upgrade_current_install_reports_manual_command(monkeypatch):
 
 
 def test_frozen_upgrade_says_unreachable_not_up_to_date(monkeypatch):
-    # A failed PyPI check must never be dressed up as good news — that's how
-    # the missing-CA-bundle bug stayed invisible for a month of releases.
+    # A failed version check must never be dressed up as good news — that's
+    # how the missing-CA-bundle bug stayed invisible for a month of releases.
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
     monkeypatch.setattr(updater, "get_latest_version", lambda: None)
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: None)
 
     ok, msg = updater.upgrade_current_install()
 
     assert ok is False
-    assert "could not reach PyPI" in msg
+    assert "could not reach GitHub or PyPI" in msg
     assert "up to date" not in msg
 
 
@@ -170,6 +171,7 @@ def test_frozen_upgrade_actually_runs_the_installer(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.32.5")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.33.0")
     ran = []
     monkeypatch.setattr(updater, "_run_installer",
                         lambda v=None: ran.append(v) or True)
@@ -188,6 +190,7 @@ def test_frozen_upgrade_reports_when_a_different_version_landed(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.35.2")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.35.3")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.35.3")
     monkeypatch.setattr(updater, "_run_installer", lambda v=None: True)
     monkeypatch.setattr(updater, "installed_version_on_path", lambda: "3.35.2")
 
@@ -201,6 +204,7 @@ def test_frozen_upgrade_failure_hands_back_the_manual_command(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.32.5")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.33.0")
     monkeypatch.setattr(updater, "_run_installer", lambda v=None: False)
 
     ok, msg = updater.upgrade_current_install()
@@ -213,6 +217,7 @@ def test_frozen_upgrade_does_not_reinstall_when_current(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.33.0")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.33.0")
 
     def boom(v=None):
         raise AssertionError("must not re-download when already latest")
@@ -224,10 +229,10 @@ def test_frozen_upgrade_does_not_reinstall_when_current(monkeypatch):
     assert "is the latest" in msg
 
 
-def test_frozen_upgrade_unreachable_pypi_never_runs_the_installer(monkeypatch):
+def test_frozen_upgrade_unreachable_channel_never_runs_the_installer(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.33.0")
-    monkeypatch.setattr(updater, "get_latest_version", lambda: None)
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: None)
 
     def boom(v=None):
         raise AssertionError("never reinstall on a failed version check")
@@ -236,7 +241,7 @@ def test_frozen_upgrade_unreachable_pypi_never_runs_the_installer(monkeypatch):
     ok, msg = updater.upgrade_current_install()
 
     assert ok is False
-    assert "could not reach PyPI" in msg
+    assert "could not reach GitHub or PyPI" in msg
 
 
 def test_pypi_check_bypasses_the_cdn_edge_cache(monkeypatch):
@@ -273,6 +278,7 @@ def test_frozen_auto_upgrade_runs_pinned_and_verifies(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.35.2")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.36.0")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.36.0")
     ran = []
     monkeypatch.setattr(updater, "_run_installer",
                         lambda v=None: ran.append(v) or True)
@@ -287,6 +293,7 @@ def test_frozen_auto_upgrade_reports_failure_when_another_version_lands(monkeypa
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.35.2")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.36.0")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.36.0")
     monkeypatch.setattr(updater, "_run_installer", lambda v=None: True)
     monkeypatch.setattr(updater, "installed_version_on_path", lambda: "3.35.2")
 
@@ -298,6 +305,7 @@ def test_frozen_auto_upgrade_skips_when_already_current(monkeypatch):
     monkeypatch.setattr(updater, "_is_frozen", lambda: True)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.36.0")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.36.0")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.36.0")
 
     def boom(v=None):
         raise AssertionError("no reinstall when already on the latest")
@@ -346,3 +354,51 @@ def test_check_and_upgrade_treats_up_to_date_as_success(monkeypatch):
     ok, msg = updater.check_and_upgrade()
 
     assert ok is True and "Already up to date" in msg
+
+
+def test_frozen_installs_ask_github_not_pypi(monkeypatch):
+    # The binary is downloaded from GitHub Releases, so GitHub decides whether
+    # it's current. PyPI's index lags every upload by a minute or two, which
+    # made `cs upgrade` report the version it had just replaced — five times
+    # in one afternoon.
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "latest_release_tag", lambda: "3.40.0")
+    monkeypatch.setattr(updater, "get_latest_version",
+                        lambda: (_ for _ in ()).throw(
+                            AssertionError("must not ask PyPI first")))
+
+    assert updater.resolve_latest_version() == "3.40.0"
+
+
+def test_frozen_falls_back_to_pypi_when_github_is_unreachable(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: True)
+    monkeypatch.setattr(updater, "latest_release_tag", lambda: None)
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.39.0")
+
+    assert updater.resolve_latest_version() == "3.39.0"
+
+
+def test_pip_installs_still_ask_pypi(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "latest_release_tag",
+                        lambda: (_ for _ in ()).throw(
+                            AssertionError("GitHub is not the pip channel")))
+    monkeypatch.setattr(updater, "get_latest_version", lambda: "3.40.0")
+
+    assert updater.resolve_latest_version() == "3.40.0"
+
+
+def test_release_tag_strips_the_v_prefix(monkeypatch):
+    class _Resp:
+        def read(self):
+            return b'{"tag_name": "v3.40.0"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen",
+                        lambda req, timeout=None: _Resp())
+    assert updater.latest_release_tag() == "3.40.0"
