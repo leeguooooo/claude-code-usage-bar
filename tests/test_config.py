@@ -283,3 +283,13 @@ def test_auto_upgrade_defaults_on_and_is_togglable(tmp_path: Path):
     cfg = cfg_mod.set_value("auto_upgrade", "false", p)
     assert cfg.auto_upgrade is False
     assert json.loads(p.read_text()) == {"auto_upgrade": False}
+
+
+def test_worktree_glyph_rejects_something_too_wide(tmp_path: Path):
+    with pytest.raises(ValueError, match="1-2 terminal cells"):
+        cfg_mod.set_value("worktree_glyph", "🌲🌲", tmp_path / "c.json")
+
+
+def test_worktree_glyph_accepts_a_one_cell_symbol(tmp_path: Path):
+    cfg = cfg_mod.set_value("worktree_glyph", "⑂", tmp_path / "c.json")
+    assert cfg.worktree_glyph == "⑂"

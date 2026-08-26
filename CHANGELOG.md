@@ -9,6 +9,31 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.39.0 — 2026-08-26
+
+**Pick your own worktree glyph — because 🌲 can't take your theme's color.**
+
+An emoji is drawn by the emoji font in the font's own colors. `theme.wt` (and
+`color_worktree`) therefore reach only the text beside 🌲, never the glyph —
+which sits awkwardly with the reason the marker exists: the very first
+request for this feature was "the worktree needs a color". On the light themes
+(linen, sakura) the fixed emoji green is the wrong note entirely.
+
+`worktree_glyph` (default `🌲`) takes any 1-2 cell symbol:
+
+```
+cs config set worktree_glyph ⑂     # OCR fork — VCS-native, takes the theme color
+cs config set worktree_glyph ⋔     # pitchfork
+cs config set worktree_glyph ├     # file-tree feel
+cs config set worktree_glyph ⧉     # the pre-3.38 overlapping squares
+cs config set worktree_glyph 🌳    # a different tree
+```
+
+Anything wider than two terminal cells is refused at set time rather than
+quietly breaking the line's width budget.
+
+---
+
 ## v3.38.0 — 2026-08-26
 
 **A tree, for the thing called a worktree.**

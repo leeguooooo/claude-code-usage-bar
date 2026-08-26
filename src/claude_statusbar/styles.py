@@ -458,6 +458,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
                          duration_text: str = "", lines_text: str = "",
                          version_text: str = "", update_text: str = "",
                          cwd_text: str = "",
+                         worktree_glyph: str = "🌲",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
 
@@ -484,9 +485,9 @@ def render_identity_line(info, *, theme: Theme, dirty,
     if not use_color:
         head = f"⤷ {info.project_name}"
         if info.is_worktree:
-            head = f"🌲 {_worktree_label(info)} {head}"
+            head = f"{worktree_glyph} {_worktree_label(info)} {head}"
         elif info.in_git:
-            head = f"🌲 trunk ({info.worktree_count}) {head}"
+            head = f"{worktree_glyph} trunk ({info.worktree_count}) {head}"
         if not info.in_git:
             tail = " (no git)"
         else:
@@ -514,15 +515,16 @@ def render_identity_line(info, *, theme: Theme, dirty,
         # Leads the line, in its own hue — not mute: "this is not the main
         # checkout" is the one fact here you must never scan past (it's what
         # stops a commit landing on the wrong tree).
-        head = f"{_fg(theme.wt)}🌲 {_worktree_label(info)}{RESET} " + head
+        head = (f"{_fg(theme.wt)}{worktree_glyph} {_worktree_label(info)}"
+                f"{RESET} " + head)
     elif info.in_git:
         # Main checkout: always report, `(0)` included. An omitted marker and
         # a zero count look identical, and "is it broken or is it zero?" got
         # asked four times before this line existed. Same tree glyph as a
         # worktree — the *name* is what differs — but dimmed, because being in
         # the trunk is the ordinary case and only a worktree is a warning.
-        head = (f"{FAINT}{_fg(theme.wt)}🌲 trunk ({info.worktree_count})"
-                f"{RESET} " + head)
+        head = (f"{FAINT}{_fg(theme.wt)}{worktree_glyph} trunk "
+                f"({info.worktree_count}){RESET} " + head)
     if not info.in_git:
         body = f" {MUTE}{ITAL}(no git){RESET}"
     else:
@@ -859,6 +861,7 @@ def render(style: str, **kwargs) -> str:
     duration_text = kwargs.pop("identity_duration", "")
     lines_text = kwargs.pop("identity_lines", "")
     cwd_text = kwargs.pop("cwd_text", "")
+    worktree_glyph = kwargs.pop("worktree_glyph", "🌲")
     ip_line_text = kwargs.pop("ip_line_text", "")
     ip_line_level = kwargs.pop("ip_line_level", "ok")
     fp_line_text = kwargs.pop("fp_line_text", "")
@@ -923,6 +926,7 @@ def render(style: str, **kwargs) -> str:
             duration_text=duration_text, lines_text=lines_text,
             version_text=version_text, update_text=update_text,
             cwd_text=cwd_text,
+            worktree_glyph=worktree_glyph,
             use_color=use_color,
         )
     elif cwd_text:

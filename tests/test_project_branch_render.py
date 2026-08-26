@@ -333,3 +333,25 @@ def test_main_checkout_marker_is_dimmed_not_shouting():
     )
     r, g, b = THEME.wt
     assert s.startswith(f"\033[2m\033[38;2;{r};{g};{b}m🌲 trunk (2)")
+
+
+def test_worktree_glyph_is_configurable():
+    # 🌲 reads as a tree but emoji carry their own font color, so the theme's
+    # worktree hue reaches only the text. A 1-cell symbol takes the color.
+    s = render_identity_line(
+        IdentityInfo(project_name="proj", in_git=True, branch="main",
+                     detached=False, worktree_name="wt-a", toplevel="/x",
+                     is_worktree=True, worktree_count=2),
+        theme=THEME, dirty=False, use_color=False, worktree_glyph="⑂",
+    )
+    assert s.startswith("⑂ wt-a (2) ⤷ proj")
+
+
+def test_worktree_glyph_applies_to_the_trunk_form_too():
+    s = render_identity_line(
+        IdentityInfo(project_name="proj", in_git=True, branch="main",
+                     detached=False, worktree_name=None, toplevel="/x",
+                     is_worktree=False, worktree_count=0),
+        theme=THEME, dirty=False, use_color=False, worktree_glyph="├",
+    )
+    assert s.startswith("├ trunk (0) ⤷ proj")

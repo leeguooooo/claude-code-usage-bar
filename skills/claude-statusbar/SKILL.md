@@ -60,6 +60,7 @@ give a short confirmation (one line, no lecture).
 | Exit-IP purity segment | `cs config set show_ip_risk true\|false` |
 | Relay fingerprint-risk watermark | `cs config set show_fp_risk true\|false` |
 | Window-end projection `→NN%` | `cs config set show_projection true\|false` |
+| Worktree marker glyph | `cs config set worktree_glyph ⑂` (default `🌲`; emoji ignore the theme color, a 1-cell symbol takes it) |
 | Worktree marker color | `cs config set color_worktree "#bd93f9"` (empty string restores the theme's hue) |
 
 ## No-quota mode (third-party relay / Bedrock / Vertex)

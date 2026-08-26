@@ -108,6 +108,12 @@ class StatusbarConfig:
     color_hot: Optional[str] = None
     # Worktree marker color on the identity line (theme.wt by default).
     color_worktree: Optional[str] = None
+    # Glyph leading the identity line for the git worktree segment. The
+    # default 🌲 is a tree because that is what a worktree is; the cost is
+    # that emoji carry their own font colors, so the theme's worktree hue
+    # reaches only the text beside it. Set a 1-cell symbol (⑂, ⋔, ├, ⧉) to
+    # get a glyph that takes the theme color.
+    worktree_glyph: str = "🌲"
     # Keep cs current on its own, once a day, in a detached background process.
     # CLAUDE_STATUSBAR_NO_UPDATE=1 still wins over this.
     auto_upgrade: bool = True
@@ -167,6 +173,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         color_warn=raw.get("color_warn") or None,
         color_hot=raw.get("color_hot") or None,
         color_worktree=raw.get("color_worktree") or None,
+        worktree_glyph=str(raw.get("worktree_glyph", "🌲") or "🌲"),
         auto_upgrade=_to_bool(raw.get("auto_upgrade", True)),
     )
 
@@ -227,7 +234,7 @@ VALID_KEYS = {
     "cache_ttl_seconds", "api_mode",
     "warning_threshold", "critical_threshold",
     "color_ok", "color_warn", "color_hot", "color_worktree",
-    "auto_upgrade",
+    "auto_upgrade", "worktree_glyph",
 }
 _VALID_API_MODE = {"auto", "on", "off"}
 _BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_balance",
@@ -304,6 +311,16 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
     elif key == "api_mode":
         if value not in _VALID_API_MODE:
             raise ValueError(f"api_mode must be one of {sorted(_VALID_API_MODE)}, got {value!r}")
+        setattr(cfg, key, value)
+    elif key == "worktree_glyph":
+        from ._display import visible_width
+        if not value or "\n" in value or "\033" in value:
+            raise ValueError("worktree_glyph must be a printable symbol")
+        if visible_width(value) > 2:
+            raise ValueError(
+                f"worktree_glyph must fit in 1-2 terminal cells, "
+                f"{value!r} needs {visible_width(value)}"
+            )
         setattr(cfg, key, value)
     elif key == "cwd_style":
         if value not in _VALID_CWD_STYLE:

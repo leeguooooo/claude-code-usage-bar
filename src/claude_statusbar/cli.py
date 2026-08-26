@@ -64,6 +64,7 @@ def _run_config_subcommand(rest):
             line(key)
         for key in ("color_ok", "color_warn", "color_hot", "color_worktree"):
             line(key, getattr(cfg, key) or "(theme default)")
+        line("worktree_glyph")
         line("auto_upgrade")
         print(f"\nfile: {cfg_mod.CONFIG_PATH}")
         print("      only keys you changed are stored; the rest follow the "
