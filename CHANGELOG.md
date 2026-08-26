@@ -9,6 +9,18 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.37.1 — 2026-08-26
+
+**`⌂ (0)` — a repo with no worktrees says zero instead of saying nothing.**
+
+v3.37.0 showed the count only when there was one, which recreated the exact
+ambiguity it set out to remove: an absent marker and a count of zero look
+identical, so "is this broken or is it just zero?" is unanswerable from the
+bar. Every git checkout now carries the marker; only a non-git directory has
+none (it already says `(no git)`).
+
+---
+
 ## v3.37.0 — 2026-08-26
 
 **The main checkout says how many worktrees are waiting, instead of saying nothing.**

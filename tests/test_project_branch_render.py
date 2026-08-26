@@ -300,15 +300,27 @@ def test_main_checkout_shows_the_worktree_count():
     assert "⧉" not in s  # that glyph means "you are inside a worktree"
 
 
-def test_main_checkout_without_worktrees_stays_clean():
+def test_main_checkout_reports_zero_explicitly():
+    # An absent marker and a zero count look the same; "is it broken or is it
+    # zero?" got asked four times. Say zero.
     s = render_identity_line(
         IdentityInfo(project_name="proj", in_git=True, branch="main",
                      detached=False, worktree_name=None, toplevel="/x",
                      is_worktree=False, worktree_count=0),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert s.startswith("⤷ proj")
+    assert s.startswith("⌂ (0) ⤷ proj")
+
+
+def test_no_marker_outside_a_git_repo():
+    s = render_identity_line(
+        IdentityInfo(project_name="proj", in_git=False, branch=None,
+                     detached=False, worktree_name=None, toplevel=None,
+                     is_worktree=False, worktree_count=0),
+        theme=THEME, dirty=None, use_color=False,
+    )
     assert "⌂" not in s
+    assert "(no git)" in s
 
 
 def test_main_checkout_marker_is_dimmed_not_shouting():

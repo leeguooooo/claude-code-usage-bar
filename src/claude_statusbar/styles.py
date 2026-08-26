@@ -485,7 +485,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
         head = f"⤷ {info.project_name}"
         if info.is_worktree:
             head = f"⧉ {_worktree_label(info)} {head}"
-        elif getattr(info, "worktree_count", 0):
+        elif info.in_git:
             head = f"⌂ ({info.worktree_count}) {head}"
         if not info.in_git:
             tail = " (no git)"
@@ -515,11 +515,11 @@ def render_identity_line(info, *, theme: Theme, dirty,
         # checkout" is the one fact here you must never scan past (it's what
         # stops a commit landing on the wrong tree).
         head = f"{_fg(theme.wt)}⧉ {_worktree_label(info)}{RESET} " + head
-    elif getattr(info, "worktree_count", 0):
-        # Main checkout of a repo that has worktrees: say so, quietly. Being
-        # in the main tree is the normal case, so it's dimmed — but silence
-        # here is indistinguishable from "this feature isn't working", and
-        # the count is what tells you parallel checkouts are waiting.
+    elif info.in_git:
+        # Main checkout: always report, `⌂ (0)` included. An omitted marker
+        # and a zero count look identical, and "is it broken or is it zero?"
+        # was asked four times before this line existed. Dimmed, because
+        # being in the main tree is the ordinary case — only `⧉` is a warning.
         head = (f"{FAINT}{_fg(theme.wt)}⌂ ({info.worktree_count}){RESET} "
                 + head)
     if not info.in_git:
