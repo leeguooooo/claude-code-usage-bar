@@ -9,6 +9,30 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.38.0 — 2026-08-26
+
+**A tree, for the thing called a worktree.**
+
+The marker was `⧉` (overlapping squares) in a worktree and `⌂` (a house) in
+the main checkout — two glyphs, neither of which says "tree", for a feature
+whose whole subject is git *work trees*. Both are now 🌲, and the name after
+it says which tree you're standing in:
+
+```
+🌲 wt-party-slot (3)  ⤷ repo  ⎇ feature-branch    ← inside that worktree
+🌲 trunk (3)          ⤷ repo  ⎇ main              ← the main checkout, 3 worktrees exist
+🌲 trunk (0)          ⤷ repo  ⎇ main              ← no worktrees at all
+```
+
+`trunk` rather than `main`, so it never reads as a duplicate of a branch also
+called main. The worktree form keeps the full worktree hue; the trunk form
+stays dimmed, because standing in the trunk is the ordinary case.
+
+The glyph is two terminal cells wide, like the `⏰` the bar already uses; the
+width-aware clipping accounts for it.
+
+---
+
 ## v3.37.1 — 2026-08-26
 
 **`⌂ (0)` — a repo with no worktrees says zero instead of saying nothing.**

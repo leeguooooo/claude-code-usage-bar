@@ -467,7 +467,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
     arrows render only for nonzero directions and only inside a git repo.
     `duration_text`/`lines_text` are the session stats, shown here (next to the
     project) rather than on the live-activity line. When the checkout is a
-    linked git worktree (`info.is_worktree`), a ``⧉ <name>`` marker in the
+    linked git worktree (`info.is_worktree`), a ``🌲 <name>`` marker in the
     theme's dedicated worktree hue (`theme.wt`) *leads* the line — before the
     repo — so "I am not in the main checkout" is the first thing read, never
     something you scan past. The name collapses to a bare ``⧉ worktree`` when
@@ -484,9 +484,9 @@ def render_identity_line(info, *, theme: Theme, dirty,
     if not use_color:
         head = f"⤷ {info.project_name}"
         if info.is_worktree:
-            head = f"⧉ {_worktree_label(info)} {head}"
+            head = f"🌲 {_worktree_label(info)} {head}"
         elif info.in_git:
-            head = f"⌂ ({info.worktree_count}) {head}"
+            head = f"🌲 trunk ({info.worktree_count}) {head}"
         if not info.in_git:
             tail = " (no git)"
         else:
@@ -514,14 +514,15 @@ def render_identity_line(info, *, theme: Theme, dirty,
         # Leads the line, in its own hue — not mute: "this is not the main
         # checkout" is the one fact here you must never scan past (it's what
         # stops a commit landing on the wrong tree).
-        head = f"{_fg(theme.wt)}⧉ {_worktree_label(info)}{RESET} " + head
+        head = f"{_fg(theme.wt)}🌲 {_worktree_label(info)}{RESET} " + head
     elif info.in_git:
-        # Main checkout: always report, `⌂ (0)` included. An omitted marker
-        # and a zero count look identical, and "is it broken or is it zero?"
-        # was asked four times before this line existed. Dimmed, because
-        # being in the main tree is the ordinary case — only `⧉` is a warning.
-        head = (f"{FAINT}{_fg(theme.wt)}⌂ ({info.worktree_count}){RESET} "
-                + head)
+        # Main checkout: always report, `(0)` included. An omitted marker and
+        # a zero count look identical, and "is it broken or is it zero?" got
+        # asked four times before this line existed. Same tree glyph as a
+        # worktree — the *name* is what differs — but dimmed, because being in
+        # the trunk is the ordinary case and only a worktree is a warning.
+        head = (f"{FAINT}{_fg(theme.wt)}🌲 trunk ({info.worktree_count})"
+                f"{RESET} " + head)
     if not info.in_git:
         body = f" {MUTE}{ITAL}(no git){RESET}"
     else:
