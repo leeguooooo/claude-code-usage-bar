@@ -285,3 +285,38 @@ def test_update_hint_blank_when_stale(tmp_path):
 def test_update_hint_blank_when_missing(tmp_path):
     from claude_statusbar.styles import _update_hint
     assert _update_hint(path=tmp_path / "nope.json") == ""
+
+
+def test_main_checkout_shows_the_worktree_count():
+    # Silence in the main checkout was indistinguishable from "the feature is
+    # broken" — asked three times in one session. The count is the useful half.
+    s = render_identity_line(
+        IdentityInfo(project_name="proj", in_git=True, branch="main",
+                     detached=False, worktree_name=None, toplevel="/x",
+                     is_worktree=False, worktree_count=3),
+        theme=THEME, dirty=False, use_color=False,
+    )
+    assert s.startswith("⌂ (3) ⤷ proj")
+    assert "⧉" not in s  # that glyph means "you are inside a worktree"
+
+
+def test_main_checkout_without_worktrees_stays_clean():
+    s = render_identity_line(
+        IdentityInfo(project_name="proj", in_git=True, branch="main",
+                     detached=False, worktree_name=None, toplevel="/x",
+                     is_worktree=False, worktree_count=0),
+        theme=THEME, dirty=False, use_color=False,
+    )
+    assert s.startswith("⤷ proj")
+    assert "⌂" not in s
+
+
+def test_main_checkout_marker_is_dimmed_not_shouting():
+    s = render_identity_line(
+        IdentityInfo(project_name="proj", in_git=True, branch="main",
+                     detached=False, worktree_name=None, toplevel="/x",
+                     is_worktree=False, worktree_count=2),
+        theme=THEME, dirty=False, use_color=True,
+    )
+    r, g, b = THEME.wt
+    assert s.startswith(f"\033[2m\033[38;2;{r};{g};{b}m⌂ (2)")

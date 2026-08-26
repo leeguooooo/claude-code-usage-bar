@@ -208,7 +208,16 @@ def resolve_identity(stdin: dict) -> IdentityInfo:
     is_worktree = wt is not None or bool(worktree_name)
     if wt is not None and not worktree_name:
         worktree_name = strip_repo_prefix(wt.name, wt.repo_name)
-    worktree_count = count_live_worktrees(wt.registry) if wt is not None else 0
+    if wt is not None:
+        worktree_count = count_live_worktrees(wt.registry)
+    elif toplevel is not None:
+        # Main checkout: count the linked worktrees hanging off *this* repo.
+        # "I'm in the main tree and three parallel ones exist" is the other
+        # half of the same fact — and the half you're in when you edit the
+        # wrong tree by accident.
+        worktree_count = count_live_worktrees(toplevel / ".git" / "worktrees")
+    else:
+        worktree_count = 0
 
     if repo_name:
         project_name = repo_name

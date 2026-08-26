@@ -9,6 +9,31 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.37.0 — 2026-08-26
+
+**The main checkout says how many worktrees are waiting, instead of saying nothing.**
+
+v3.33.0 put a `⧉` marker on linked worktrees and left the main checkout bare,
+on the reasoning that "you are in the main tree" is not news. But silence is
+also what a broken feature looks like: the same user asked three times why
+they couldn't see the worktree segment — each time from a main checkout, each
+time with the feature working exactly as designed.
+
+The main checkout of a repo that has linked worktrees now opens with a dimmed
+`⌂ (3)`: you are in the main tree, and three parallel checkouts exist. A repo
+with no worktrees still shows nothing, because there is nothing to say.
+
+```
+⧉ wt-party-slot (3)  ⤷ repo  ⎇ feature-branch      ← inside a worktree
+⌂ (3)                ⤷ repo  ⎇ main                ← the main checkout
+                     ⤷ repo  ⎇ main                ← a repo with no worktrees
+```
+
+Dimmed on purpose: being in the main tree is the ordinary case, and only the
+`⧉` form is a warning worth the full-hue treatment.
+
+---
+
 ## v3.36.0 — 2026-08-25
 
 **The standalone binary keeps itself up to date now, like every other install.**

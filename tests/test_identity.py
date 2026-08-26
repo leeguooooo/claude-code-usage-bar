@@ -256,3 +256,28 @@ def test_normal_checkout_has_no_worktree_count(tmp_path):
     (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
     info = resolve_identity({"workspace_current_dir": str(tmp_path)})
     assert info.worktree_count == 0
+
+
+def test_main_checkout_counts_its_worktrees(tmp_path):
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    (main / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    for name in ("wt-a", "wt-b"):
+        entry = main / ".git" / "worktrees" / name
+        entry.mkdir(parents=True)
+        wt = tmp_path / name
+        wt.mkdir()
+        (wt / ".git").write_text(f"gitdir: {entry}\n")
+        (entry / "gitdir").write_text(f"{wt / '.git'}\n")
+
+    info = resolve_identity({"workspace_current_dir": str(main)})
+
+    assert info.is_worktree is False
+    assert info.worktree_count == 2
+
+
+def test_main_checkout_without_worktrees_counts_zero(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    info = resolve_identity({"workspace_current_dir": str(tmp_path)})
+    assert info.worktree_count == 0
