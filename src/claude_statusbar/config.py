@@ -108,12 +108,12 @@ class StatusbarConfig:
     color_hot: Optional[str] = None
     # Worktree marker color on the identity line (theme.wt by default).
     color_worktree: Optional[str] = None
-    # Glyph leading the identity line for the git worktree segment. The
-    # default 🌲 is a tree because that is what a worktree is; the cost is
-    # that emoji carry their own font colors, so the theme's worktree hue
-    # reaches only the text beside it. Set a 1-cell symbol (⑂, ⋔, ├, ⧉) to
-    # get a glyph that takes the theme color.
-    worktree_glyph: str = "🌲"
+    # Glyph leading the identity line for the git worktree segment. `⑂` (OCR
+    # fork) is the default because it takes the theme's worktree hue — an
+    # emoji is drawn by the emoji font in its own colors, so 🌲 leaves the
+    # glyph uncolored and only tints the text beside it, which defeats the
+    # point of a colored marker. Set any 1-2 cell symbol, 🌲 included.
+    worktree_glyph: str = "⑂"
     # Keep cs current on its own, once a day, in a detached background process.
     # CLAUDE_STATUSBAR_NO_UPDATE=1 still wins over this.
     auto_upgrade: bool = True
@@ -173,7 +173,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         color_warn=raw.get("color_warn") or None,
         color_hot=raw.get("color_hot") or None,
         color_worktree=raw.get("color_worktree") or None,
-        worktree_glyph=str(raw.get("worktree_glyph", "🌲") or "🌲"),
+        worktree_glyph=str(raw.get("worktree_glyph", "⑂") or "⑂"),
         auto_upgrade=_to_bool(raw.get("auto_upgrade", True)),
     )
 

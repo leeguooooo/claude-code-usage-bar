@@ -458,7 +458,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
                          duration_text: str = "", lines_text: str = "",
                          version_text: str = "", update_text: str = "",
                          cwd_text: str = "",
-                         worktree_glyph: str = "🌲",
+                         worktree_glyph: str = "⑂",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
 
@@ -468,7 +468,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
     arrows render only for nonzero directions and only inside a git repo.
     `duration_text`/`lines_text` are the session stats, shown here (next to the
     project) rather than on the live-activity line. When the checkout is a
-    linked git worktree (`info.is_worktree`), a ``🌲 <name>`` marker in the
+    linked git worktree (`info.is_worktree`), a ``⑂ <name>`` marker in the
     theme's dedicated worktree hue (`theme.wt`) *leads* the line — before the
     repo — so "I am not in the main checkout" is the first thing read, never
     something you scan past. The name collapses to a bare ``⧉ worktree`` when
@@ -861,7 +861,7 @@ def render(style: str, **kwargs) -> str:
     duration_text = kwargs.pop("identity_duration", "")
     lines_text = kwargs.pop("identity_lines", "")
     cwd_text = kwargs.pop("cwd_text", "")
-    worktree_glyph = kwargs.pop("worktree_glyph", "🌲")
+    worktree_glyph = kwargs.pop("worktree_glyph", "⑂")
     ip_line_text = kwargs.pop("ip_line_text", "")
     ip_line_level = kwargs.pop("ip_line_level", "ok")
     fp_line_text = kwargs.pop("fp_line_text", "")

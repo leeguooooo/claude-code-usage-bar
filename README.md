@@ -107,7 +107,7 @@ At a full refresh it can render up to three lines, each segment optional:
 | Line | Segments |
 |---|---|
 | **Usage** | 5h / 7d rate-limit bars, reset countdowns, end-of-window projections (`→NN%`), model & context window, prompt-cache countdown, optional session cost or relay balance |
-| **Project** | git worktree marker (`🌲 name (3)` / `🌲 trunk (3)` with the repo's worktree total, its own hue, leads the line), project name, git branch, session `+/−` lines, duration, version |
+| **Project** | git worktree marker (`⑂ name (3)` / `⑂ trunk (3)` with the repo's worktree total, its own hue, leads the line), project name, git branch, session `+/−` lines, duration, version |
 | **Mode** | session effort / thinking / fast / style |
 
 Every icon, color threshold, and toggle is documented in the

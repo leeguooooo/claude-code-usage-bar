@@ -9,6 +9,26 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.40.0 — 2026-08-26
+
+**`⑂` is the default glyph now — the one that can actually take your theme color.**
+
+v3.38.0 made the marker 🌲 because a worktree is a tree. v3.39.0 found the
+flaw: an emoji is drawn by the emoji font in the font's own colors, so the
+theme's worktree hue (and `color_worktree`) reached only the text beside it,
+never the glyph — in a marker whose entire premise was "the worktree needs a
+color". The default is now `⑂` (OCR fork): one cell instead of two, VCS-native,
+and it takes the hue like everything else on the line.
+
+The tree is still one `cs config set worktree_glyph 🌲` away, along with `⋔`,
+`├`, `⧉`, or anything else that fits in two terminal cells.
+
+Anyone who had already set `worktree_glyph` keeps their choice — the config
+stores only what you changed, so this new default reaches exactly the people
+who never expressed a preference.
+
+---
+
 ## v3.39.0 — 2026-08-26
 
 **Pick your own worktree glyph — because 🌲 can't take your theme's color.**
