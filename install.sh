@@ -368,8 +368,10 @@ main() {
 
     echo ""
     ok "═══════════════════════════════════════"
-    ok "Install complete — restart Claude Code."
+    ok "Install complete."
     ok "═══════════════════════════════════════"
+    echo "  Upgrade: live on the next statusline tick — no restart needed."
+    echo "  First install: restart Claude Code once so the status bar appears."
     echo "  cs doctor    # verify the wiring"
     echo "  cs preview   # try every style × theme"
     echo ""

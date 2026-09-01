@@ -437,8 +437,10 @@ def upgrade_current_install() -> Tuple[bool, str]:
                 f"a minute."
             )
         return True, (
+            # No restart needed: Claude Code spawns `cs render` fresh every
+            # statusline tick, so the replaced binary is live within ~1s.
             f"Upgraded the standalone binary to v{landed}. "
-            f"Restart Claude Code to pick it up."
+            f"Live on the next statusline tick — no restart needed."
         )
 
     cmd = get_upgrade_command()
