@@ -415,6 +415,105 @@ def _spawn_daemon_async() -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# Issue #49 — stale-while-revalidate + inline herd cap.
+#
+# The old contract was binary: daemon output younger than the stale window is
+# served, anything older triggers a full inline render. With a dozen 1Hz
+# sessions on a loaded machine the daemon's serial batch can slip past the
+# window with NOTHING wrong per-session — and then every thin client starts a
+# heavyweight inline render at once (observed live: 14-16 concurrent
+# `cs render`, which starves the daemon further; a self-sustaining herd).
+#
+# New contract:
+#   fresh                        -> serve (unchanged)
+#   stale but within grace       -> serve the last render + nudge the daemon;
+#                                   a dim ⟳ marks it as catching up
+#   beyond grace / no cache      -> inline, but at most _INLINE_SLOTS renders
+#                                   machine-wide; over-cap clients serve the
+#                                   last render at any age rather than pile on
+# ---------------------------------------------------------------------------
+_SWR_GRACE_S = 30.0
+_INLINE_SLOTS = 2
+_STALE_MARK = "  \x1b[2m⟳\x1b[0m"
+_inline_slot_fh = None  # holds the flock for this process's lifetime
+
+
+def _swr_ok(meta: dict) -> bool:
+    """True when meta is age-stale but still within the serve-stale grace
+    window (and not from the future — clock skew falls through to inline)."""
+    try:
+        generated_at = float(meta.get("generated_at", 0))
+        stale_after = float(meta.get("stale_after_seconds", _STALE_AFTER_DEFAULT))
+    except (TypeError, ValueError):
+        return False
+    age = time.time() - generated_at
+    return 0 <= age <= stale_after + _SWR_GRACE_S
+
+
+def _serve_cached(rendered_path: Path, mark_stale: bool = False) -> bool:
+    """Print the daemon's last rendered output. Returns False if unreadable."""
+    try:
+        content = rendered_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if mark_stale:
+        content = _append_suffix(content, _STALE_MARK)
+    content = _append_suffix(content, _displacement_suffix())
+    sys.stdout.write(clip_lines(content, terminal_width(os.environ)))
+    return True
+
+
+def _acquire_inline_slot() -> bool:
+    """Claim one of _INLINE_SLOTS machine-wide inline-render slots.
+
+    flock on a slot file, held (via module global) until this short-lived
+    process exits — the OS releases it even on SIGKILL, so a crashed client
+    can never leak a slot. Platforms without fcntl (Windows) skip the cap:
+    the herd there is bounded by Claude Code itself running far fewer
+    concurrent sessions, and correctness beats an unenforceable limit.
+    """
+    global _inline_slot_fh
+    try:
+        import fcntl
+    except ImportError:
+        return True
+    for i in range(_INLINE_SLOTS):
+        p = _CACHE_DIR / f"inline.slot.{i}"
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            fh = open(p, "a+b")
+        except OSError:
+            continue
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            try:
+                fh.close()
+            except OSError:
+                pass
+            continue
+        _inline_slot_fh = fh
+        return True
+    return False
+
+
+def _inline_or_shed(payload: bytes | None, rendered_path: Path) -> int:
+    """Full inline render, unless the machine-wide slot cap is exhausted —
+    then serve the last daemon render at ANY age instead of joining the herd.
+    A client with no cached render at all always renders inline (first run)."""
+    if not _acquire_inline_slot():
+        if _serve_cached(rendered_path, mark_stale=True):
+            return 0
+    if payload is not None:
+        # core.main() reads sys.stdin via parse_stdin_data(); replay the
+        # bytes we already consumed so it sees the same payload Claude Code
+        # sent us.
+        import io
+        sys.stdin = io.StringIO(payload.decode("utf-8", errors="replace"))
+    return _fallback_inline()
+
+
 def _fallback_inline() -> int:
     """Run the legacy inline render path. Costs ~45ms (Phase A baseline).
 
@@ -482,15 +581,21 @@ def render() -> int:
     # it, once the old daemon has dropped its pidfile.
     if meta is not None and _is_outdated_daemon(meta):
         _signal_outdated_daemon(meta)
-    else:
-        # Fallback: render inline AND kick off a daemon spawn so the next
-        # tick is fast. We don't wait for the daemon to come up — the user's
-        # status line shows the inline-rendered string this tick.
-        _spawn_daemon_async()
-    if payload is not None:
-        # core.main() reads sys.stdin via parse_stdin_data(); replay the
-        # bytes we already consumed so it sees the same payload Claude Code
-        # sent us.
-        import io
-        sys.stdin = io.StringIO(payload.decode("utf-8", errors="replace"))
-    return _fallback_inline()
+        return _inline_or_shed(payload, rendered_path)
+
+    # Stale-while-revalidate (issue #49): the daemon fell behind its own
+    # window but the last render is recent enough to be useful. Serve it,
+    # nudge the daemon (spawn is debounced + a no-op if it's alive), and
+    # crucially do NOT start a heavyweight inline render — that's what
+    # turned "daemon 2s late" into a machine-wide herd.
+    if meta is not None and _swr_ok(meta):
+        if _serve_cached(rendered_path, mark_stale=True):
+            _spawn_daemon_async()
+            return 0
+
+    # Beyond grace, cache unreadable, or no daemon yet: render inline AND
+    # kick off a daemon spawn so the next tick is fast. We don't wait for
+    # the daemon to come up — the user's status line shows the
+    # inline-rendered string this tick.
+    _spawn_daemon_async()
+    return _inline_or_shed(payload, rendered_path)

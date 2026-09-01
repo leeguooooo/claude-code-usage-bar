@@ -304,7 +304,7 @@ def run() -> int:
                         meta = json.loads(_d.session_meta_path(sid).read_text(encoding="utf-8"))
                         age = _dt.datetime.now().timestamp() - float(meta.get("generated_at", 0))
                         ages.append(age)
-                        if age > _d.META_STALE_AFTER:
+                        if age > float(meta.get("stale_after_seconds", _d.META_STALE_AFTER)):
                             stale_count += 1
                     except (OSError, ValueError, json.JSONDecodeError):
                         stale_count += 1

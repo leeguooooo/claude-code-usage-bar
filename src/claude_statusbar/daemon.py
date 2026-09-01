@@ -108,6 +108,23 @@ ACTIVE_SESSION_AFTER_S = 10.0
 DEFAULT_HEAVY_INTERVAL = 30.0   # seconds
 DEFAULT_RENDER_INTERVAL = 1.0   # seconds
 META_STALE_AFTER = 5.0          # seconds — thin client treats older as dead
+# Issue #49: the freshness window must scale with what the daemon can actually
+# deliver. A serial batch over N sessions on a loaded machine can exceed 5s
+# with no single session being pathological; a fixed window then flips every
+# session stale at once and the 1Hz thin clients herd into inline rendering.
+# The daemon advertises its honest window via meta["stale_after_seconds"]
+# (which the thin client has always read) — see _current_stale_after().
+STALE_AFTER_MAX = 30.0
+# Load shedding: on a machine that is already drowning (loadavg per core > 1)
+# re-rendering every second only adds fuel. Stretch the render interval up to
+# this factor; the stale window stretches with it so thin clients keep serving
+# the daemon's output instead of falling back.
+INTERVAL_STRETCH_MAX = 5.0
+# Circuit breaker: a session whose render takes this long is dominating the
+# serial batch. Back it off exponentially instead of letting it age everyone.
+SLOW_RENDER_S = 5.0
+BREAKER_BASE_SKIP_S = 5.0
+BREAKER_MAX_SKIP_S = 30.0
 
 _running = True
 _pidfile_handle = None  # type: Optional[object]
@@ -481,11 +498,15 @@ def _render_payload(payload: str) -> Optional[str]:
     return out or None
 
 
-def _render_session(sid: str) -> bool:
+def _render_session(sid: str, stale_after: float = META_STALE_AFTER) -> bool:
     """Render one session's status line and atomically publish it.
 
     Returns True on success. False on any error (silent — daemon retries
     next tick; thin client falls back to inline if meta goes stale).
+
+    `stale_after` is the freshness window this daemon can honestly promise
+    right now (see _current_stale_after); the thin client reads it back
+    from the meta instead of assuming a fixed 5s.
     """
     stdin_file = session_stdin_path(sid)
     try:
@@ -500,7 +521,7 @@ def _render_session(sid: str) -> bool:
     atomic_write_text(session_meta_path(sid), json.dumps({
         "generated_at": now,
         "pid": os.getpid(),
-        "stale_after_seconds": META_STALE_AFTER,
+        "stale_after_seconds": stale_after,
         "session_id": sid,
         # Thin client compares this against the package directory mtime
         # to detect "code on disk is newer than the running daemon".
@@ -612,12 +633,88 @@ def _gc_old_sessions() -> None:
         pass
 
 
-def _render_all_sessions() -> int:
-    """Render every active session. Returns the count rendered."""
+# Batch pacing state (issue #49). All in-memory: a restarted daemon starts
+# from a clean slate, which is the safe default.
+_last_batch_s = 0.0                    # duration of the previous full batch
+_render_ema: dict[str, float] = {}     # sid -> smoothed render duration
+_slow_streak: dict[str, int] = {}      # sid -> consecutive slow renders
+_skip_until: dict[str, float] = {}     # sid -> breaker: don't render before ts
+
+
+def _current_stale_after(render_interval: float) -> float:
+    """The freshness window the daemon can honestly promise right now.
+
+    Twice the (previous batch + interval) so one normal tick of jitter never
+    flips sessions stale, floored at the classic 5s and capped so a wedged
+    daemon still gets detected within 30s.
+    """
+    want = 2.0 * (_last_batch_s + render_interval)
+    return min(STALE_AFTER_MAX, max(META_STALE_AFTER, want))
+
+
+def _effective_interval(base: float) -> float:
+    """Stretch the render interval when the machine is overloaded.
+
+    loadavg-per-core <= 1 keeps the configured cadence; beyond that the
+    interval grows linearly up to INTERVAL_STRETCH_MAX× at 3 load per core.
+    The stale window (above) stretches with it, so thin clients keep serving
+    the daemon's slightly older output instead of herding into inline renders
+    — the statusline updates less often on a busy machine, but cs never adds
+    to the pile-up.
+    """
+    try:
+        load1 = os.getloadavg()[0]
+        ncpu = os.cpu_count() or 1
+    except (OSError, AttributeError):
+        return base
+    ratio = load1 / ncpu
+    if ratio <= 1.0:
+        return base
+    stretch = min(INTERVAL_STRETCH_MAX, 1.0 + 2.0 * (ratio - 1.0))
+    return base * stretch
+
+
+def _render_all_sessions(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
+    """Render every active session. Returns the count rendered.
+
+    Fairness (issue #49): fast sessions render first (EMA-ordered) so a slow
+    tail can't age the whole batch past the freshness window, and a session
+    that keeps blowing SLOW_RENDER_S is backed off exponentially instead of
+    being retried every tick. While backed off, only that one session's thin
+    client goes inline — bounded by the inline slot cap in render_thin.
+    """
+    global _last_batch_s
+    t0 = time.time()
     n = 0
-    for sid in _active_sessions():
-        if _render_session(sid):
+    stale_after = _current_stale_after(render_interval)
+    sids = _active_sessions()
+    sids.sort(key=lambda s: _render_ema.get(s, 0.0))
+    for sid in sids:
+        if _skip_until.get(sid, 0.0) > time.time():
+            continue
+        s0 = time.time()
+        ok = _render_session(sid, stale_after=stale_after)
+        dur = time.time() - s0
+        _render_ema[sid] = 0.7 * _render_ema.get(sid, dur) + 0.3 * dur
+        if dur >= SLOW_RENDER_S:
+            streak = _slow_streak.get(sid, 0) + 1
+            _slow_streak[sid] = streak
+            penalty = min(BREAKER_MAX_SKIP_S,
+                          BREAKER_BASE_SKIP_S * (2 ** (streak - 1)))
+            _skip_until[sid] = time.time() + penalty
+            _log(f"slow render {dur:.1f}s for session {sid[:8]} — "
+                 f"backing off {penalty:.0f}s (streak {streak})")
+        else:
+            _slow_streak.pop(sid, None)
+            _skip_until.pop(sid, None)
+        if ok:
             n += 1
+    # Drop pacing state for sessions that left the active set.
+    live = set(sids)
+    for d in (_render_ema, _slow_streak, _skip_until):
+        for k in [k for k in d if k not in live]:
+            del d[k]
+    _last_batch_s = time.time() - t0
     return n
 
 
@@ -688,10 +785,20 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
     # against a 60-minute TMP_GC_AFTER_S cutoff.
     last_maint = 0.0
     last_ip = 0.0
+    throttled = False  # edge-triggered log for load shedding
     try:
         while _running:
             t0 = time.time()
-            _render_all_sessions()
+            interval = _effective_interval(render_interval)
+            if (interval > render_interval * 1.5) != throttled:
+                throttled = not throttled
+                if throttled:
+                    _log(f"load shedding: interval {render_interval:.1f}s -> "
+                         f"{interval:.1f}s (loadavg high)")
+                else:
+                    _log("load shedding off: back to "
+                         f"{render_interval:.1f}s interval")
+            _render_all_sessions(interval)
             if t0 - last_ip > IP_HEARTBEAT_S:
                 last_ip = t0
                 # Only probe when the user actually enabled the egress-IP risk
@@ -722,7 +829,7 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
                 _gc_old_sessions()
                 last_gc = t0
             elapsed = time.time() - t0
-            sleep_for = max(0.0, render_interval - elapsed)
+            sleep_for = max(0.0, interval - elapsed)
             # Sleep in small chunks so signals are responsive. Clamp at 0: the
             # loop guard and the `min()` each call time.time() separately, so
             # the clock advances between them and the remainder can go negative
@@ -765,7 +872,7 @@ def cmd_status() -> int:
         try:
             meta = json.loads(session_meta_path(sid).read_text(encoding="utf-8"))
             age = time.time() - float(meta.get("generated_at", 0))
-            stale = age > META_STALE_AFTER
+            stale = age > float(meta.get("stale_after_seconds", META_STALE_AFTER))
             tag = " STALE" if stale else ""
             print(f"  {sid[:8]}…  {age:.1f}s old{tag}")
             if stale:

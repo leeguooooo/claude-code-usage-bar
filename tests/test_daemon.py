@@ -694,7 +694,7 @@ def test_running_global_is_reset_per_run_forever_call(monkeypatch, tmp_path: Pat
     We don't actually loop here — we just verify the flag gets reset.
     """
     monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
-    monkeypatch.setattr(_d, "_render_all_sessions", lambda: 0)
+    monkeypatch.setattr(_d, "_render_all_sessions", lambda *a, **k: 0)
 
     _d._running = False  # simulate previous shutdown
     # Patch acquire to fail immediately so run_forever returns without
@@ -916,7 +916,7 @@ def test_maintenance_runs_on_the_first_tick(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(core, "check_for_updates", lambda: calls.append("update_check"))
 
     # Render once, then break out of the loop.
-    def _one_tick():
+    def _one_tick(*_a, **_k):
         _d._running = False
     monkeypatch.setattr(_d, "_render_all_sessions", _one_tick)
 
@@ -947,7 +947,10 @@ def test_clock_advancing_between_guard_and_sleep_does_not_crash(monkeypatch):
     monkeypatch.setattr(_d.signal, "signal", lambda *a, **k: None)
     monkeypatch.setattr(_d, "_gc_orphan_tmp_files", lambda: None)
     monkeypatch.setattr(_d, "_gc_old_sessions", lambda: None)
-    monkeypatch.setattr(_d, "_render_all_sessions", lambda: None)
+    monkeypatch.setattr(_d, "_render_all_sessions", lambda *a, **k: None)
+    # Pin the load-adaptive stretch to 1× — this test's fake clock sequence
+    # assumes the configured interval reaches the sleep math unchanged.
+    monkeypatch.setattr(_d, "_effective_interval", lambda base: base)
 
     import claude_statusbar.core as core
     monkeypatch.setattr(core, "check_for_updates", lambda: None)
