@@ -223,11 +223,18 @@ def is_shadow_install() -> bool:
     entry = path_entrypoint()
     if entry is None:
         return False  # nothing on PATH to shadow
+    # Compare bin DIRECTORIES, resolving the directory rather than the
+    # interpreter file. In a uv-tool / venv install `bin/python3` is a symlink
+    # to the base interpreter (e.g. Homebrew's Cellar), so resolving the file
+    # lands outside the venv and every such install misreads as a shadow —
+    # auto-upgrade then never runs (observed: 3.13.6 stuck for 3 months with
+    # auto_upgrade on). The real shadow case — `cs` on PATH living in a
+    # different install's bin — still differs after this change.
     try:
-        here = Path(sys.executable).resolve()
+        here = Path(sys.executable).parent.resolve()
     except OSError:
         return False
-    return entry.parent != here.parent
+    return entry.parent != here
 
 
 def find_duplicate_installs() -> list:
