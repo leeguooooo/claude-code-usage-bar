@@ -14,6 +14,10 @@ on:
       tag:
         description: "Existing tag to build + upload assets for (e.g. v3.29.12)"
         required: true
+      draft:
+        description: "Keep the release private until all assets pass validation"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -24,6 +28,13 @@ concurrency:
 
 jobs:
   build:
+    # Publishing a fully-built draft should not rebuild/replace live assets.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      !contains(github.event.release.assets.*.name, 'cs-darwin-arm64.tar.gz') ||
+      !contains(github.event.release.assets.*.name, 'cs-darwin-arm64.tar.gz.sha256') ||
+      !contains(github.event.release.assets.*.name, 'cs-linux-x86_64.tar.gz') ||
+      !contains(github.event.release.assets.*.name, 'cs-linux-x86_64.tar.gz.sha256')
     name: ${{ matrix.asset }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -98,6 +109,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name || inputs.tag }}
+          draft: ${{ inputs.draft || github.event.release.draft || false }}
           files: |
             ${{ matrix.asset }}
             ${{ matrix.asset }}.sha256

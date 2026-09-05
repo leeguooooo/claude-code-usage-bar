@@ -350,10 +350,26 @@ def test_installer_spares_the_bundle_it_is_running_from(monkeypatch, tmp_path):
 def test_check_and_upgrade_treats_up_to_date_as_success(monkeypatch):
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.36.0")
     monkeypatch.setattr(updater, "get_latest_version", lambda: "3.36.0")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.36.0")
+    monkeypatch.setattr(updater, "_cache_latest_version", lambda v: None)
 
     ok, msg = updater.check_and_upgrade()
 
     assert ok is True and "Already up to date" in msg
+
+
+def test_background_binary_update_does_not_depend_on_pypi(monkeypatch):
+    monkeypatch.setattr(updater, '_is_frozen', lambda: True)
+    monkeypatch.setattr(updater, 'get_current_version', lambda: '3.41.0')
+    monkeypatch.setattr(updater, 'latest_release_tag', lambda: '3.42.0')
+    monkeypatch.setattr(updater, 'get_latest_version',
+                        lambda: (_ for _ in ()).throw(AssertionError('PyPI queried')))
+    cached = []
+    monkeypatch.setattr(updater, '_cache_latest_version', cached.append)
+    monkeypatch.setattr(updater, 'auto_upgrade', lambda: True)
+    ok, message = updater.check_and_upgrade()
+    assert ok and '3.42.0' in message
+    assert cached == ['3.42.0']
 
 
 def test_frozen_installs_ask_github_not_pypi(monkeypatch):

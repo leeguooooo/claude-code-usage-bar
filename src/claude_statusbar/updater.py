@@ -483,11 +483,13 @@ def spawn_background_upgrade_check() -> None:
 
 def check_and_upgrade() -> Tuple[bool, str]:
     """Check for updates and upgrade if available"""
-    latest = get_latest_version()
+    latest = resolve_latest_version()
     current = get_current_version()
 
     if not latest:
         return False, "Unable to check for updates"
+
+    _cache_latest_version(latest)
 
     if not compare_versions(current, latest):
         # Nothing to do is a success. Reporting it as a failure means the
