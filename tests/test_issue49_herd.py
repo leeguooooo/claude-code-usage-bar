@@ -324,16 +324,15 @@ def test_over_cap_client_serves_stale_instead_of_piling_on(monkeypatch, tmp_path
     assert "⟳" in out
 
 
-def test_over_cap_client_with_no_cache_still_renders(monkeypatch, tmp_path):
-    """First run on a machine (no cached render anywhere): correctness beats
-    the cap — render inline even when slots are exhausted."""
+def test_over_cap_client_with_no_cache_sheds(monkeypatch, tmp_path):
+    """Cold starts respect the cap too; show a bounded warm-up placeholder."""
     monkeypatch.setattr(render_thin, "_CACHE_DIR", tmp_path)
     monkeypatch.setattr(render_thin, "_acquire_inline_slot", lambda: False)
     inlined = []
     monkeypatch.setattr(render_thin, "_fallback_inline",
                         lambda: (inlined.append(True), 0)[1])
     assert render_thin._inline_or_shed(None, tmp_path / "nope.ansi") == 0
-    assert inlined == [True]
+    assert inlined == []
 
 
 def test_swr_ok_defaults_legacy_meta_window(monkeypatch):

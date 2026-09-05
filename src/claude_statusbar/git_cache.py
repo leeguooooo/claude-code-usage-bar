@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 
-TTL_SECONDS = 5
+TTL_SECONDS = 30
 INFLIGHT_MAX_AGE_S = 30
 
 
@@ -38,7 +38,27 @@ def is_fresh(entry: Optional[dict], now: Optional[float] = None) -> bool:
     ts = entry.get("ts")
     if not isinstance(ts, (int, float)):
         return False
-    return (now or time.time()) - ts < TTL_SECONDS
+    age = (time.time() if now is None else now) - ts
+    return 0 <= age < TTL_SECONDS
+
+
+def try_claim(toplevel: str):
+    """Hold a kernel lock through the refresh, including process crashes."""
+    p = cache_path_for(toplevel).with_suffix('.lock')
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fh = p.open('a+b')
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
 
 
 def write_cache_atomic(toplevel: str, entry: dict) -> None:

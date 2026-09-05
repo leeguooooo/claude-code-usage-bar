@@ -414,6 +414,13 @@ def relay_balance(env: Dict[str, str], *, spawn: bool = True):
     if balance_cache.is_fresh(entry):
         return entry if entry.get("supported") else None
 
+    from . import identity as _identity
+    if spawn and _identity._BACKGROUND_COLLECTORS:
+        from .refresh_pool import submit
+        from ._balance_refresh import refresh
+        submit(('balance', fp), refresh, base, key, auth, fp)
+        return entry if entry and entry.get('supported') else None
+
     if spawn and not balance_cache.is_inflight(fp):
         balance_cache.mark_inflight(fp)
         try:
@@ -917,7 +924,29 @@ def _entry_cache_ttl(entry: Dict[str, Any]) -> Optional[int]:
     return None
 
 
+_ASSISTANT_SNAPSHOTS = {}
+
+
 def _last_assistant_info(transcript_path: str) -> Optional[Tuple[float, Optional[int]]]:
+    from time import time as clock
+    try:
+        st = os.stat(transcript_path)
+        sig = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    except OSError:
+        return None
+    now = clock()
+    cached = _ASSISTANT_SNAPSHOTS.get(transcript_path)
+    if cached and cached[0] == sig:
+        result = cached[2]
+        return None if result is None else (result[0] + now - cached[1], result[1])
+    result = _last_assistant_info_uncached(transcript_path)
+    if len(_ASSISTANT_SNAPSHOTS) >= 128:
+        _ASSISTANT_SNAPSHOTS.pop(next(iter(_ASSISTANT_SNAPSHOTS)))
+    _ASSISTANT_SNAPSHOTS[transcript_path] = (sig, now, result)
+    return result
+
+
+def _last_assistant_info_uncached(transcript_path: str) -> Optional[Tuple[float, Optional[int]]]:
     """Return (age_seconds, detected_ttl) for the prompt-cache countdown.
 
     - age          ← timestamp of the NEWEST assistant entry (the most recent
@@ -999,7 +1028,8 @@ def _last_assistant_age(transcript_path: str) -> Optional[float]:
     return info[0] if info is not None else None
 
 
-def get_cache_age_text(ttl_seconds: Optional[int] = None) -> str:
+def get_cache_age_text(ttl_seconds: Optional[int] = None,
+                       transcript_path: Optional[str] = None) -> str:
     """Return cache state as a COUNTDOWN to expiry.
 
     Display semantics:
@@ -1028,12 +1058,14 @@ def get_cache_age_text(ttl_seconds: Optional[int] = None) -> str:
     """
     cache_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
 
-    try:
-        raw = json.loads(cache_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError, FileNotFoundError):
-        return ""
-
-    tp = raw.get("transcript_path", "")
+    if transcript_path is None:
+        try:
+            raw = json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError, FileNotFoundError):
+            return ""
+        tp = raw.get("transcript_path", "")
+    else:
+        tp = transcript_path
     if not tp:
         return ""
     info = _last_assistant_info(tp)
@@ -1185,7 +1217,7 @@ def main(json_output: bool = False,
             cache_age_text = format_cache_countdown(
                 activity.cache_age_seconds, activity.cache_ttl)
         else:
-            cache_age_text = get_cache_age_text()
+            cache_age_text = get_cache_age_text(transcript_path=_tp)
 
     # Experimental bar shimmer: a phase that advances one cell per render.
     # Capped at the statusLine's ~1Hz refresh, so it's a slow step. classic only.
@@ -1235,6 +1267,10 @@ def main(json_output: bool = False,
     # listeners included). Only sessions whose own transcript shows a party
     # command get the line; when no transcript is available (preview, tests,
     # bare `cs`), keep the old always-show behavior.
+    if cfg.show_per_model and not no_quota:
+        from .scoped_usage import cached_limits
+        identity_kwargs['per_model_limits'] = cached_limits(spawn=_suppress_side_effects)
+        identity_kwargs['per_model_projection'] = cfg.show_projection
     party_kwargs = {}
     if cfg.show_party:
         try:

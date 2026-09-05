@@ -10,12 +10,16 @@ import re
 import subprocess
 import sys
 import time
+import shutil
+from functools import lru_cache
 from typing import Optional, Tuple
 
 from .git_cache import (
     clear_inflight,
     read_cache,
     write_cache_atomic,
+    is_fresh,
+    try_claim,
 )
 
 _AHEAD_RE = re.compile(r"ahead (\d+)")
@@ -53,25 +57,51 @@ def parse_git_status_branch(
     return has_changes, ahead, behind
 
 
+@lru_cache(maxsize=1)
+def _git_executable():
+    return shutil.which('git')
+
+
 def refresh(toplevel: str, timeout_s: float = 2.0) -> None:
+    lock = try_claim(toplevel)
+    if lock is None:
+        return
     try:
+        if not is_fresh(read_cache(toplevel)):
+            _refresh_locked(toplevel, timeout_s)
+    finally:
+        lock.close()
+        clear_inflight(toplevel)
+
+
+def _refresh_locked(toplevel: str, timeout_s: float) -> None:
+    def failed():
+        entry = read_cache(toplevel) or {'dirty': None}
+        entry.update(ts=time.time(), refresh_failed=True)
+        write_cache_atomic(toplevel, entry)
+
+    try:
+        executable = _git_executable()
+        if executable is None:
+            failed()
+            return
         # --no-optional-locks: never take .git/index.lock for this read. A
         # background `git status` that the status bar polls must not refresh
         # the index lock cache — if our 2s timeout SIGKILLs git mid-write it
         # would strand .git/index.lock and break the user's own next
         # add/commit/rebase. This is why editors poll the same way.
         proc = subprocess.run(
-            ["git", "-C", toplevel, "--no-optional-locks",
+            [executable, "-C", toplevel, "--no-optional-locks",
              "status", "--porcelain=v1", "--branch"],
             capture_output=True,
             text=True,
             timeout=timeout_s,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        clear_inflight(toplevel)
+        failed()
         return
     if proc.returncode != 0:
-        clear_inflight(toplevel)
+        failed()
         return
     # Always clear the inflight marker, even if write_cache_atomic raises —
     # otherwise a failed write leaves the marker stranded for INFLIGHT_MAX_AGE_S
@@ -86,6 +116,7 @@ def refresh(toplevel: str, timeout_s: float = 2.0) -> None:
             "ahead": ahead,
             "behind": behind,
             "ts": time.time(),
+            "refresh_count": int(prev.get('refresh_count', 0)) + 1,
         }
         write_cache_atomic(toplevel, entry)
     finally:

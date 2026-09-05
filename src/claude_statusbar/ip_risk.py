@@ -183,6 +183,13 @@ def ensure_fresh(entry=None) -> None:
     try:
         if entry is None:
             entry = read_cache()
+        from . import identity
+        if identity._BACKGROUND_COLLECTORS:
+            if should_refresh(entry):
+                from .refresh_pool import submit
+                from ._ip_risk_refresh import main
+                submit(('ip-risk',), main, False)
+            return
         if should_refresh(entry) and not is_inflight():
             mark_inflight()
             try:

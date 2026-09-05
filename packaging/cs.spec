@@ -44,6 +44,7 @@ hiddenimports = [
     "claude_statusbar.cli",
     "claude_statusbar.core",
     "claude_statusbar.daemon",
+    "claude_statusbar.render_worker",
     "claude_statusbar.updater",
     "claude_statusbar._git_refresh",
     "claude_statusbar._balance_refresh",

@@ -86,19 +86,28 @@ def _probe(base: str, token: str) -> dict | None:
     return None
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) < 2:
+def refresh(base, key='', auth='', fp=''):
+    from .git_cache import try_claim
+    fp = fp or balance_cache.fingerprint(base, key or auth)
+    lock = try_claim('balance:' + fp)
+    if lock is None:
         return 0
-    base = argv[1]
-    fp = os.environ.get("CS_BALANCE_FP", "")
+    try:
+        if balance_cache.is_fresh(balance_cache.read_cache(fp)):
+            return 0
+        return _refresh_locked(base, key, auth, fp)
+    finally:
+        lock.close()
+
+
+def _refresh_locked(base, key, auth, fp):
     if not fp:
         fp = balance_cache.fingerprint(
             base, os.environ.get("CS_BALANCE_KEY", "")
             or os.environ.get("CS_BALANCE_AUTH", ""))
 
     result = None
-    for env_name in ("CS_BALANCE_KEY", "CS_BALANCE_AUTH"):
-        token = os.environ.get(env_name, "")
+    for token in (key, auth):
         if not token:
             continue
         result = _probe(base, token)
@@ -115,6 +124,14 @@ def main(argv: list[str]) -> int:
     finally:
         balance_cache.clear_inflight(fp)
     return 0
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        return 0
+    return refresh(argv[1], os.environ.get('CS_BALANCE_KEY', ''),
+                   os.environ.get('CS_BALANCE_AUTH', ''),
+                   os.environ.get('CS_BALANCE_FP', ''))
 
 
 if __name__ == "__main__":

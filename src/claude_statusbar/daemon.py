@@ -516,19 +516,25 @@ def _render_session(sid: str, stale_after: float = META_STALE_AFTER) -> bool:
     rendered = _render_payload(payload)
     if rendered is None:
         return False
+    return _publish_render(sid, payload, rendered, stale_after)
+
+
+def _publish_render(sid, payload, rendered, stale_after):
     now = time.time()
-    atomic_write_text(session_rendered_path(sid), rendered + "\n")
-    atomic_write_text(session_meta_path(sid), json.dumps({
+    if not atomic_write_text(session_rendered_path(sid), rendered + "\n", durable=False):
+        return False
+    return atomic_write_text(session_meta_path(sid), json.dumps({
         "generated_at": now,
         "pid": os.getpid(),
         "stale_after_seconds": stale_after,
         "session_id": sid,
+        "native_protocol": 1,
+        "columns": json.loads(payload).get('_cs_env', {}).get('COLUMNS', ''),
         # Thin client compares this against the package directory mtime
         # to detect "code on disk is newer than the running daemon".
         # See render_thin._is_fresh / _signal_outdated_daemon.
         "daemon_started_at": _DAEMON_STARTED_AT,
-    }) + "\n")
-    return True
+    }) + "\n", durable=False)
 
 
 def _active_sessions() -> list[str]:
@@ -785,20 +791,16 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
     # against a 60-minute TMP_GC_AFTER_S cutoff.
     last_maint = 0.0
     last_ip = 0.0
-    throttled = False  # edge-triggered log for load shedding
+    from .render_scheduler import Scheduler
+    scheduler = Scheduler()
     try:
         while _running:
             t0 = time.time()
-            interval = _effective_interval(render_interval)
-            if (interval > render_interval * 1.5) != throttled:
-                throttled = not throttled
-                if throttled:
-                    _log(f"load shedding: interval {render_interval:.1f}s -> "
-                         f"{interval:.1f}s (loadavg high)")
-                else:
-                    _log("load shedding off: back to "
-                         f"{render_interval:.1f}s interval")
-            _render_all_sessions(interval)
+            interval = render_interval
+            if os.name == 'nt':
+                _render_all_sessions(interval)
+            else:
+                scheduler.tick(interval)
             if t0 - last_ip > IP_HEARTBEAT_S:
                 last_ip = t0
                 # Only probe when the user actually enabled the egress-IP risk
@@ -809,7 +811,10 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
                     from .config import load_config
                     if load_config().show_ip_risk:
                         from . import ip_risk
-                        ip_risk.ensure_fresh()
+                        if ip_risk.should_refresh(ip_risk.read_cache()):
+                            from .refresh_pool import submit
+                            from ._ip_risk_refresh import main as refresh_ip
+                            submit(('ip-risk',), refresh_ip, False)
                 except Exception:
                     pass
             if t0 - last_maint > GC_INTERVAL_S:
@@ -829,7 +834,8 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
                 _gc_old_sessions()
                 last_gc = t0
             elapsed = time.time() - t0
-            sleep_for = max(0.0, interval - elapsed)
+            poll_interval = interval if os.name == 'nt' else min(0.05, interval)
+            sleep_for = max(0.0, poll_interval - elapsed)
             # Sleep in small chunks so signals are responsive. Clamp at 0: the
             # loop guard and the `min()` each call time.time() separately, so
             # the clock advances between them and the remainder can go negative
@@ -842,6 +848,7 @@ def run_forever(render_interval: float = DEFAULT_RENDER_INTERVAL) -> int:
         _log("daemon shutting down")
         return 0
     finally:
+        scheduler.close()
         _release_pidfile()
 
 
@@ -861,6 +868,15 @@ def cmd_status() -> int:
     print(f"daemon: pid {pid} {'alive' if alive else 'STALE pidfile (process gone)'}")
     if not alive:
         return 1
+
+    try:
+        stats = json.loads((_cache_dir() / 'scheduler.json').read_text())
+        if stats.get('pid') == pid and 0 <= time.time() - stats['generated_at'] < 15:
+            print(f"workers: {stats['busy_workers']}/{stats['workers']} busy; "
+                  f"renders: {stats['render_count']}; "
+                  f"timeouts/crashes: {stats['worker_timeouts_or_crashes']}")
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
 
     sids = _active_sessions()
     if not sids:

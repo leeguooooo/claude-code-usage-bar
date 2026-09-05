@@ -49,7 +49,8 @@ def _session_paths(sid: str) -> tuple[Path, Path, Path]:
 
 def _read_meta(meta_path: Path) -> dict | None:
     try:
-        return json.loads(meta_path.read_text(encoding="utf-8"))
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
     except (OSError, ValueError, json.JSONDecodeError):
         return None
 
@@ -109,6 +110,9 @@ def _is_fresh(meta: dict) -> bool:
         generated_at = float(meta.get("generated_at", 0))
         stale_after = float(meta.get("stale_after_seconds", _STALE_AFTER_DEFAULT))
     except (TypeError, ValueError):
+        return False
+    import math
+    if not math.isfinite(generated_at) or not math.isfinite(stale_after) or stale_after <= 0:
         return False
     delta = time.time() - generated_at
     if delta < 0:
@@ -338,13 +342,21 @@ def _atomic_write_bytes(target: Path, data: bytes) -> None:
     """
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_suffix(target.suffix + ".thin.tmp")
-        with open(tmp, "wb") as f:
+        import tempfile
+        fd, name = tempfile.mkstemp(dir=target.parent, prefix='.thin-')
+        tmp = Path(name)
+        with os.fdopen(fd, "wb") as f:
             f.write(data)
             f.flush()
         os.replace(tmp, target)
     except OSError:
         pass
+    finally:
+        if 'tmp' in locals():
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _persist_stdin_bytes(data: bytes, session_id: str) -> None:
@@ -501,10 +513,12 @@ def _acquire_inline_slot() -> bool:
 def _inline_or_shed(payload: bytes | None, rendered_path: Path) -> int:
     """Full inline render, unless the machine-wide slot cap is exhausted —
     then serve the last daemon render at ANY age instead of joining the herd.
-    A client with no cached render at all always renders inline (first run)."""
+    A cold client over the cap displays a warm-up placeholder."""
     if not _acquire_inline_slot():
         if _serve_cached(rendered_path, mark_stale=True):
             return 0
+        sys.stdout.write('cs: warming up…\n')
+        return 0
     if payload is not None:
         # core.main() reads sys.stdin via parse_stdin_data(); replay the
         # bytes we already consumed so it sees the same payload Claude Code

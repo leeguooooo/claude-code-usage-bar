@@ -60,6 +60,16 @@ jobs:
       - name: Build binary
         run: pyinstaller packaging/cs.spec --noconfirm
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: Build native statusline entrypoint
+        run: |
+          mv dist/cs/cs dist/cs/cs-python
+          go build -trimpath -ldflags='-s -w' -o dist/cs/cs packaging/native/main.go
+
       - name: Smoke-test the binary
         run: |
           ./dist/cs/cs --version
@@ -69,6 +79,8 @@ jobs:
           # The hot-path binary must be onedir. A onefile regression would
           # recreate the disk leak fixed after v3.32.3.
           test -d ./dist/cs/_internal
+          python scripts/benchmark_native.py ./dist/cs/cs
+          python scripts/benchmark_daemon.py ./dist/cs/cs
           # macOS: verify the HUD (pyobjc) actually got bundled — non-GUI check.
           if [ "$RUNNER_OS" = "macOS" ]; then ./dist/cs/cs hud check; fi
 

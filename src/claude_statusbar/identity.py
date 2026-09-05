@@ -127,7 +127,30 @@ def _parse_worktree(start: Path) -> Optional[_Worktree]:
     return None
 
 
+_WORKTREE_COUNTS = {}
+
+
 def count_live_worktrees(registry: Path) -> int:
+    if not _BACKGROUND_COLLECTORS:
+        return _count_live_worktrees(registry)
+    import time
+    now = time.monotonic()
+    try:
+        st = registry.stat()
+        sig = (st.st_ino, st.st_mtime_ns)
+    except OSError:
+        return 0
+    old = _WORKTREE_COUNTS.get(str(registry))
+    if old and old[0] == sig and now - old[1] < 30:
+        return old[2]
+    count = _count_live_worktrees(registry)
+    if len(_WORKTREE_COUNTS) >= 128:
+        _WORKTREE_COUNTS.clear()
+    _WORKTREE_COUNTS[str(registry)] = (sig, now, count)
+    return count
+
+
+def _count_live_worktrees(registry: Path) -> int:
     """How many linked worktrees the repo owning `registry` still has.
 
     `registry` is the main repo's `.git/worktrees/` dir — one entry per
@@ -244,6 +267,9 @@ def resolve_identity(stdin: dict) -> IdentityInfo:
     )
 
 
+_BACKGROUND_COLLECTORS = False
+
+
 def dirty_with_async_refresh(toplevel: str) -> Optional[bool]:
     """Return the cached dirty state, kicking off a background refresh
     if the cache is stale or missing. Never blocks on git.
@@ -255,7 +281,13 @@ def dirty_with_async_refresh(toplevel: str) -> Optional[bool]:
 
     entry = git_cache.read_cache(toplevel)
     if git_cache.is_fresh(entry):
-        return bool(entry.get("dirty"))
+        return entry.get("dirty")
+
+    if _BACKGROUND_COLLECTORS:
+        from .refresh_pool import submit
+        from ._git_refresh import refresh
+        submit(('git', toplevel), refresh, toplevel)
+        return None if entry is None else entry.get('dirty')
 
     if not git_cache.is_inflight(toplevel):
         git_cache.mark_inflight(toplevel)
@@ -274,7 +306,7 @@ def dirty_with_async_refresh(toplevel: str) -> Optional[bool]:
         except (OSError, ValueError):
             git_cache.clear_inflight(toplevel)
 
-    return None if entry is None else bool(entry.get("dirty"))
+    return None if entry is None else entry.get("dirty")
 
 
 def read_ahead_behind(toplevel: str) -> Tuple[Optional[int], Optional[int]]:

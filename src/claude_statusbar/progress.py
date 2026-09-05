@@ -339,7 +339,8 @@ def _language_trend(estimates):
 
 def _coach_enabled(config_path="~/.claude/language-coach.json"):
     try:
-        cfg = json.loads(Path(config_path).expanduser().read_text(encoding="utf-8"))
+        from .file_snapshot import read_json
+        cfg = read_json(Path(config_path).expanduser())
         return bool(cfg.get("enabled", False))
     except (OSError, json.JSONDecodeError, ValueError):
         return False
@@ -353,7 +354,8 @@ def format_language_body(progress_path):
         return ""
     path = Path(progress_path).expanduser()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        from .file_snapshot import read_json
+        payload = read_json(path)
     except (OSError, json.JSONDecodeError):
         return ""
     if not isinstance(payload, dict):

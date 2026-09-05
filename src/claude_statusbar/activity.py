@@ -24,6 +24,11 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from collections import OrderedDict
+from copy import deepcopy
+
+_SNAPSHOTS = OrderedDict()
+_TAILS = OrderedDict()
 
 # Reuse the same byte budget as the cache-age reader so a giant transcript
 # can't blow up render time.
@@ -248,46 +253,71 @@ def _content_blocks(entry: Dict[str, Any]) -> List[Any]:
 
 
 def _iter_entries_reverse(transcript_path: str):
-    """Yield parsed JSONL entries newest-first, bounded to _MAX_BYTES of tail.
-
-    Mirrors core._last_assistant_info's chunked reverse read so a multi-MB
-    transcript never costs more than the byte budget per render.
-    """
+    """Read only appended bytes, retaining at most one bounded tail per file."""
     try:
-        with open(transcript_path, "rb") as f:
-            f.seek(0, 2)
-            size = f.tell()
-            if size == 0:
-                return
-            buf = b""
-            pos = size
-            scanned = 0
-            while pos > 0 and scanned < _MAX_BYTES:
-                read = min(_CHUNK, pos)
-                pos -= read
-                scanned += read
-                f.seek(pos)
-                buf = f.read(read) + buf
-                lines = buf.split(b"\n")
-                if pos > 0:
-                    buf = lines[0]
-                    candidates = lines[1:]
-                else:
-                    buf = b""
-                    candidates = lines
-                for raw in reversed(candidates):
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    try:
-                        yield json.loads(raw)
-                    except (ValueError, json.JSONDecodeError):
-                        continue
+        with open(transcript_path, 'rb') as f:
+            st = os.fstat(f.fileno())
+            sig = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+            old = _TAILS.get(transcript_path)
+            if old and old[0] == sig:
+                data, offset = old[1:]
+            elif (old and old[0][:2] == sig[:2] and st.st_size > old[0][2]
+                  and st.st_size - old[0][2] < _MAX_BYTES):
+                f.seek(old[0][2])
+                data = old[1] + f.read(st.st_size - old[0][2])
+                offset = old[2]
+            else:
+                offset = max(0, st.st_size - _MAX_BYTES)
+                f.seek(offset)
+                data = f.read(_MAX_BYTES)
+            if len(data) > _MAX_BYTES:
+                offset += len(data) - _MAX_BYTES
+                data = data[-_MAX_BYTES:]
+            _TAILS[transcript_path] = (sig, data, offset)
+            _TAILS.move_to_end(transcript_path)
+            while len(_TAILS) > 32:
+                _TAILS.popitem(last=False)
+        lines = data.split(b'\n')
+        if offset:
+            lines = lines[1:]  # first record may be cut by the byte budget
+        for raw in reversed(lines):
+            try:
+                entry = json.loads(raw)
+                if isinstance(entry, dict):
+                    yield entry
+            except (ValueError, UnicodeError):
+                continue
     except OSError:
         return
 
 
-def read_activity(transcript_path: str,
+def read_activity(transcript_path: str, now: Optional[datetime] = None) -> ActivityInfo:
+    """Cache parsed state, never the ticking clock. Replacement invalidates it."""
+    now = now or datetime.now(timezone.utc)
+    try:
+        st = os.stat(transcript_path)
+        signature = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    except OSError:
+        return ActivityInfo()
+    old = _SNAPSHOTS.get(transcript_path)
+    if old is not None and old[0] == signature:
+        _SNAPSHOTS.move_to_end(transcript_path)
+        info = deepcopy(old[2])
+        delta = (now - old[1]).total_seconds()
+        if info.cache_age_seconds is not None:
+            info.cache_age_seconds += delta
+        for agent in info.agents:
+            agent['elapsed_seconds'] = max(0, agent['elapsed_seconds'] + delta)
+        return info
+    info = _read_activity_uncached(transcript_path, now)
+    _SNAPSHOTS[transcript_path] = (signature, now, deepcopy(info))
+    _SNAPSHOTS.move_to_end(transcript_path)
+    while len(_SNAPSHOTS) > 128:
+        _SNAPSHOTS.popitem(last=False)
+    return info
+
+
+def _read_activity_uncached(transcript_path: str,
                   now: Optional[datetime] = None) -> ActivityInfo:
     """Scan the transcript tail (newest-first) for live activity.
 

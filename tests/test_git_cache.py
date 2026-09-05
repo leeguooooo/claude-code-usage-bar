@@ -62,12 +62,12 @@ def test_stale_inflight_marker_is_ignored(tmp_path, monkeypatch):
     assert is_inflight("/srv/proj") is False
 
 
-def test_ttl_constant_is_five_seconds():
-    assert TTL_SECONDS == 5
+def test_git_polling_is_independent_of_display_tick():
+    assert TTL_SECONDS == 30
 
 
 def test_is_fresh_within_ttl():
     assert is_fresh({"ts": time.time()}) is True
-    assert is_fresh({"ts": time.time() - 10}) is False
+    assert is_fresh({"ts": time.time() - TTL_SECONDS - 1}) is False
     assert is_fresh(None) is False
     assert is_fresh({}) is False

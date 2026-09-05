@@ -877,12 +877,21 @@ def render(style: str, **kwargs) -> str:
     activity = kwargs.pop("activity", None)
     activity_opts = kwargs.pop("activity_opts", None)
     party = kwargs.pop("party", None)
+    per_model_limits = kwargs.pop('per_model_limits', [])
+    per_model_projection = kwargs.pop('per_model_projection', True)
     theme = kwargs.get("theme") or get_theme("graphite")
     use_color = kwargs.get("use_color", True)
 
     fn = RENDERERS.get(style, render_classic)
     render_kwargs = dict(kwargs)
     out = fn(**render_kwargs)
+    if per_model_limits:
+        from .scoped_usage import render_limits
+        scoped = render_limits(per_model_limits, theme, use_color,
+                               kwargs.get('warning_threshold'),
+                               kwargs.get('critical_threshold'), per_model_projection)
+        if scoped:
+            out += '\n' + scoped
 
     # Preserve core quota/model signal before hard clipping. Optional segments
     # disappear in stable least-important-first order; selected style stays put.

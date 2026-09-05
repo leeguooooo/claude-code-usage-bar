@@ -80,7 +80,20 @@ def _parse_asn(v):
     return int(m.group(1)) if m else 0
 
 
-def main() -> int:
+def main(force=True) -> int:
+    from .git_cache import try_claim
+    lock = try_claim('ip-risk')
+    if lock is None:
+        return 0
+    try:
+        if not force and not ip_risk.should_refresh(ip_risk.read_cache()):
+            return 0
+        return _refresh_locked()
+    finally:
+        lock.close()
+
+
+def _refresh_locked() -> int:
     now = time.time()
     prev = ip_risk.read_cache() or {}
     try:

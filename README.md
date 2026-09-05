@@ -39,11 +39,53 @@ got left, and when does it reset?"*
 - **Cost & balance** — optional per-session cost, or live relay/API balance in no-quota setups.
 - **Two surfaces** — inline `statusLine` in the terminal, or an always-on-top floating HUD for the Claude desktop app (macOS).
 - **3 styles × 9 themes** — switch the whole look with one command: battery-bar, capsule, or hairline.
-- **Fast by design** — an optional daemon renders in well under 1% CPU even at a 1-second refresh.
+- **Fast mode** — release bundles use a native cache reader and two persistent render workers. Git and network collection run on separate, bounded background queues.
 - **More when you want it** — git branch & diff stats, session activity, AgentParty/Codex presence, IELTS writing-coach progress — each opt-in.
 - **Zero-dependency install** — a single prebuilt binary (no Python needed) or a `pip` package. Auto-updates.
 
 ## Install
+
+### Refresh and caching
+
+Display ticks stay at one second; data collection follows its own schedule:
+
+| Data | Refresh policy |
+| --- | --- |
+| Countdown and elapsed time | Recomputed from timestamps on each render |
+| Context, model and session cost | Latest statusLine input |
+| Transcript activity | Reuse unchanged snapshots; read only appended tail bytes, with a bounded rebuild after replacement or truncation |
+| Git dirty / ahead / behind | Shared per worktree, 30-second cache, one refresh at a time |
+| Configuration and language progress | Reload when file metadata changes |
+| Balance and optional model caps | Shared per account, background refresh; failures are cached |
+
+The native reader is included in macOS arm64 and Linux x86_64 release archives.
+Pip/uv installations continue to use the Python client. Existing `cs render`
+commands keep working; binary upgrades take effect on the next invocation.
+
+Optional model-specific weekly limits can be enabled with
+`cs config set show_per_model true`. This explicitly enables read-only OAuth
+credential access (`~/.claude/.credentials.json`, or the macOS login Keychain)
+and background requests to Anthropic's undocumented usage endpoint. No token
+is logged or stored in a cache. Requests are account-scoped, cached for five
+minutes, and disabled by default; unsupported responses hide the segment.
+Relay/no-quota sessions never request these limits. The segment appears on
+its own line below the main usage row, using the same battery and projection.
+
+For source builds, wrap the PyInstaller bundle before packaging:
+
+```bash
+pyinstaller packaging/cs.spec --noconfirm
+mv dist/cs/cs dist/cs/cs-python
+go build -trimpath -ldflags='-s -w' -o dist/cs/cs packaging/native/main.go
+python scripts/benchmark_native.py dist/cs/cs
+python scripts/benchmark_daemon.py dist/cs/cs
+```
+
+Both benchmarks use temporary fixtures, not live sessions or credentials.
+The first checks the cache-hit CPU budget; the second exercises 16 concurrent
+sessions, warm-cache routing, worker count, Git deduplication and freshness.
+The daemon also writes aggregate timing and worker counters to
+`~/.cache/claude-statusbar/scheduler.json` (no payloads or tokens).
 
 ### Claude Code (terminal)
 

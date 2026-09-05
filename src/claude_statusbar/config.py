@@ -37,6 +37,7 @@ class StatusbarConfig:
     density: str = DEFAULT_DENSITY
     auto_compact_width: int = DEFAULT_AUTO_COMPACT_WIDTH
     show_weekly: bool = True
+    show_per_model: bool = False
     show_language: bool = True
     show_cost: bool = False
     # Relay account balance (no-quota mode only). Auto: shown when the relay
@@ -130,7 +131,8 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
     if not path.exists():
         return StatusbarConfig()
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        from .file_snapshot import read_json
+        raw = read_json(path)
     except (OSError, json.JSONDecodeError):
         return StatusbarConfig()
     if not isinstance(raw, dict):
@@ -141,6 +143,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         density=str(raw.get("density", DEFAULT_DENSITY)),
         auto_compact_width=int(raw.get("auto_compact_width", DEFAULT_AUTO_COMPACT_WIDTH) or 0),
         show_weekly=_to_bool(raw.get("show_weekly", True)),
+        show_per_model=_to_bool(raw.get("show_per_model", False)),
         show_language=_to_bool(raw.get("show_language", True)),
         show_cost=_to_bool(raw.get("show_cost", False)),
         show_balance=_to_bool(raw.get("show_balance", True)),
@@ -222,7 +225,7 @@ def save_config(cfg: StatusbarConfig, path: Optional[Path] = None) -> None:
 
 VALID_KEYS = {
     "style", "theme", "density", "auto_compact_width",
-    "show_weekly", "show_language", "show_cost", "show_balance", "balance_bar",
+    "show_weekly", "show_per_model", "show_language", "show_cost", "show_balance", "balance_bar",
     "show_cache_age",
     "show_project_branch", "show_party",
     "show_cwd", "cwd_style",
@@ -237,7 +240,7 @@ VALID_KEYS = {
     "auto_upgrade", "worktree_glyph",
 }
 _VALID_API_MODE = {"auto", "on", "off"}
-_BOOL_KEYS = {"show_weekly", "show_language", "show_cost", "show_balance",
+_BOOL_KEYS = {"show_weekly", "show_per_model", "show_language", "show_cost", "show_balance",
               "balance_bar",
               "show_cache_age",
               "show_project_branch", "show_party",

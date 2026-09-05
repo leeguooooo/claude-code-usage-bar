@@ -12,13 +12,14 @@ import tempfile
 from pathlib import Path
 
 
-def atomic_write_text(path: Path, text: str) -> bool:
+def atomic_write_text(path: Path, text: str, *, durable: bool = True) -> bool:
     """Cross-platform atomic text write. Returns True on success.
 
-    Writes to a sibling tempfile in the same directory, fsyncs, then
+    Writes to a sibling tempfile in the same directory, optionally fsyncs, then
     os.replace to swap into place. Same-directory rename is atomic on
     POSIX and on NTFS for replace, so a Ctrl+C / OOM mid-write can
-    never leave the destination half-written.
+    never leave the destination half-written. Reconstructible render snapshots
+    use durable=False; settings and other persistent state keep fsync.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -30,7 +31,8 @@ def atomic_write_text(path: Path, text: str) -> bool:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
                 f.flush()
-                os.fsync(f.fileno())
+                if durable:
+                    os.fsync(f.fileno())
             os.replace(tmp, path)
             return True
         except Exception:
