@@ -418,3 +418,43 @@ def test_release_tag_strips_the_v_prefix(monkeypatch):
     monkeypatch.setattr(updater.urllib.request, "urlopen",
                         lambda req, timeout=None: _Resp())
     assert updater.latest_release_tag() == "3.40.0"
+
+
+def _fake_venv(tmp_path):
+    """A uv-tool-style venv: bin/python3 -> symlink to a base interpreter that
+    lives somewhere else entirely (Homebrew Cellar, pyenv, uv-managed CPython)."""
+    base = tmp_path / "Cellar" / "python@3.13" / "bin"
+    base.mkdir(parents=True)
+    (base / "python3.13").write_text("")
+    venv_bin = tmp_path / "uv" / "tools" / "claude-statusbar" / "bin"
+    venv_bin.mkdir(parents=True)
+    (venv_bin / "python3").symlink_to(base / "python3.13")
+    (venv_bin / "cs").write_text("")
+    return venv_bin
+
+
+def test_shadow_install_not_triggered_by_symlinked_venv_interpreter(monkeypatch, tmp_path):
+    # Regression: resolving sys.executable followed the venv's python3 symlink
+    # out to the base interpreter, so entry.parent never matched and every
+    # uv-tool install refused to auto-upgrade itself.
+    venv_bin = _fake_venv(tmp_path)
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    (local_bin / "cs").symlink_to(venv_bin / "cs")   # uv's shared entry point
+    monkeypatch.setattr(updater.shutil, "which", lambda name: str(local_bin / "cs"))
+    monkeypatch.setattr(updater.sys, "executable", str(venv_bin / "python3"))
+
+    assert updater.is_shadow_install() is False
+
+
+def test_shadow_install_still_detects_foreign_entrypoint(monkeypatch, tmp_path):
+    # The case the guard exists for: `cs` on PATH is a different install
+    # (here a standalone binary), so this copy must not upgrade over it.
+    venv_bin = _fake_venv(tmp_path)
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    (local_bin / "cs").write_text("")   # a real file, not a link into our venv
+    monkeypatch.setattr(updater.shutil, "which", lambda name: str(local_bin / "cs"))
+    monkeypatch.setattr(updater.sys, "executable", str(venv_bin / "python3"))
+
+    assert updater.is_shadow_install() is True
