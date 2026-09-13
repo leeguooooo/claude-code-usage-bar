@@ -9,7 +9,7 @@ import pytest
 
 from claude_statusbar import ocs
 from claude_statusbar.config import StatusbarConfig, set_value
-from claude_statusbar.styles import render_identity_line, _strip
+from claude_statusbar.styles import _strip
 from claude_statusbar.identity import IdentityInfo
 from claude_statusbar.themes import get_theme
 
@@ -146,11 +146,26 @@ def _info():
                         detached=False, worktree_name=None, toplevel="/p")
 
 
-def test_identity_line_renders_ocs():
-    theme = get_theme("graphite")
-    line = render_identity_line(_info(), theme=theme, dirty=False,
-                                ocs_text="boss · claude-7d5a5d07")
-    assert "ocs boss · claude-7d5a5d07" in _strip(line)
-    plain = render_identity_line(_info(), theme=theme, dirty=False,
-                                 ocs_text="claude-7d5a5d07", use_color=False)
-    assert plain.endswith(" · ocs claude-7d5a5d07")
+def _render(**kw):
+    from claude_statusbar import styles
+    return styles.render(
+        "classic", msgs_pct=10, weekly_pct=20, model="Opus 5",
+        reset_5h="4h", reset_7d="6d", theme=get_theme("graphite"), **kw)
+
+
+@pytest.mark.parametrize("show_pb", [True, False])
+@pytest.mark.parametrize("use_color", [True, False])
+def test_ocs_always_on_its_own_line(show_pb, use_color):
+    out = _strip(_render(use_color=use_color, show_project_branch=show_pb,
+                         identity=_info(), identity_dirty=False,
+                         ocs_text="boss · claude-7d5a5d07"))
+    lines = out.split("\n")
+    assert "ocs boss · claude-7d5a5d07" in lines
+    # never trails the branch line
+    assert not any("⎇" in ln and "ocs" in ln for ln in lines)
+
+
+def test_no_ocs_line_without_label():
+    out = _strip(_render(use_color=False, show_project_branch=True,
+                         identity=_info(), identity_dirty=False))
+    assert "ocs" not in out

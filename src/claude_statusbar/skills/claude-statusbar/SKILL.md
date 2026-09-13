@@ -38,7 +38,7 @@ give a short confirmation (one line, no lecture).
 | Toggle prompt-cache countdown | `cs config set show_cache_age true\|false` |
 | Toggle project + branch 2nd line | `cs config set show_project_branch true\|false` (default `true`) |
 | Toggle AgentParty/Codex bridge line | `cs config set show_party true\|false` (default `true`) |
-| Toggle ocs address (`ocs boss · claude-7d5a5d07`, branch line; auto-hidden without ocs ≥ 0.5.0) | `cs config set show_ocs true\|false` (default `true`) |
+| Toggle ocs address (`ocs boss · claude-7d5a5d07`, own line; auto-hidden without ocs ≥ 0.5.0) | `cs config set show_ocs true\|false` (default `true`) |
 | Toggle todo progress (`▸ task 3/7`, 3rd line) | `cs config set show_todos true\|false` (default `true`) |
 | Toggle active-tool indicator `◐` (3rd line) | `cs config set show_tools true\|false` |
 | Toggle completed-tool rollup `✓ name×N` (3rd line) | `cs config set show_tool_rollup true\|false` (default off — volume tally) |

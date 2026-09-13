@@ -458,7 +458,6 @@ def render_identity_line(info, *, theme: Theme, dirty,
                          duration_text: str = "", lines_text: str = "",
                          version_text: str = "", update_text: str = "",
                          cwd_text: str = "",
-                         ocs_text: str = "",
                          worktree_glyph: str = "⑂",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
@@ -502,8 +501,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
         ver = f" · v{version_text}" if version_text else ""
         if version_text and update_text:
             ver += f" ↑{update_text}"
-        ocs = f" · ocs {ocs_text}" if ocs_text else ""
-        return head + tail + stats + ocs + ver
+        return head + tail + stats + ver
 
     MUTE = _fg(theme.mute)
     EDGE = _fg(theme.edge)
@@ -551,9 +549,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
         # than the version, so you notice there's something to update to).
         if update_text:
             ver += f"{_fg(theme.s_warn)} ↑{update_text}{RESET}"
-    ocs = (f" {MUTE}·{RESET} " + _ocs_segment(ocs_text, theme)
-           if ocs_text else "")
-    return head + body + stats + ocs + ver
+    return head + body + stats + ver
 
 
 def _ocs_segment(ocs_text: str, theme: Theme) -> str:
@@ -953,7 +949,6 @@ def render(style: str, **kwargs) -> str:
             duration_text=duration_text, lines_text=lines_text,
             version_text=version_text, update_text=update_text,
             cwd_text=cwd_text,
-            ocs_text=ocs_text,
             worktree_glyph=worktree_glyph,
             use_color=use_color,
         )
@@ -965,8 +960,8 @@ def render(style: str, **kwargs) -> str:
                    f"{_fg(theme.pill_ink)}{cwd_text}{RESET}")
         else:
             out = out + "\n" + f"⤷ {cwd_text}"
-    if ocs_text and not (show_pb and info is not None):
-        # No identity line to ride on — its own minimal line.
+    if ocs_text:
+        # Always its own line — the address other agents copy, not branch info.
         out = out + "\n" + (_ocs_segment(ocs_text, theme) if use_color
                             else f"ocs {ocs_text}")
 

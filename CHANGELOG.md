@@ -9,6 +9,18 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.1 — 2026-09-13
+
+**The ocs address gets its own line.**
+
+- `ocs boss · claude-7d5a5d07` (`show_ocs`) now always renders on its own line
+  instead of trailing the branch line — it's an address other agents copy, not
+  branch info, and it no longer crowds the project/branch line.
+- Verified with the real ocs 0.5.0: after `ocs rename`, the new name reached the
+  status line within ~17s (cache TTL 30s).
+
+---
+
 ## v3.43.0 — 2026-09-13
 
 **ocs address on the branch line, so other agents can find this session.**
@@ -17,8 +29,7 @@ For a quick overview of the latest release, see the
   session's [open-cross-session](https://github.com/leeguooooo/open-cross-session)
   name (from `ocs rename`) and stable id — both work with `ocs dm` / `@`. Without
   a name it shows just the id; when ocs reports no id it falls back to the
-  session address. Rides the branch line, or gets its own line when
-  `show_project_branch` is off.
+  session address.
 - Appears only when ocs ≥ 0.5.0 is installed (PATH or `~/.local/bin/ocs`) and
   knows the session; otherwise hidden with no cost beyond a PATH lookup.
 - Uses only `ocs whoami --json --session <id>`, run in the background (daemon
