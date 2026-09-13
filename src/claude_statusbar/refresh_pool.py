@@ -30,7 +30,9 @@ def submit(key, function, *args):
                     for k in list(_retry):
                         if _retry[k] < now:
                             del _retry[k]
-    pool = _git_pool if key[0] == 'git' else _network_pool
+    # Local subprocesses (git, ocs) share one lane; slow network probes get
+    # the other so a hung relay can't delay a dirty dot or an ocs rename.
+    pool = _git_pool if key[0] in ('git', 'ocs') else _network_pool
     try:
         pool.submit(run)
     except RuntimeError:

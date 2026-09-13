@@ -55,7 +55,7 @@ def _run_config_subcommand(rest):
         line("auto_compact_width", cfg.auto_compact_width or "(disabled)")
         for key in ("show_weekly", "show_language", "show_cost", "show_balance",
                     "balance_bar", "show_cache_age", "show_project_branch",
-                    "show_party", "show_ahead_behind", "show_todos",
+                    "show_party", "show_ocs", "show_ahead_behind", "show_todos",
                     "show_tools", "show_tool_rollup", "show_agents",
                     "show_duration", "show_lines", "show_version", "show_mode",
                     "mode_gradient", "bar_shimmer", "show_forecast",

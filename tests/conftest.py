@@ -20,3 +20,17 @@ def _isolate_rate_latest(tmp_path, monkeypatch):
         monkeypatch.setattr(predict, "account_id", lambda: None)
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ocs(tmp_path, monkeypatch):
+    """core renders with show_ocs on by default: without this, any test that
+    passes a session_id would spawn the developer's real `ocs` and write to
+    the real ~/.cache/claude-statusbar/ocs. test_ocs.py re-enables find_ocs
+    against a fake binary."""
+    try:
+        import claude_statusbar.ocs as ocs
+        monkeypatch.setattr(ocs, "_cache_root", lambda: tmp_path / "ocs-cache")
+        monkeypatch.setattr(ocs, "find_ocs", lambda: None)
+    except Exception:
+        pass

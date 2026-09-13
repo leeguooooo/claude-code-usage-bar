@@ -9,6 +9,26 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.0 — 2026-09-13
+
+**ocs address on the branch line, so other agents can find this session.**
+
+- New segment `ocs boss · claude-7d5a5d07` (`show_ocs`, on by default): this
+  session's [open-cross-session](https://github.com/leeguooooo/open-cross-session)
+  name (from `ocs rename`) and stable id — both work with `ocs dm` / `@`. Without
+  a name it shows just the id; when ocs reports no id it falls back to the
+  session address. Rides the branch line, or gets its own line when
+  `show_project_branch` is off.
+- Appears only when ocs ≥ 0.5.0 is installed (PATH or `~/.local/bin/ocs`) and
+  knows the session; otherwise hidden with no cost beyond a PATH lookup.
+- Uses only `ocs whoami --json --session <id>`, run in the background (daemon
+  thread pool / detached subprocess) and cached per session for 30s — the
+  render never waits on ocs, and a rename shows up within half a minute.
+  Output is sanitized (printable, ≤64 chars) before it reaches the terminal.
+- Turn it off with `cs config set show_ocs false`.
+
+---
+
 ## v3.40.1 — 2026-08-26
 
 **A binary install asks GitHub whether it's current, not PyPI.**

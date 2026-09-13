@@ -18,6 +18,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "show_cache_age": true,
   "show_project_branch": true,
   "show_party": true,
+  "show_ocs": true,
   "show_todos": true,
   "show_tools": false,
   "show_agents": false,
@@ -39,6 +40,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_project_branch` | bool, `true` | Second line: `⧉ worktree` (linked worktrees only) + project + branch + `●` dirty dot |
 | `show_ahead_behind` | bool, `false` | `↑2↓1` commits ahead/behind on the branch line |
 | `show_party` | bool, `true` | AgentParty / Codex bridge line (reads local cache only) |
+| `show_ocs` | bool, `true` | `ocs boss · claude-7d5a5d07` on the branch line — this session's [open-cross-session](https://github.com/leeguooooo/open-cross-session) address; auto-hidden unless ocs ≥ 0.5.0 is installed |
 | `show_todos` | bool, `true` | Activity line: in-progress todo + `done/total` |
 | `show_tools` / `show_tool_rollup` | bool, `false` | Active tool / completed-tool frequency rollup |
 | `show_projection` / `show_forecast` | bool, `true` | `→NN%` projection / `⚠ETA` at-risk warning chip |

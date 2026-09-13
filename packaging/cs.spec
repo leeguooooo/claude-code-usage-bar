@@ -49,6 +49,7 @@ hiddenimports = [
     "claude_statusbar._git_refresh",
     "claude_statusbar._balance_refresh",
     "claude_statusbar._ip_risk_refresh",
+    "claude_statusbar.ocs",
     "claude_statusbar.cleanup",
 ]
 

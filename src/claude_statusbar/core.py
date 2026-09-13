@@ -1303,6 +1303,17 @@ def main(json_output: bool = False,
                 cwd_kwargs = {"cwd_text":
                               os.path.basename(_raw_cwd.rstrip('/')) or _raw_cwd}
 
+    # Optional ocs address segment: reads a per-session cache; a stale entry
+    # triggers a background `ocs whoami --json` — never blocks the render.
+    if cfg.show_ocs:
+        try:
+            from .ocs import ocs_label
+            _ocs = ocs_label(str(stdin_data.get('session_id') or ''))
+            if _ocs:
+                cwd_kwargs = {**cwd_kwargs, "ocs_text": _ocs}
+        except Exception:
+            pass
+
     # Dedicated egress-IP risk warning line (only shows above the risk
     # threshold; independent of the git identity segment).
     ip_line_kwargs = {}

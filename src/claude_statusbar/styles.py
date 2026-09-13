@@ -458,6 +458,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
                          duration_text: str = "", lines_text: str = "",
                          version_text: str = "", update_text: str = "",
                          cwd_text: str = "",
+                         ocs_text: str = "",
                          worktree_glyph: str = "⑂",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
@@ -501,7 +502,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
         ver = f" · v{version_text}" if version_text else ""
         if version_text and update_text:
             ver += f" ↑{update_text}"
-        return head + tail + stats + ver
+        ocs = f" · ocs {ocs_text}" if ocs_text else ""
+        return head + tail + stats + ocs + ver
 
     MUTE = _fg(theme.mute)
     EDGE = _fg(theme.edge)
@@ -549,7 +551,22 @@ def render_identity_line(info, *, theme: Theme, dirty,
         # than the version, so you notice there's something to update to).
         if update_text:
             ver += f"{_fg(theme.s_warn)} ↑{update_text}{RESET}"
-    return head + body + stats + ver
+    ocs = (f" {MUTE}·{RESET} " + _ocs_segment(ocs_text, theme)
+           if ocs_text else "")
+    return head + body + stats + ocs + ver
+
+
+def _ocs_segment(ocs_text: str, theme: Theme) -> str:
+    """`ocs boss · claude-7d5a5d07`: the `ocs` tag in edge grey, the name in
+    ink (the thing you'd type), the stable id muted."""
+    EDGE = _fg(theme.edge)
+    INK = _fg(theme.pill_ink)
+    MUTE = _fg(theme.mute)
+    name, sep, ident = ocs_text.partition(" · ")
+    if sep:
+        return (f"{EDGE}ocs{RESET} {INK}{name}{RESET} "
+                f"{MUTE}· {ident}{RESET}")
+    return f"{EDGE}ocs{RESET} {INK}{ocs_text}{RESET}"
 
 
 def render_activity_line(activity, *, theme: Theme, use_color: bool = True,
@@ -861,6 +878,7 @@ def render(style: str, **kwargs) -> str:
     duration_text = kwargs.pop("identity_duration", "")
     lines_text = kwargs.pop("identity_lines", "")
     cwd_text = kwargs.pop("cwd_text", "")
+    ocs_text = kwargs.pop("ocs_text", "")
     worktree_glyph = kwargs.pop("worktree_glyph", "⑂")
     ip_line_text = kwargs.pop("ip_line_text", "")
     ip_line_level = kwargs.pop("ip_line_level", "ok")
@@ -935,6 +953,7 @@ def render(style: str, **kwargs) -> str:
             duration_text=duration_text, lines_text=lines_text,
             version_text=version_text, update_text=update_text,
             cwd_text=cwd_text,
+            ocs_text=ocs_text,
             worktree_glyph=worktree_glyph,
             use_color=use_color,
         )
@@ -946,6 +965,10 @@ def render(style: str, **kwargs) -> str:
                    f"{_fg(theme.pill_ink)}{cwd_text}{RESET}")
         else:
             out = out + "\n" + f"⤷ {cwd_text}"
+    if ocs_text and not (show_pb and info is not None):
+        # No identity line to ride on — its own minimal line.
+        out = out + "\n" + (_ocs_segment(ocs_text, theme) if use_color
+                            else f"ocs {ocs_text}")
 
     party_line = render_party_line(party, theme=theme, use_color=use_color)
     if party_line:
