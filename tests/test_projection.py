@@ -470,9 +470,9 @@ def test_projection_reuses_recent_account_result_without_store_churn(tmp_path, m
     saves = []
     real_save = predict.save_projection_store
 
-    def counting_save(store, path=None):
+    def counting_save(store, path=None, transcript_path=None):
         saves.append(1)
-        real_save(store, path)
+        real_save(store, path, transcript_path)
 
     monkeypatch.setattr(predict, "save_projection_store", counting_save)
 
@@ -497,9 +497,9 @@ def test_projection_recomputes_after_result_cache_ttl(tmp_path, monkeypatch):
     saves = []
     real_save = predict.save_projection_store
 
-    def counting_save(store, path=None):
+    def counting_save(store, path=None, transcript_path=None):
         saves.append(1)
-        real_save(store, path)
+        real_save(store, path, transcript_path)
 
     monkeypatch.setattr(predict, "save_projection_store", counting_save)
 
@@ -519,9 +519,9 @@ def test_projection_recomputes_when_account_reading_changes(tmp_path, monkeypatc
     saves = []
     real_save = predict.save_projection_store
 
-    def counting_save(store, path=None):
+    def counting_save(store, path=None, transcript_path=None):
         saves.append(1)
-        real_save(store, path)
+        real_save(store, path, transcript_path)
 
     monkeypatch.setattr(predict, "save_projection_store", counting_save)
 

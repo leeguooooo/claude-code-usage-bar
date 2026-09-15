@@ -365,10 +365,10 @@ def quota_cache_status(now=None, path=None):
     return ("fresh" if plausible else "stale", age)
 
 
-def regime_changed_at(path=None):
+def regime_changed_at(path=None, transcript_path=None):
     """Timestamp of the last burn-rate regime boundary (model switch or
     novel-model fleet join), or None. Never raises."""
-    p = Path(path) if path is not None else _latest_path()
+    p = Path(path) if path is not None else _latest_path(transcript_path)
     try:
         store = json.loads(p.read_text(encoding="utf-8"))
         return _coerce((store.get("regime") or {}).get("changed_at"))
@@ -569,7 +569,8 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
         return used_5h, resets_5h, used_7d, resets_7d
 
 
-def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
+def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float,
+             transcript_path=None):
     """Compute (chip_5h, chip_7d). Reconciles against the shared account-global
     latest reading first (so all windows agree), then projects. Never raises."""
     try:
@@ -577,7 +578,8 @@ def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
         # recording reconcile — persisting this echo would re-confirm the
         # stored reading every render and freeze the downgrade grace clock.
         u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d,
-                                           now=now, record=False)
+                                           now=now, record=False,
+                                           transcript_path=transcript_path)
         c5 = forecast_chip("five_hour", u5, r5, now)
         c7 = forecast_chip("seven_day", u7, r7, now)
         return c5, c7
@@ -596,8 +598,8 @@ def empty_projection_store() -> Dict[str, Any]:
     }
 
 
-def load_projection_store(path=None) -> Dict[str, Any]:
-    p = Path(path) if path is not None else _projection_path()
+def load_projection_store(path=None, transcript_path=None) -> Dict[str, Any]:
+    p = Path(path) if path is not None else _projection_path(transcript_path)
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -621,8 +623,9 @@ def load_projection_store(path=None) -> Dict[str, Any]:
     return store
 
 
-def save_projection_store(store: Dict[str, Any], path=None) -> None:
-    p = Path(path) if path is not None else _projection_path()
+def save_projection_store(store: Dict[str, Any], path=None,
+                          transcript_path=None) -> None:
+    p = Path(path) if path is not None else _projection_path(transcript_path)
     from .cache import atomic_write_text
     atomic_write_text(p, json.dumps(store, separators=(",", ":")))
 
@@ -1109,13 +1112,14 @@ def _depletion_eta_seconds(used: float, ttr: float, raw_unclamped: float):
     return eta if eta < ttr else None
 
 
-def _projection_result_key(u5, r5, u7, r7) -> Optional[Tuple[str, str, float, float, float, float]]:
+def _projection_result_key(u5, r5, u7, r7,
+                           transcript_path=None) -> Optional[Tuple[str, str, float, float, float, float]]:
     try:
         return (
             # account-suffixed paths, so an account switch (or a monkeypatched
             # path in tests) invalidates the 1s result cache by key mismatch
-            str(_projection_path()),
-            str(_latest_path()),
+            str(_projection_path(transcript_path)),
+            str(_latest_path(transcript_path)),
             float(u5),
             float(r5),
             float(u7),
@@ -1194,13 +1198,15 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
     return chip
 
 
-def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):
+def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = "",
+               transcript_path=None):
     try:
         # record=False — same echo hazard as forecast(); see reconcile_account.
         u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d,
-                                           now=now, record=False)
+                                           now=now, record=False,
+                                           transcript_path=transcript_path)
         ts = float(now)
-        key = _projection_result_key(u5, r5, u7, r7)
+        key = _projection_result_key(u5, r5, u7, r7, transcript_path)
         global _PROJECTION_RESULT_CACHE
         if key is not None and isinstance(_PROJECTION_RESULT_CACHE, dict):
             cached_at = _coerce(_PROJECTION_RESULT_CACHE.get("observed_at"))
@@ -1212,13 +1218,13 @@ def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: s
                 result = _PROJECTION_RESULT_CACHE.get("result")
                 if isinstance(result, tuple) and len(result) == 2:
                     return result
-        store = load_projection_store()
-        since = regime_changed_at()
+        store = load_projection_store(transcript_path=transcript_path)
+        since = regime_changed_at(transcript_path=transcript_path)
         p5 = _projection_for_window(store, "five_hour", u5, r5, now, session_id,
                                     since=since)
         p7 = _projection_for_window(store, "seven_day", u7, r7, now, session_id,
                                     since=since)
-        save_projection_store(store)
+        save_projection_store(store, transcript_path=transcript_path)
         result = (p5, p7)
         if key is not None:
             _PROJECTION_RESULT_CACHE = {

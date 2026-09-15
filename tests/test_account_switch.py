@@ -189,3 +189,29 @@ def test_unrecognised_transcript_layout_is_ignored(tmp_path, monkeypatch):
                         _fake_claude_json(tmp_path, "cccccccc-1111-2222-3333-444455556666"))
     assert predict._read_account_id("/var/log/elsewhere/sess.jsonl") == \
         "cccccccc-1111-2222-3333-444455556666"
+
+
+def test_two_profiles_do_not_share_projection_history(tmp_path, monkeypatch):
+    """The projection store and its 1s result cache are account-keyed too, so
+    they need the session's config dir for the same reason the latest store
+    does — otherwise one daemon process serves profile A's learned →NN% to
+    profile B."""
+    _, personal = _profile(tmp_path, ".claude", "aaaaaaaa-1111-2222-3333-444455556666")
+    _, work = _profile(tmp_path, ".claude-work", "bbbbbbbb-1111-2222-3333-444455556666")
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "rate_latest.json")
+    monkeypatch.setattr(predict, "_PROJECTION_PATH", tmp_path / "rate_projection.json")
+    monkeypatch.setattr(predict, "_ACCOUNT_CACHE", {"sig": None, "id": None})
+    monkeypatch.setattr(predict, "account_id", predict._read_account_id)
+
+    assert predict._projection_path(str(personal)) != predict._projection_path(str(work))
+    # the 1s result cache keys on both store paths, so it can't cross profiles
+    key_p = predict._projection_result_key(1.0, 2.0, 3.0, 4.0, str(personal))
+    key_w = predict._projection_result_key(1.0, 2.0, 3.0, 4.0, str(work))
+    assert key_p != key_w
+
+    store = predict.empty_projection_store()
+    store["five_hour"] = [{"observed_at": 1.0, "used_pct": 5.0, "resets_at": 100.0,
+                           "session_id": "s"}]
+    predict.save_projection_store(store, transcript_path=str(personal))
+    assert predict.load_projection_store(transcript_path=str(personal))["five_hour"]
+    assert predict.load_projection_store(transcript_path=str(work))["five_hour"] == []
