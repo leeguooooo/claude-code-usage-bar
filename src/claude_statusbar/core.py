@@ -1464,6 +1464,7 @@ def main(json_output: bool = False,
                     session_id=stdin_data.get('session_id') or None,
                     # parse_stdin_data flattens stdin's model.id to 'model_id'
                     model=stdin_data.get('model_id') or None,
+                    transcript_path=stdin_data.get('transcript_path') or None,
                 )
             except Exception:
                 pass

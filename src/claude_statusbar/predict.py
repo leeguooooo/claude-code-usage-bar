@@ -69,17 +69,46 @@ _LATEST_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "
 # a raw regex scan is ~0.6ms and is memoized on (mtime_ns, size), so renders
 # normally pay only a stat()). Unknown account (no file / API-key users) falls
 # back to the legacy unsuffixed paths — pre-switch behaviour, unchanged.
-_CLAUDE_JSON_PATH = Path(os.path.expanduser("~")) / ".claude.json"
+# CLAUDE_CONFIG_DIR gives a profile its own login under e.g. ~/.claude-work, so
+# ~/.claude.json is not every session's identity file: two profiles both
+# resolved to the default account and shared one bucket.
+
+
+def _default_claude_json_path() -> Path:
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(os.path.expanduser(env)) if env else Path(os.path.expanduser("~"))
+    return base / ".claude.json"
+
+
+_CLAUDE_JSON_PATH = _default_claude_json_path()
 _ACCOUNT_CACHE: Dict[str, Any] = {"sig": None, "id": None}
 
 
-def _read_account_id() -> Optional[str]:
+def _config_dir_from_transcript(transcript_path) -> Optional[Path]:
+    """The daemon renders many sessions in ONE process, so its environment names
+    the daemon's profile, not the session's. Transcripts live at
+    <config dir>/projects/<slug>/<id>.jsonl, so the payload carries it."""
+    if not transcript_path:
+        return None
+    parents = Path(transcript_path).parents
+    if len(parents) < 3 or parents[1].name != "projects":
+        return None
+    return parents[2]
+
+
+def _claude_json_path(transcript_path=None) -> Path:
+    cfg = _config_dir_from_transcript(transcript_path)
+    return (cfg / ".claude.json") if cfg is not None else _CLAUDE_JSON_PATH
+
+
+def _read_account_id(transcript_path=None) -> Optional[str]:
+    path = _claude_json_path(transcript_path)
     try:
-        st = _CLAUDE_JSON_PATH.stat()
-        sig = (st.st_mtime_ns, st.st_size)
+        st = path.stat()
+        sig = (str(path), st.st_mtime_ns, st.st_size)
         if _ACCOUNT_CACHE["sig"] == sig:
             return _ACCOUNT_CACHE["id"]
-        data = _CLAUDE_JSON_PATH.read_bytes()
+        data = path.read_bytes()
     except OSError:
         return None
     import re
@@ -94,26 +123,27 @@ def _read_account_id() -> Optional[str]:
     return aid
 
 
-def account_id() -> Optional[str]:
-    """Uuid of the currently logged-in Claude account, or None if undetectable."""
-    return _read_account_id()
+def account_id(transcript_path=None) -> Optional[str]:
+    """Uuid of the account logged in to the config dir this session uses, or
+    None if undetectable."""
+    return _read_account_id(transcript_path)
 
 
-def _account_path(base: Path) -> Path:
+def _account_path(base: Path, transcript_path=None) -> Path:
     """Per-account variant of a shared-store path (`rate_latest.<uuid12>.json`).
     Unknown account → the legacy unsuffixed path."""
-    aid = account_id()
+    aid = account_id(transcript_path)
     if not aid:
         return base
     return base.with_name(f"{base.stem}.{aid[:12]}{base.suffix}")
 
 
-def _latest_path() -> Path:
-    return _account_path(_LATEST_PATH)
+def _latest_path(transcript_path=None) -> Path:
+    return _account_path(_LATEST_PATH, transcript_path)
 
 
-def _projection_path() -> Path:
-    return _account_path(_PROJECTION_PATH)
+def _projection_path(transcript_path=None) -> Path:
+    return _account_path(_PROJECTION_PATH, transcript_path)
 
 MAX_PROJECTION_SAMPLES = 5000
 MAX_PROJECTION_SNAPSHOTS = 1000
@@ -347,7 +377,8 @@ def regime_changed_at(path=None):
 
 
 def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=None,
-                      session_id=None, record=True, model=None):
+                      session_id=None, record=True, model=None,
+                      transcript_path=None):
     """Merge this session's reading into the shared store and return the
     freshest (u5, r5, u7, r7) FOR THIS SESSION'S WINDOWS.
 
@@ -372,7 +403,7 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
     unchanged: monotonic up, equal readings refresh the grace clock, lower
     readings accepted as an official re-baseline once unconfirmed for
     DOWNGRADE_GRACE_S. Never raises — on any error returns the inputs."""
-    p = Path(path) if path is not None else _latest_path()
+    p = Path(path) if path is not None else _latest_path(transcript_path)
     try:
         if now is None:
             import time as _t
