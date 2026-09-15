@@ -181,14 +181,21 @@ def test_default_path_honours_config_dir_env(tmp_path, monkeypatch):
         Path(os.path.expanduser("~")) / ".claude.json"
 
 
-def test_unrecognised_transcript_layout_is_ignored(tmp_path, monkeypatch):
-    """A path that isn't <config>/projects/<slug>/<id>.jsonl must not be
-    mistaken for a config dir — fall back rather than key by a wrong uuid."""
+def test_unplaceable_transcript_claims_no_account(tmp_path, monkeypatch):
+    """A path that isn't <config>/projects/<slug>/<id>.jsonl leaves the account
+    unknown. Falling back to the ambient profile would write this session into
+    a real account's store — the assumption that caused the shared bucket. The
+    legacy unsuffixed store is the existing home for an unknown account."""
     monkeypatch.setattr(predict, "_ACCOUNT_CACHE", {"sig": None, "id": None})
     monkeypatch.setattr(predict, "_CLAUDE_JSON_PATH",
                         _fake_claude_json(tmp_path, "cccccccc-1111-2222-3333-444455556666"))
-    assert predict._read_account_id("/var/log/elsewhere/sess.jsonl") == \
-        "cccccccc-1111-2222-3333-444455556666"
+    monkeypatch.setattr(predict, "account_id", predict._read_account_id)
+    assert predict._read_account_id("/var/log/elsewhere/sess.jsonl") is None
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "rate_latest.json")
+    assert predict._latest_path("/var/log/elsewhere/sess.jsonl") == \
+        tmp_path / "rate_latest.json"
+    # no payload at all still means "this machine's default profile"
+    assert predict._read_account_id() == "cccccccc-1111-2222-3333-444455556666"
 
 
 def test_two_profiles_do_not_share_projection_history(tmp_path, monkeypatch):

@@ -96,13 +96,21 @@ def _config_dir_from_transcript(transcript_path) -> Optional[Path]:
     return parents[2]
 
 
-def _claude_json_path(transcript_path=None) -> Path:
+def _claude_json_path(transcript_path=None) -> Optional[Path]:
+    """None when a payload named a transcript we cannot place: guessing the
+    ambient profile there is the assumption that caused the shared bucket, so
+    an unplaceable session goes to the legacy unsuffixed store instead of
+    another account's."""
     cfg = _config_dir_from_transcript(transcript_path)
-    return (cfg / ".claude.json") if cfg is not None else _CLAUDE_JSON_PATH
+    if cfg is not None:
+        return cfg / ".claude.json"
+    return None if transcript_path else _CLAUDE_JSON_PATH
 
 
 def _read_account_id(transcript_path=None) -> Optional[str]:
     path = _claude_json_path(transcript_path)
+    if path is None:
+        return None
     try:
         st = path.stat()
         sig = (str(path), st.st_mtime_ns, st.st_size)
