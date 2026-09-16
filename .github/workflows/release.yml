@@ -11,10 +11,12 @@ name: Release
 # version is a no-op rather than a duplicate release.
 
 on:
+  # Every push to main, not just ones touching pyproject.toml: the plan job is
+  # a checkout and one script, and running it always means a release that died
+  # half-way (tag cut, upload failed) retries on the next push instead of
+  # needing someone to notice. The tag check is what decides, not the paths.
   push:
     branches: [main]
-    paths:
-      - pyproject.toml
   workflow_dispatch:
     inputs:
       version:
@@ -136,7 +138,9 @@ jobs:
     needs: [plan, github-release]
     if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
-    environment: pypi
+    # No `environment:` — a trusted publisher configured WITHOUT an environment
+    # name must not find one here, or PyPI rejects the upload. Add it on both
+    # sides together if you want required reviewers on releases.
     permissions:
       contents: read
       id-token: write   # trusted publishing (OIDC) — no token in secrets
