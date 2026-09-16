@@ -3,17 +3,31 @@ name: Release binaries
 # Builds the standalone onedir `cs` bundle for each platform and attaches it to
 # the GitHub Release, so users can `curl … install.sh | bash` with no Python/pip.
 #
-# Fires when a Release is published (the existing per-tag release flow), and can
-# be run manually against an existing tag via the Actions tab.
+# Fires when a Release is published (the existing per-tag release flow), can be
+# run manually against an existing tag via the Actions tab, and is called by
+# release.yml — a release created with GITHUB_TOKEN does not fire
+# `release: published`, so the automated flow has to call this workflow
+# directly rather than wait for an event that never arrives.
 
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: "Existing tag to build + upload assets for (e.g. v3.29.12)"
+        required: true
+        type: string
+      draft:
+        description: "Keep the release private until all assets pass validation"
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       tag:
         description: "Existing tag to build + upload assets for (e.g. v3.29.12)"
         required: true
+        type: string
       draft:
         description: "Keep the release private until all assets pass validation"
         type: boolean
@@ -29,8 +43,11 @@ concurrency:
 jobs:
   build:
     # Publishing a fully-built draft should not rebuild/replace live assets.
+    # `inputs.tag` is set for workflow_dispatch and workflow_call alike, and
+    # empty on the release event — github.event_name would say `push` here when
+    # release.yml calls us, since a called workflow reports the CALLER's event.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      inputs.tag != '' ||
       !contains(github.event.release.assets.*.name, 'cs-darwin-arm64.tar.gz') ||
       !contains(github.event.release.assets.*.name, 'cs-darwin-arm64.tar.gz.sha256') ||
       !contains(github.event.release.assets.*.name, 'cs-linux-x86_64.tar.gz') ||

@@ -94,23 +94,32 @@ go deeper if you have access.
 
 ## Releasing (maintainers)
 
-The full release flow lives in
-`memory/publish_workflow.md` (private). Sketched here:
+**The version bump is the release.** Land a commit on `main` that changes
+`version` in `pyproject.toml` and `.github/workflows/release.yml` does the
+rest: cuts the tag, publishes the GitHub Release with this version's CHANGELOG
+section as its notes, builds and attaches the platform binaries, and uploads
+the wheel to PyPI.
+
+So a release is an ordinary PR:
 
 ```bash
-# 1. bump pyproject.toml + .claude-plugin/plugin.json to vX.Y.Z
-# 2. update CHANGELOG.md
-# 3. commit + tag
-git add -A && git commit -m "release: vX.Y.Z — ..."
-git tag vX.Y.Z -m "vX.Y.Z — ..."
-git push origin main && git push origin vX.Y.Z
-
-# 4. build + PyPI upload (uv publish doesn't read ~/.pypirc; use twine)
-rm -rf dist/ && uv build
-twine upload dist/claude_statusbar-X.Y.Z*
-
-# 5. sync the marketplace entry in leeguooooo/plugins
+# 1. bump the version in pyproject.toml, .claude-plugin/plugin.json and
+#    .claude-plugin/marketplace.json (all three must agree — the workflow
+#    refuses to release on drift)
+# 2. add the vX.Y.Z section to CHANGELOG.md — it becomes the release notes,
+#    and its bold one-liner becomes the release title
+# 3. open a PR as usual, merge it
+python scripts/release_meta.py check   # same gate the workflow runs
 ```
+
+Re-running is safe: once the tag exists the workflow skips everything, so a
+re-push of `main` cannot cut a second release. To release without a new bump
+(a re-run after a failed upload, say), use **Actions → Release → Run workflow**
+and give it the version.
+
+Still manual: syncing the marketplace entry in `leeguooooo/plugins`.
+`./publish.sh` remains for a hand-rolled PyPI upload, but the workflow is the
+normal path.
 
 ## Reporting bugs
 
