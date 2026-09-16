@@ -9,7 +9,11 @@
 - Install for development (editable): `python -m pip install -e .`
 - Run locally: `claude-statusbar` (or `python -m claude_statusbar.cli --version` to verify wiring).
 - Build distribution: `python -m build` (requires `build`/`wheel`).
-- Publish to PyPI: `./publish.sh` (expects `PYPI_API_TOKEN` or `~/.pypirc`; offers TestPyPI first).
+- Release: bump the version in `pyproject.toml` (plus both `.claude-plugin`
+  manifests) and add the CHANGELOG section — merging that to `main` triggers
+  `.github/workflows/release.yml`, which tags, releases, builds binaries and
+  uploads to PyPI. `./publish.sh` is the manual fallback (expects
+  `PYPI_API_TOKEN` or `~/.pypirc`; offers TestPyPI first).
 - Install optional dependency for richer data: `python -m claude_statusbar.cli --install-deps` then follow prompts for `claude-monitor`.
 
 ## Coding Style & Naming Conventions

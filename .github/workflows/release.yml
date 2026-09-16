@@ -1,0 +1,169 @@
+name: Release
+
+# The version bump IS the release. Land a commit on main that changes the
+# version in pyproject.toml (the way every `fix(...)，并发布 3.4x.y` commit
+# already does) and this cuts the tag, publishes the GitHub Release with the
+# CHANGELOG section as its notes, attaches the platform binaries and uploads
+# the wheel to PyPI.
+#
+# Re-runnable by design: the plan job skips everything when the tag already
+# exists, so a re-push of main or a manual run against an already-released
+# version is a no-op rather than a duplicate release.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (defaults to pyproject.toml, e.g. 3.43.2)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      title: ${{ steps.plan.outputs.title }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags, so an already-released version is detectable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Decide
+        id: plan
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${REQUESTED:-$(python scripts/release_meta.py version)}"
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${tag} already exists — nothing to release."
+            exit 0
+          fi
+
+          # Fail loudly rather than shipping a release whose plugin manifests
+          # or notes disagree with the wheel.
+          python scripts/release_meta.py check "${version}"
+          {
+            echo "release=true"
+            echo "title=$(python scripts/release_meta.py title "${version}")"
+          } >> "$GITHUB_OUTPUT"
+
+  tests:
+    name: Tests
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package and test dependencies
+        run: |
+          pip install -e .
+          pip install pytest
+      # main is protected by the same suite in ci.yml, but a release is the one
+      # place where "it passed on the PR" is not good enough: the tag is public
+      # and PyPI uploads are immutable.
+      - name: Run tests
+        run: PYTHONPATH=src pytest tests/ -q
+
+  github-release:
+    name: GitHub Release
+    needs: [plan, tests]
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # creates the tag and the release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Render release notes
+        run: python scripts/release_meta.py notes "${{ needs.plan.outputs.version }}" > release-notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.plan.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.plan.outputs.title }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+
+  binaries:
+    name: Binaries
+    needs: [plan, github-release]
+    if: needs.plan.outputs.release == 'true'
+    # Called, not triggered: a release created with GITHUB_TOKEN does not fire
+    # `release: published`, so waiting for that event would hang forever.
+    uses: ./.github/workflows/release-binaries.yml
+    permissions:
+      contents: write
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+
+  pypi:
+    name: PyPI
+    needs: [plan, github-release]
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write   # trusted publishing (OIDC) — no token in secrets
+    env:
+      HAS_TOKEN: ${{ secrets.PYPI_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      # Trusted publishing is the destination; the token path keeps the
+      # workflow working until the PyPI publisher is configured.
+      - name: Publish (trusted publishing)
+        if: env.HAS_TOKEN != 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish (API token)
+        if: env.HAS_TOKEN == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
