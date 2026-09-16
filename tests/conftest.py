@@ -17,7 +17,7 @@ def _isolate_rate_latest(tmp_path, monkeypatch):
         # account to "unknown" so tests get the exact paths they monkeypatch,
         # independent of the developer's real login. Account-switch tests
         # override this stub locally.
-        monkeypatch.setattr(predict, "account_id", lambda: None)
+        monkeypatch.setattr(predict, "account_id", lambda *a, **k: None)
     except Exception:
         pass
 

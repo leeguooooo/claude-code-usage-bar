@@ -69,17 +69,54 @@ _LATEST_PATH = Path(os.path.expanduser("~")) / ".cache" / "claude-statusbar" / "
 # a raw regex scan is ~0.6ms and is memoized on (mtime_ns, size), so renders
 # normally pay only a stat()). Unknown account (no file / API-key users) falls
 # back to the legacy unsuffixed paths — pre-switch behaviour, unchanged.
-_CLAUDE_JSON_PATH = Path(os.path.expanduser("~")) / ".claude.json"
+# CLAUDE_CONFIG_DIR gives a profile its own login under e.g. ~/.claude-work, so
+# ~/.claude.json is not every session's identity file: two profiles both
+# resolved to the default account and shared one bucket.
+
+
+def _default_claude_json_path() -> Path:
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = Path(os.path.expanduser(env)) if env else Path(os.path.expanduser("~"))
+    return base / ".claude.json"
+
+
+_CLAUDE_JSON_PATH = _default_claude_json_path()
 _ACCOUNT_CACHE: Dict[str, Any] = {"sig": None, "id": None}
 
 
-def _read_account_id() -> Optional[str]:
+def _config_dir_from_transcript(transcript_path) -> Optional[Path]:
+    """The daemon renders many sessions in ONE process, so its environment names
+    the daemon's profile, not the session's. Transcripts live at
+    <config dir>/projects/<slug>/<id>.jsonl, so the payload carries it."""
+    if not transcript_path:
+        return None
+    parents = Path(transcript_path).parents
+    if len(parents) < 3 or parents[1].name != "projects":
+        return None
+    return parents[2]
+
+
+def _claude_json_path(transcript_path=None) -> Optional[Path]:
+    """None when a payload named a transcript we cannot place: guessing the
+    ambient profile there is the assumption that caused the shared bucket, so
+    an unplaceable session goes to the legacy unsuffixed store instead of
+    another account's."""
+    cfg = _config_dir_from_transcript(transcript_path)
+    if cfg is not None:
+        return cfg / ".claude.json"
+    return None if transcript_path else _CLAUDE_JSON_PATH
+
+
+def _read_account_id(transcript_path=None) -> Optional[str]:
+    path = _claude_json_path(transcript_path)
+    if path is None:
+        return None
     try:
-        st = _CLAUDE_JSON_PATH.stat()
-        sig = (st.st_mtime_ns, st.st_size)
+        st = path.stat()
+        sig = (str(path), st.st_mtime_ns, st.st_size)
         if _ACCOUNT_CACHE["sig"] == sig:
             return _ACCOUNT_CACHE["id"]
-        data = _CLAUDE_JSON_PATH.read_bytes()
+        data = path.read_bytes()
     except OSError:
         return None
     import re
@@ -94,26 +131,27 @@ def _read_account_id() -> Optional[str]:
     return aid
 
 
-def account_id() -> Optional[str]:
-    """Uuid of the currently logged-in Claude account, or None if undetectable."""
-    return _read_account_id()
+def account_id(transcript_path=None) -> Optional[str]:
+    """Uuid of the account logged in to the config dir this session uses, or
+    None if undetectable."""
+    return _read_account_id(transcript_path)
 
 
-def _account_path(base: Path) -> Path:
+def _account_path(base: Path, transcript_path=None) -> Path:
     """Per-account variant of a shared-store path (`rate_latest.<uuid12>.json`).
     Unknown account → the legacy unsuffixed path."""
-    aid = account_id()
+    aid = account_id(transcript_path)
     if not aid:
         return base
     return base.with_name(f"{base.stem}.{aid[:12]}{base.suffix}")
 
 
-def _latest_path() -> Path:
-    return _account_path(_LATEST_PATH)
+def _latest_path(transcript_path=None) -> Path:
+    return _account_path(_LATEST_PATH, transcript_path)
 
 
-def _projection_path() -> Path:
-    return _account_path(_PROJECTION_PATH)
+def _projection_path(transcript_path=None) -> Path:
+    return _account_path(_PROJECTION_PATH, transcript_path)
 
 MAX_PROJECTION_SAMPLES = 5000
 MAX_PROJECTION_SNAPSHOTS = 1000
@@ -335,10 +373,10 @@ def quota_cache_status(now=None, path=None):
     return ("fresh" if plausible else "stale", age)
 
 
-def regime_changed_at(path=None):
+def regime_changed_at(path=None, transcript_path=None):
     """Timestamp of the last burn-rate regime boundary (model switch or
     novel-model fleet join), or None. Never raises."""
-    p = Path(path) if path is not None else _latest_path()
+    p = Path(path) if path is not None else _latest_path(transcript_path)
     try:
         store = json.loads(p.read_text(encoding="utf-8"))
         return _coerce((store.get("regime") or {}).get("changed_at"))
@@ -347,7 +385,8 @@ def regime_changed_at(path=None):
 
 
 def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=None,
-                      session_id=None, record=True, model=None):
+                      session_id=None, record=True, model=None,
+                      transcript_path=None):
     """Merge this session's reading into the shared store and return the
     freshest (u5, r5, u7, r7) FOR THIS SESSION'S WINDOWS.
 
@@ -372,7 +411,7 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
     unchanged: monotonic up, equal readings refresh the grace clock, lower
     readings accepted as an official re-baseline once unconfirmed for
     DOWNGRADE_GRACE_S. Never raises — on any error returns the inputs."""
-    p = Path(path) if path is not None else _latest_path()
+    p = Path(path) if path is not None else _latest_path(transcript_path)
     try:
         if now is None:
             import time as _t
@@ -538,7 +577,8 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
         return used_5h, resets_5h, used_7d, resets_7d
 
 
-def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
+def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float,
+             transcript_path=None):
     """Compute (chip_5h, chip_7d). Reconciles against the shared account-global
     latest reading first (so all windows agree), then projects. Never raises."""
     try:
@@ -546,7 +586,8 @@ def forecast(used_5h, resets_5h, used_7d, resets_7d, now: float):
         # recording reconcile — persisting this echo would re-confirm the
         # stored reading every render and freeze the downgrade grace clock.
         u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d,
-                                           now=now, record=False)
+                                           now=now, record=False,
+                                           transcript_path=transcript_path)
         c5 = forecast_chip("five_hour", u5, r5, now)
         c7 = forecast_chip("seven_day", u7, r7, now)
         return c5, c7
@@ -565,8 +606,8 @@ def empty_projection_store() -> Dict[str, Any]:
     }
 
 
-def load_projection_store(path=None) -> Dict[str, Any]:
-    p = Path(path) if path is not None else _projection_path()
+def load_projection_store(path=None, transcript_path=None) -> Dict[str, Any]:
+    p = Path(path) if path is not None else _projection_path(transcript_path)
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -590,8 +631,9 @@ def load_projection_store(path=None) -> Dict[str, Any]:
     return store
 
 
-def save_projection_store(store: Dict[str, Any], path=None) -> None:
-    p = Path(path) if path is not None else _projection_path()
+def save_projection_store(store: Dict[str, Any], path=None,
+                          transcript_path=None) -> None:
+    p = Path(path) if path is not None else _projection_path(transcript_path)
     from .cache import atomic_write_text
     atomic_write_text(p, json.dumps(store, separators=(",", ":")))
 
@@ -1078,13 +1120,14 @@ def _depletion_eta_seconds(used: float, ttr: float, raw_unclamped: float):
     return eta if eta < ttr else None
 
 
-def _projection_result_key(u5, r5, u7, r7) -> Optional[Tuple[str, str, float, float, float, float]]:
+def _projection_result_key(u5, r5, u7, r7,
+                           transcript_path=None) -> Optional[Tuple[str, str, float, float, float, float]]:
     try:
         return (
             # account-suffixed paths, so an account switch (or a monkeypatched
             # path in tests) invalidates the 1s result cache by key mismatch
-            str(_projection_path()),
-            str(_latest_path()),
+            str(_projection_path(transcript_path)),
+            str(_latest_path(transcript_path)),
             float(u5),
             float(r5),
             float(u7),
@@ -1163,13 +1206,15 @@ def _projection_for_window(store: Dict[str, Any], window: str, used_pct, resets_
     return chip
 
 
-def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = ""):
+def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: str = "",
+               transcript_path=None):
     try:
         # record=False — same echo hazard as forecast(); see reconcile_account.
         u5, r5, u7, r7 = reconcile_account(used_5h, resets_5h, used_7d, resets_7d,
-                                           now=now, record=False)
+                                           now=now, record=False,
+                                           transcript_path=transcript_path)
         ts = float(now)
-        key = _projection_result_key(u5, r5, u7, r7)
+        key = _projection_result_key(u5, r5, u7, r7, transcript_path)
         global _PROJECTION_RESULT_CACHE
         if key is not None and isinstance(_PROJECTION_RESULT_CACHE, dict):
             cached_at = _coerce(_PROJECTION_RESULT_CACHE.get("observed_at"))
@@ -1181,13 +1226,13 @@ def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: s
                 result = _PROJECTION_RESULT_CACHE.get("result")
                 if isinstance(result, tuple) and len(result) == 2:
                     return result
-        store = load_projection_store()
-        since = regime_changed_at()
+        store = load_projection_store(transcript_path=transcript_path)
+        since = regime_changed_at(transcript_path=transcript_path)
         p5 = _projection_for_window(store, "five_hour", u5, r5, now, session_id,
                                     since=since)
         p7 = _projection_for_window(store, "seven_day", u7, r7, now, session_id,
                                     since=since)
-        save_projection_store(store)
+        save_projection_store(store, transcript_path=transcript_path)
         result = (p5, p7)
         if key is not None:
             _PROJECTION_RESULT_CACHE = {

@@ -1464,6 +1464,7 @@ def main(json_output: bool = False,
                     session_id=stdin_data.get('session_id') or None,
                     # parse_stdin_data flattens stdin's model.id to 'model_id'
                     model=stdin_data.get('model_id') or None,
+                    transcript_path=stdin_data.get('transcript_path') or None,
                 )
             except Exception:
                 pass
@@ -1536,6 +1537,7 @@ def main(json_output: bool = False,
                             resets_7d=resets_at_7d,
                             now=_t.time(),
                             session_id=stdin_data.get("session_id", ""),
+                            transcript_path=stdin_data.get('transcript_path') or None,
                         )
                         projection_kwargs = {"projection_5h": p5 or "", "projection_7d": p7 or ""}
                     except Exception:
@@ -1552,6 +1554,7 @@ def main(json_output: bool = False,
                             used_7d=weekly_pct,
                             resets_7d=resets_at_7d,
                             now=_t.time(),
+                            transcript_path=stdin_data.get('transcript_path') or None,
                         )
                         forecast_kwargs = {"forecast_5h": f5 or "", "forecast_7d": f7 or ""}
                     except Exception:
