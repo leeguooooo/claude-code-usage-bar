@@ -9,6 +9,28 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.2 — 2026-09-16
+
+**Two Claude Code profiles no longer share one usage bucket.**
+
+- A second profile launched with `CLAUDE_CONFIG_DIR` has its own login, but the
+  account uuid was always read from `~/.claude.json`, so both profiles resolved
+  to the default account and shared one `rate_latest` bucket — whichever session
+  rendered last set the 5h/7d figures for both bars. The config dir now comes
+  from the session's `transcript_path` (which is also correct inside the daemon,
+  where one process renders many sessions), and is carried through the
+  reconcile, forecast and projection stores plus the 1s result cache.
+  Thanks [@kossolax](https://github.com/kossolax) for the report and the fix
+  ([#54](https://github.com/leeguooooo/claude-code-usage-bar/issues/54),
+  [#55](https://github.com/leeguooooo/claude-code-usage-bar/pull/55)).
+- Follow-up: the default profile keeps its transcripts in `~/.claude/` but its
+  login *beside* that dir at `~/.claude.json`, unlike a `CLAUDE_CONFIG_DIR`
+  profile which keeps both inside. The login is now looked up in both places, so
+  ordinary single-profile users keep their per-account store instead of falling
+  back to the legacy shared one.
+
+---
+
 ## v3.43.1 — 2026-09-13
 
 **The ocs address gets its own line.**

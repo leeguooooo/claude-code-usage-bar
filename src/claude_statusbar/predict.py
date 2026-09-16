@@ -103,7 +103,18 @@ def _claude_json_path(transcript_path=None) -> Optional[Path]:
     another account's."""
     cfg = _config_dir_from_transcript(transcript_path)
     if cfg is not None:
-        return cfg / ".claude.json"
+        # The two layouts are NOT the same shape. A CLAUDE_CONFIG_DIR profile
+        # keeps its login inside the dir (<dir>/.claude.json), but the default
+        # profile keeps transcripts in ~/.claude/ and its login BESIDE it, at
+        # ~/.claude.json — so deriving <dir>/.claude.json alone leaves every
+        # ordinary single-profile user accountless, back in the legacy bucket
+        # the per-account keying exists to avoid (and split from the
+        # transcript-less collectors, which still resolve the uuid).
+        inside = cfg / ".claude.json"
+        if inside.exists():
+            return inside
+        beside = cfg.with_name(cfg.name + ".json")
+        return beside if beside.exists() else inside
     return None if transcript_path else _CLAUDE_JSON_PATH
 
 

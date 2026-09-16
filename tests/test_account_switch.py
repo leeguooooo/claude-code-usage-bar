@@ -222,3 +222,31 @@ def test_two_profiles_do_not_share_projection_history(tmp_path, monkeypatch):
     predict.save_projection_store(store, transcript_path=str(personal))
     assert predict.load_projection_store(transcript_path=str(personal))["five_hour"]
     assert predict.load_projection_store(transcript_path=str(work))["five_hour"] == []
+
+
+def test_default_profile_login_sits_beside_its_config_dir(tmp_path, monkeypatch):
+    """The two layouts differ: a CLAUDE_CONFIG_DIR profile keeps its login
+    INSIDE the dir, but the default profile keeps transcripts in ~/.claude/ and
+    its login at ~/.claude.json, BESIDE it. Deriving <config dir>/.claude.json
+    alone left every ordinary user accountless and back in the legacy bucket —
+    while their transcript-less background collectors still resolved the uuid
+    and wrote to the suffixed store, splitting one account across two files."""
+    uuid = "dddddddd-1111-2222-3333-444455556666"
+    (tmp_path / ".claude.json").write_text(json.dumps({
+        "oauthAccount": {"accountUuid": uuid, "emailAddress": "a@b.c"},
+    }))
+    transcript = tmp_path / ".claude" / "projects" / "-home-u-proj" / "sess.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text("")
+    monkeypatch.setattr(predict, "_ACCOUNT_CACHE", {"sig": None, "id": None})
+    monkeypatch.setattr(predict, "_CLAUDE_JSON_PATH", tmp_path / ".claude.json")
+    monkeypatch.setattr(predict, "account_id", predict._read_account_id)
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "rate_latest.json")
+
+    assert predict._read_account_id(str(transcript)) == uuid
+    # the session and the transcript-less collectors agree on one store
+    assert predict._latest_path(str(transcript)) == predict._latest_path()
+
+    # a config-dir profile still wins with its own in-dir login
+    _, work = _profile(tmp_path, ".claude-work", "bbbbbbbb-1111-2222-3333-444455556666")
+    assert predict._read_account_id(str(work)) == "bbbbbbbb-1111-2222-3333-444455556666"
