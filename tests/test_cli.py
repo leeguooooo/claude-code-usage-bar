@@ -196,3 +196,19 @@ def test_bare_project_flag_requires_setup(monkeypatch, capsys):
     assert exc.value.code == 2
     err = capsys.readouterr().err
     assert "--project" in err and "--setup" in err
+
+
+def test_windows_streams_switch_to_utf8(monkeypatch):
+    # A Windows pipe defaults to cp1252, which can't encode the bar's glyphs.
+    import io
+
+    streams = [io.TextIOWrapper(io.BytesIO(), encoding="cp1252") for _ in range(3)]
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(sys, "stdin", streams[0])
+    monkeypatch.setattr(sys, "stdout", streams[1])
+    monkeypatch.setattr(sys, "stderr", streams[2])
+    monkeypatch.setattr(sys, "argv", ["cs", "--version"])
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert all(s.encoding == "utf-8" for s in streams)
+    sys.stdout.write("⏰")  # would raise UnicodeEncodeError under cp1252

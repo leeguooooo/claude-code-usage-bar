@@ -321,6 +321,14 @@ def _run_hud_subcommand(rest):
 
 def main():
     """Main CLI entry point"""
+    # On Windows a piped stdio stream uses the ANSI code page (cp1252), which
+    # can't encode the bar's glyphs. Claude Code sends and reads UTF-8.
+    if sys.platform == "win32":
+        for stream in (sys.stdin, sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass
     # Render fast-path: `cs render` is what Claude Code calls 60×/min when
     # the user has switched to daemon mode (`cs setup --fast`). It must
     # avoid heavy imports — argparse + the rest of the CLI only loads on
