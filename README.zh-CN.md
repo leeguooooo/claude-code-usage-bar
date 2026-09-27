@@ -53,6 +53,12 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/ma
 
 <sub>谨慎的话，先下下来读一遍，脚本开头写清了它会碰哪些东西。没有预编译二进制的平台会自动回退到 pip。</sub>
 
+**Windows**（PowerShell，没有 uv 会自动装上，不需要 Python，也不需要管理员权限）：
+
+```powershell
+irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 | iex
+```
+
 习惯 pip / uv，或者要装桌面 HUD？那就装 Python 包：
 
 ```bash
