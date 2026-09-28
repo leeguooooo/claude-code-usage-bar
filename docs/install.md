@@ -37,8 +37,9 @@ is **not** in the binary — it needs PyObjC; install it via the pip extra below
 irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 | iex
 ```
 
-[`install.ps1`](../install.ps1) installs [uv](https://docs.astral.sh/uv/) if it's
-missing (Astral's official installer, no admin), runs `uv tool install --upgrade
+[`install.ps1`](../install.ps1) needs [uv](https://docs.astral.sh/uv/) (install it
+with `winget install --id=astral-sh.uv -e`; the script stops with this hint if uv
+is missing and downloads nothing outside this repo and PyPI), runs `uv tool install --upgrade
 claude-statusbar` (uv fetches its own Python), adds the tool directory to your
 user PATH and runs `cs --setup`. Re-run it to upgrade.
 
