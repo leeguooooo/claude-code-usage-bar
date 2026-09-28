@@ -16,8 +16,8 @@ installs it to `~/.local/bin` (no `sudo`; everything under `$HOME`), and runs
 self-contained executable — **no Python, no pip, no dependencies**.
 
 Prebuilt targets: **macOS Apple Silicon (arm64), Linux x86_64**. On any other
-platform (Intel Mac, Linux arm64, Windows) the script automatically falls back
-to the pip installer below.
+platform (Intel Mac, Linux arm64) the script automatically falls back
+to the pip installer below. On Windows, use the PowerShell installer.
 
 Security-conscious? Download and read it first:
 
@@ -30,6 +30,25 @@ bash /tmp/cs.sh
 Update later by re-running the same one-liner. (The binary can't `pip`-upgrade
 itself; `cs upgrade` prints this command for you.) The desktop HUD (`cs hud`)
 is **not** in the binary — it needs PyObjC; install it via the pip extra below.
+
+## Claude Code: Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 | iex
+```
+
+[`install.ps1`](../install.ps1) installs [uv](https://docs.astral.sh/uv/) if it's
+missing (Astral's official installer, no admin), runs `uv tool install --upgrade
+claude-statusbar` (uv fetches its own Python), adds the tool directory to your
+user PATH and runs `cs --setup`. Re-run it to upgrade.
+
+To read it first:
+
+```powershell
+irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 -OutFile cs.ps1
+notepad cs.ps1    # audit it
+powershell -ExecutionPolicy Bypass -File cs.ps1
+```
 
 ## Claude Code: pip / uv (the Python package)
 

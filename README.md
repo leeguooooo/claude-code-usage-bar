@@ -99,6 +99,12 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/ma
 <sub>Security-conscious? Download and read it first — the header lists exactly what it touches.
 On platforms without a prebuilt binary it falls back to pip.</sub>
 
+**Windows** (PowerShell — installs [uv](https://docs.astral.sh/uv/) if needed, no Python or admin required):
+
+```powershell
+irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 | iex
+```
+
 **On macOS this one line does everything** — it wires the terminal statusLine *and*, if the
 Claude desktop app is installed, registers the floating desktop HUD to auto-start on login. The
 macOS binary bundles the HUD, so there's no separate `pip install '[hud]'` and no extra config.
