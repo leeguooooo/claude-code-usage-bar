@@ -9,6 +9,23 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.3 — 2026-09-28
+
+**`cs` works on Windows, with a PowerShell one-liner to install it.**
+
+- Claude Code runs `cs render` with piped stdio, which on Windows defaults to
+  the ANSI code page (cp1252), so every render crashed with
+  `UnicodeEncodeError` on the first glyph. stdin/stdout/stderr are now switched
+  to UTF-8 on Windows; `cs doctor` and non-ASCII paths in the payload work too
+  ([#60](https://github.com/leeguooooo/claude-code-usage-bar/pull/60)).
+- New Windows installer: `irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 | iex`
+  installs uv if missing, installs `claude-statusbar` as a uv tool (no Python or
+  admin needed), puts it on PATH and runs `cs --setup`. Re-run to upgrade
+  ([#61](https://github.com/leeguooooo/claude-code-usage-bar/pull/61)).
+- Thanks [@bpavlina](https://github.com/bpavlina) for both.
+
+---
+
 ## v3.43.2 — 2026-09-16
 
 **Two Claude Code profiles no longer share one usage bucket.**
