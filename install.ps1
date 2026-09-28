@@ -20,5 +20,6 @@
     $env:Path = "$(uv tool dir --bin);$env:Path"
 
     cs --setup
+    if ($LASTEXITCODE) { throw 'cs --setup failed' }
     Write-Host 'Done. Restart Claude Code to see the status bar.'
 }
