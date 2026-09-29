@@ -294,12 +294,16 @@ def get_upgrade_command(
     if channel == "uv":
         uv = _find_tool("uv")
         if uv:
+            # --refresh-package: uv's cached index can lag PyPI for minutes
+            # after a release; without it uv reports "Nothing to upgrade" for
+            # a version PyPI is already serving (seen on Windows, 3.43.7).
+            refresh = ["--refresh-package", DIST_NAME]
             if sys.platform == "win32":
                 # `tool install --upgrade` rebuilds the env and dies deleting
                 # the in-use Scripts\\, half-removed; `tool upgrade` syncs it
                 # in place. See _run_windows_uv_upgrade.
-                return [uv, "tool", "upgrade", DIST_NAME]
-            return [uv, "tool", "install", "--upgrade", DIST_NAME]
+                return [uv, "tool", "upgrade", *refresh, DIST_NAME]
+            return [uv, "tool", "install", "--upgrade", *refresh, DIST_NAME]
 
     if channel == "pipx":
         pipx = _find_tool("pipx")

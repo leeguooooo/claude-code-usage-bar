@@ -32,7 +32,8 @@ def test_get_upgrade_command_prefers_uv(monkeypatch):
     cmd = updater.get_upgrade_command(
         "/Users/test/.local/share/uv/tools/claude-statusbar/bin/python"
     )
-    assert cmd == ["/usr/bin/uv", "tool", "install", "--upgrade", "claude-statusbar"]
+    assert cmd == ["/usr/bin/uv", "tool", "install", "--upgrade",
+                   "--refresh-package", "claude-statusbar", "claude-statusbar"]
 
 
 def test_get_upgrade_command_prefers_pipx(monkeypatch):
@@ -62,7 +63,8 @@ def test_uv_found_in_well_known_dir_when_not_on_path(monkeypatch, tmp_path):
     cmd = updater.get_upgrade_command(
         "/Users/test/.local/share/uv/tools/claude-statusbar/bin/python"
     )
-    assert cmd == [str(fake_uv), "tool", "install", "--upgrade", "claude-statusbar"]
+    assert cmd == [str(fake_uv), "tool", "install", "--upgrade",
+                   "--refresh-package", "claude-statusbar", "claude-statusbar"]
 
 
 def test_uv_channel_without_uv_anywhere_falls_back_to_pip(monkeypatch):
@@ -557,7 +559,8 @@ def test_windows_uv_uses_in_place_tool_upgrade(monkeypatch):
     monkeypatch.setattr(updater, "_find_tool", lambda name: "C:/uv/uv.exe")
     monkeypatch.setattr(updater.sys, "platform", "win32")
     assert updater.get_upgrade_command() == [
-        "C:/uv/uv.exe", "tool", "upgrade", "claude-statusbar"]
+        "C:/uv/uv.exe", "tool", "upgrade",
+        "--refresh-package", "claude-statusbar", "claude-statusbar"]
 
 
 @pytest.fixture
@@ -569,7 +572,8 @@ def winbin(tmp_path, monkeypatch):
     return tmp_path
 
 
-UV_UPGRADE = ["uv", "tool", "upgrade", "claude-statusbar"]
+UV_UPGRADE = ["uv", "tool", "upgrade", "--refresh-package", "claude-statusbar",
+              "claude-statusbar"]
 
 
 def test_windows_uv_upgrade_moves_launchers_aside(winbin, monkeypatch):
