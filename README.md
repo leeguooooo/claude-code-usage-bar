@@ -248,3 +248,7 @@ Every version's changes: **[CHANGELOG.md](CHANGELOG.md)** · [GitHub Releases](h
 <div align="center">
 <sub>MIT © <a href="https://github.com/leeguooooo">leeguooooo</a> · Built for people who live in Claude Code.</sub>
 </div>
+
+## Author
+
+Built by **郭立 (Guo Li / leeguoo)** — [leeguoo.com](https://leeguoo.com/about) · [GitHub](https://github.com/leeguooooo) · [X](https://x.com/leeguooooo) · more tools in the [*-use family](https://github.com/leeguooooo/plugins).

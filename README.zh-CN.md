@@ -189,3 +189,7 @@ PYTHONPATH=src uv run pytest tests/   # 900+ 个测试，约 3 秒
 <div align="center">
 <sub>MIT © <a href="https://github.com/leeguooooo">leeguooooo</a> · 为长在 Claude Code 里的人而做。</sub>
 </div>
+
+## 作者
+
+**郭立（Guo Li / leeguoo）** 开发 —— [leeguoo.com](https://leeguoo.com/about) · [GitHub](https://github.com/leeguooooo) · [X](https://x.com/leeguooooo) · 更多工具见 [*-use 家族](https://github.com/leeguooooo/plugins)。
