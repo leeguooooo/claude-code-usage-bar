@@ -196,6 +196,7 @@ def _refresh_locked(session_id: str, timeout_s: float) -> None:
             proc = subprocess.run(
                 [exe, "whoami", "--json", "--session", session_id],
                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
                 timeout=timeout_s,
             )
             parsed = parse_whoami(proc.stdout) if proc.returncode == 0 else None

@@ -94,7 +94,7 @@ def _refresh_locked(toplevel: str, timeout_s: float) -> None:
             [executable, "-C", toplevel, "--no-optional-locks",
              "status", "--porcelain=v1", "--branch"],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=timeout_s,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):

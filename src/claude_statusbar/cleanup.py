@@ -72,7 +72,7 @@ def _active_mei_dirs(temp_root: Path) -> Optional[set[Path]]:
         proc = subprocess.run(
             ["/usr/sbin/lsof", "-nP", "-Fn"],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=_LSOF_TIMEOUT_S,
             check=False,
         )

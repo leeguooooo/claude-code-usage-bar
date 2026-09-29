@@ -189,7 +189,8 @@ def _listener_argv(pid: Optional[int]) -> Optional[str]:
         import subprocess
         proc = subprocess.run(
             ["ps", "-o", "command=", "-p", str(pid)],
-            capture_output=True, text=True, timeout=0.6,
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=0.6,
         )
         if proc.returncode != 0:
             return None

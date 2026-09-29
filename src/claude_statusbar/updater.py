@@ -288,18 +288,68 @@ _UPGRADE_TIMEOUT_S = 60
 
 
 def _run_upgrade(cmd) -> bool:
-    """Run an upgrade command with a timeout. Returns True on success."""
+    """Run an upgrade command with a timeout. Returns True on success.
+
+    Output is captured as bytes and never decoded on the way in (#66). With
+    ``text=True`` Python decodes in the locale codec — GBK on Chinese
+    Windows — and uv's UTF-8 output killed the reader thread with a
+    UnicodeDecodeError. The exception then made ``subprocess.run`` kill uv
+    mid-install, leaving a tool env whose entry point had no package.
+    """
+    import os
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
             timeout=_UPGRADE_TIMEOUT_S,
+            env=env,
         )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError,
+            ValueError) as e:
         logging.error(f"Upgrade command {cmd!r} failed: {e}")
         return False
+    if result.returncode != 0:
+        err = (result.stderr or b"").decode("utf-8", "replace").strip()
+        logging.error(f"Upgrade command {cmd!r} exited "
+                      f"{result.returncode}: {err[-500:]}")
+    return result.returncode == 0
+
+
+def _entrypoint_healthy() -> Optional[bool]:
+    """Does `cs --version` on PATH still run? None when it can't be asked.
+
+    A failed upgrade can leave the entry point behind with its package gone
+    (#66) — every `cs` then dies with ModuleNotFoundError and the status line
+    vanishes. The exit code is the tell: ``installed_version_on_path`` can't
+    be used here, it would read the traceback's last word as a version.
+    """
+    entry = path_entrypoint()
+    if entry is None:
+        return None
+    try:
+        out = subprocess.run([str(entry), "--version"], capture_output=True,
+                             timeout=15)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return out.returncode == 0
+
+
+def _upgrade_with_repair(cmd) -> Tuple[bool, bool]:
+    """Run `cmd`; if it failed AND broke our install, run it once more.
+
+    Returns (succeeded, left_broken). Only checks the entry point when it is
+    ours — a shadow install's `cs` belongs to someone else's install, and
+    re-running our command can't fix it.
+    """
+    if _run_upgrade(cmd):
+        return True, False
+    if is_shadow_install() or _entrypoint_healthy() is not False:
+        return False, False
+    logging.error("upgrade failed and left `cs` unrunnable; retrying once")
+    if _run_upgrade(cmd) and _entrypoint_healthy() is not False:
+        return True, False
+    return False, _entrypoint_healthy() is False
 
 
 # The installer downloads a ~10-25 MB release asset; the 60s cap that suits a
@@ -355,7 +405,8 @@ def installed_version_on_path() -> Optional[str]:
         return None
     try:
         out = subprocess.run([str(entry), "--version"], capture_output=True,
-                             text=True, timeout=15)
+                             text=True, encoding="utf-8",
+                             errors="replace", timeout=15)
     except (subprocess.TimeoutExpired, OSError):
         return None
     parts = (out.stdout or out.stderr).strip().split()
@@ -384,8 +435,13 @@ def auto_upgrade() -> bool:
             return False
         return installed_version_on_path() == latest
 
-    if _run_upgrade(get_upgrade_command()):
+    ok, broken = _upgrade_with_repair(get_upgrade_command())
+    if ok:
         return True
+    if broken:
+        # The status line is already gone; a pip install into a different
+        # environment won't bring it back. Leave it for `cs upgrade` / manual.
+        return False
 
     pipx = _find_tool("pipx")
     if pipx:
@@ -452,11 +508,18 @@ def upgrade_current_install() -> Tuple[bool, str]:
 
     cmd = get_upgrade_command()
 
-    if _run_upgrade(cmd):
+    ok, broken = _upgrade_with_repair(cmd)
+    if ok:
         refreshed = get_current_version()
         return True, f"Upgraded {DIST_NAME} from v{current} to v{refreshed}"
 
     rendered_cmd = " ".join(cmd)
+    if broken:
+        return False, (
+            f"Upgrade failed and left the install broken — `cs` no longer "
+            f"runs, so the status line is gone.\n"
+            f"Repair it with:\n  {rendered_cmd}"
+        )
     return False, f"Upgrade failed. Run manually: {rendered_cmd}"
 
 

@@ -136,7 +136,7 @@ def _launchctl(*args: str) -> Tuple[int, str, str]:
         p = subprocess.run(
             ["launchctl", *args],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=_SUBPROCESS_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -261,7 +261,7 @@ def _systemctl_user(*args: str) -> Tuple[int, str, str]:
         p = subprocess.run(
             ["systemctl", "--user", *args],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=_SUBPROCESS_TIMEOUT,
         )
     except subprocess.TimeoutExpired:

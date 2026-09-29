@@ -46,7 +46,8 @@ def _token():
         # Token stays on a private pipe, never in argv, logs, or a cache.
         p = subprocess.run(['/usr/bin/security', 'find-generic-password',
                             '-s', 'Claude Code-credentials', '-w'],
-                           capture_output=True, text=True, timeout=2)
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=2)
         if p.returncode:
             return None
         text = p.stdout

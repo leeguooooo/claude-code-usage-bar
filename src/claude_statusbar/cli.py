@@ -252,7 +252,8 @@ def _hud_install():
         encoding="utf-8",
     )
     subprocess.run(["launchctl", "unload", str(plist)], capture_output=True)
-    r = subprocess.run(["launchctl", "load", str(plist)], capture_output=True, text=True)
+    r = subprocess.run(["launchctl", "load", str(plist)], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     if r.returncode != 0:
         print(f"launchctl load failed: {r.stderr.strip()}", file=sys.stderr)
         return 1

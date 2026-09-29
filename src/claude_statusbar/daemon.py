@@ -384,7 +384,7 @@ def _win_process_cmdline(pid: int) -> Optional[str]:
             out = subprocess.run(
                 [exe, "-NoProfile", "-NonInteractive", "-Command", script],
                 capture_output=True,
-                text=True,
+                text=True, errors="replace",  # console code page, not UTF-8
                 timeout=_WIN_CMDLINE_TIMEOUT_S,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
@@ -425,7 +425,7 @@ def _process_is_our_daemon(pid: int) -> bool:
         out = subprocess.run(
             ["ps", "-o", "command=", "-p", str(pid)],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=2.0,
         )
         if out.returncode != 0:

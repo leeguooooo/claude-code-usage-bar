@@ -589,7 +589,7 @@ print("")
                     result = subprocess.run(
                         [claude_python, '-c', code],
                         capture_output=True,
-                        text=True,
+                        text=True, encoding="utf-8", errors="replace",
                         timeout=3
                     )
                     if result.returncode == 0 and result.stdout.strip():

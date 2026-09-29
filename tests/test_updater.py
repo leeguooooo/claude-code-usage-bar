@@ -79,6 +79,7 @@ def test_uv_channel_without_uv_anywhere_falls_back_to_pip(monkeypatch):
 # can never freeze the Claude Code statusLine render.
 # ---------------------------------------------------------------------------
 import subprocess
+import sys
 
 
 def test_run_upgrade_passes_timeout(monkeypatch):
@@ -120,7 +121,7 @@ def test_auto_upgrade_falls_through_to_pip(monkeypatch):
     calls = []
 
     class FakeResult:
-        def __init__(self, rc): self.returncode = rc
+        def __init__(self, rc): self.returncode, self.stderr = rc, b""
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd[0])
@@ -458,3 +459,86 @@ def test_shadow_install_still_detects_foreign_entrypoint(monkeypatch, tmp_path):
     monkeypatch.setattr(updater.sys, "executable", str(venv_bin / "python3"))
 
     assert updater.is_shadow_install() is True
+
+
+# ---------------------------------------------------------------------------
+# #66: GBK Windows — undecodable uv output and a half-installed tool env
+# ---------------------------------------------------------------------------
+
+def test_run_upgrade_survives_output_the_locale_cannot_decode(monkeypatch):
+    # 0x82 is the byte from the issue's traceback: invalid GBK, and invalid
+    # UTF-8 too. Whatever the locale codec, the child's bytes aren't decoded.
+    cmd = [sys.executable, "-c",
+           "import sys; sys.stdout.buffer.write(b'\\x82\\xff ok'); "
+           "sys.stderr.buffer.write(b'\\xe2\\x9c\\x93')"]
+    assert updater._run_upgrade(cmd) is True
+
+
+def test_run_upgrade_forces_utf8_in_the_child(monkeypatch):
+    captured = {}
+
+    class FakeResult:
+        returncode = 0
+
+    def fake_run(cmd, **kwargs):
+        captured.update(kwargs)
+        return FakeResult()
+
+    monkeypatch.setattr(updater.subprocess, "run", fake_run)
+    updater._run_upgrade(["uv", "tool", "install", "--upgrade", "x"])
+    assert "text" not in captured and "encoding" not in captured
+    assert captured["env"]["PYTHONUTF8"] == "1"
+
+
+def _uv_upgrade_setup(monkeypatch, run_results, health):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.43.3")
+    cmd = ["uv", "tool", "install", "--upgrade", "claude-statusbar"]
+    monkeypatch.setattr(updater, "get_upgrade_command", lambda: cmd)
+    runs = []
+    results = iter(run_results)
+    monkeypatch.setattr(updater, "_run_upgrade",
+                        lambda c: runs.append(c) or next(results))
+    health_iter = iter(health)
+    monkeypatch.setattr(updater, "_entrypoint_healthy",
+                        lambda: next(health_iter))
+    return runs
+
+
+def test_failed_upgrade_that_broke_cs_is_retried(monkeypatch):
+    runs = _uv_upgrade_setup(monkeypatch, [False, True], [False, True])
+    ok, msg = updater.upgrade_current_install()
+    assert ok is True
+    assert len(runs) == 2
+
+
+def test_failed_upgrade_that_stays_broken_says_so(monkeypatch):
+    runs = _uv_upgrade_setup(monkeypatch, [False, False], [False, False])
+    ok, msg = updater.upgrade_current_install()
+    assert ok is False
+    assert len(runs) == 2
+    assert "broken" in msg
+    assert "uv tool install --upgrade claude-statusbar" in msg
+
+
+def test_failed_upgrade_with_healthy_cs_is_not_retried(monkeypatch):
+    runs = _uv_upgrade_setup(monkeypatch, [False], [True])
+    ok, msg = updater.upgrade_current_install()
+    assert ok is False
+    assert len(runs) == 1
+    assert "broken" not in msg
+
+
+def test_entrypoint_healthy_reads_exit_code_not_output(monkeypatch, tmp_path):
+    # A broken uv entry prints a ModuleNotFoundError traceback; its last word
+    # must not pass for a version.
+    fake = tmp_path / "cs"
+    fake.write_text(f"#!{sys.executable}\n"
+                    "import sys\n"
+                    "sys.stderr.write(\"ModuleNotFoundError: No module named "
+                    "'claude_statusbar'\\n\")\n"
+                    "sys.exit(1)\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(updater, "path_entrypoint", lambda: fake)
+    assert updater._entrypoint_healthy() is False
