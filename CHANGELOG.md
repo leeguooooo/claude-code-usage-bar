@@ -9,6 +9,18 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.8 — 2026-09-29
+
+**`cs upgrade` sees a new release right away.**
+
+- uv caches the package index, and for a few minutes after a release that
+  cache can miss the new version: uv reported "Nothing to upgrade" while
+  PyPI was already serving 3.43.7. The uv upgrade commands now pass
+  `--refresh-package claude-statusbar`, which refreshes just this package
+  ([#66](https://github.com/leeguooooo/claude-code-usage-bar/issues/66)).
+
+---
+
 ## v3.43.7 — 2026-09-29
 
 **`cs upgrade` works on Windows, and no longer breaks the install.**
