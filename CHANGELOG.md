@@ -9,6 +9,22 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.11 — 2026-09-29
+
+**The daemon comes back after an upgrade.**
+
+- After an upgrade, the render sees the daemon's last output was written by
+  older code and tells that daemon to exit. If the daemon was already
+  dead, for example because it died during the upgrade, nothing ever
+  rewrote that output. So every render took the same branch, and the
+  daemon was never restarted. Without a service manager to restart it
+  (Windows, and Linux without systemd), the status line stayed on the
+  slower inline renders until someone ran `cs daemon start`. The render
+  now starts a new daemon when the old one is already gone. Reproduced
+  and verified on Windows 11.
+
+---
+
 ## v3.43.10 — 2026-09-29
 
 **`cs upgrade` works on Windows again.**
