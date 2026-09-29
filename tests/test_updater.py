@@ -560,8 +560,7 @@ def test_windows_uv_uses_in_place_tool_upgrade(monkeypatch):
     monkeypatch.setattr(updater, "_find_tool", lambda name: "C:/uv/uv.exe")
     monkeypatch.setattr(updater.sys, "platform", "win32")
     assert updater.get_upgrade_command() == [
-        "C:/uv/uv.exe", "tool", "upgrade",
-        "--refresh-package", "claude-statusbar", "claude-statusbar"]
+        "C:/uv/uv.exe", "tool", "upgrade", "claude-statusbar"]
 
 
 @pytest.fixture
@@ -573,8 +572,7 @@ def winbin(tmp_path, monkeypatch):
     return tmp_path
 
 
-UV_UPGRADE = ["uv", "tool", "upgrade", "--refresh-package", "claude-statusbar",
-              "claude-statusbar"]
+UV_UPGRADE = ["uv", "tool", "upgrade", "claude-statusbar"]
 
 
 def test_windows_uv_upgrade_moves_launchers_aside(winbin, monkeypatch):
@@ -735,3 +733,34 @@ def test_background_upgrade_success_still_reported(monkeypatch):
     ok, msg = updater.check_and_upgrade()
     assert ok is True
     assert "Upgraded from v3.43.7 to v3.43.8" in msg
+
+
+def test_windows_uv_command_has_no_refresh_flags(monkeypatch):
+    # `uv tool upgrade` rejects --refresh/--refresh-package (uv 0.12,
+    # "unexpected argument"); 3.43.8-3.43.9 shipped it and every Windows
+    # upgrade failed.
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "detect_install_channel", lambda exe=None: "uv")
+    monkeypatch.setattr(updater, "_find_tool", lambda name: "uv")
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+    assert not any(a.startswith("--refresh") for a in updater.get_upgrade_command())
+
+
+def test_failed_upgrade_shows_what_the_installer_said(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.43.8")
+    monkeypatch.setattr(updater, "_entrypoint_healthy", lambda: True)
+    monkeypatch.setattr(updater, "get_upgrade_command",
+                        lambda: [sys.executable, "-c", "x"])
+
+    class R:
+        returncode = 2
+        stderr = ("error: unexpected argument '--refresh-package' found\n"
+                  "  tip: a similar argument exists: "
+                  "'--prerelease-package'\n").encode()
+
+    monkeypatch.setattr(updater.subprocess, "run", lambda *a, **k: R())
+    ok, msg = updater.upgrade_current_install()
+    assert ok is False
+    assert "unexpected argument '--refresh-package'" in msg

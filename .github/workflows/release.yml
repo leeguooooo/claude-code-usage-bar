@@ -89,6 +89,8 @@ jobs:
         run: |
           pip install -e .
           pip install pytest
+          # the real uv: tests/test_uv_args.py checks our upgrade commands parse
+          pip install uv
       # main is protected by the same suite in ci.yml, but a release is the one
       # place where "it passed on the PR" is not good enough: the tag is public
       # and PyPI uploads are immutable.

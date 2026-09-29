@@ -294,16 +294,17 @@ def get_upgrade_command(
     if channel == "uv":
         uv = _find_tool("uv")
         if uv:
-            # --refresh-package: uv's cached index can lag PyPI for minutes
-            # after a release; without it uv reports "Nothing to upgrade" for
-            # a version PyPI is already serving (seen on Windows, 3.43.7).
-            refresh = ["--refresh-package", DIST_NAME]
             if sys.platform == "win32":
                 # `tool install --upgrade` rebuilds the env and dies deleting
                 # the in-use Scripts\\, half-removed; `tool upgrade` syncs it
-                # in place. See _run_windows_uv_upgrade.
-                return [uv, "tool", "upgrade", *refresh, DIST_NAME]
-            return [uv, "tool", "install", "--upgrade", *refresh, DIST_NAME]
+                # in place. See _run_windows_uv_upgrade. `tool upgrade` has
+                # NO --refresh-package (uv 0.12: "unexpected argument"; the
+                # only match in its --help is --reinstall-package's blurb) —
+                # 3.43.8/3.43.9 shipped it and every Windows upgrade failed.
+                return [uv, "tool", "upgrade", DIST_NAME]
+            # uv's cached index can lag a release; refresh just this package.
+            return [uv, "tool", "install", "--upgrade",
+                    "--refresh-package", DIST_NAME, DIST_NAME]
 
     if channel == "pipx":
         pipx = _find_tool("pipx")
@@ -333,8 +334,15 @@ def _run_upgrade(cmd) -> bool:
     return _run_upgrade_command(cmd)
 
 
+# The tail of the last failed upgrade command's stderr, so `cs upgrade` can
+# show what the installer said instead of "run it by hand to see why".
+_last_upgrade_error = ""
+
+
 def _run_upgrade_command(cmd, log_failure: bool = True) -> bool:
     import os
+    global _last_upgrade_error
+    _last_upgrade_error = ""
     env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     try:
         result = subprocess.run(
@@ -345,12 +353,15 @@ def _run_upgrade_command(cmd, log_failure: bool = True) -> bool:
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError,
             ValueError) as e:
+        _last_upgrade_error = str(e)
         logging.error(f"Upgrade command {cmd!r} failed: {e}")
         return False
-    if result.returncode != 0 and log_failure:
+    if result.returncode != 0:
         err = (result.stderr or b"").decode("utf-8", "replace").strip()
-        logging.error(f"Upgrade command {cmd!r} exited "
-                      f"{result.returncode}: {err[-500:]}")
+        _last_upgrade_error = err[-500:]
+        if log_failure:
+            logging.error(f"Upgrade command {cmd!r} exited "
+                          f"{result.returncode}: {err[-500:]}")
     return result.returncode == 0
 
 
@@ -510,8 +521,8 @@ def _run_windows_uv_upgrade(cmd) -> bool:
         logging.info("uv exited nonzero but the package was upgraded")
         return True
     if not ok:
-        logging.error(f"Upgrade command {cmd!r} failed; run it by hand to "
-                      f"see uv's error")
+        logging.error(f"Upgrade command {cmd!r} failed: "
+                      f"{_last_upgrade_error}")
     return ok
 
 
@@ -599,6 +610,14 @@ def auto_upgrade() -> bool:
     )
 
 
+def _installer_said() -> str:
+    """The last lines of the failed installer's stderr, ready to append."""
+    lines = [ln for ln in _last_upgrade_error.splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    return "\nThe installer said:\n" + "\n".join(f"  {ln}" for ln in lines[-6:])
+
+
 def _not_visible_yet(current: str, latest: str) -> str:
     return (
         f"PyPI lists v{latest}, but the installer doesn't see it yet "
@@ -684,9 +703,10 @@ def upgrade_current_install() -> Tuple[bool, str]:
         return False, (
             f"Upgrade failed and left the install broken — `cs` no longer "
             f"runs, so the status line is gone.\n"
-            f"Repair it with:\n  {rendered_cmd}"
+            f"Repair it with:\n  {rendered_cmd}{_installer_said()}"
         )
-    return False, f"Upgrade failed. Run manually: {rendered_cmd}"
+    said = _installer_said()
+    return False, f"Upgrade failed. Run manually: {rendered_cmd}{said}"
 
 
 def spawn_background_upgrade_check() -> None:

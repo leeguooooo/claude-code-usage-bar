@@ -39,6 +39,8 @@ jobs:
         run: |
           pip install -e .
           pip install pytest
+          # the real uv: tests/test_uv_args.py checks our upgrade commands parse
+          pip install uv
 
       - name: Run tests
         run: pytest -q
