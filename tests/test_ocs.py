@@ -82,6 +82,22 @@ def test_find_ocs_falls_back_to_local_bin(home, monkeypatch):
     assert ocs.find_ocs() == str(p)
 
 
+@pytest.mark.parametrize("where", ["path", "local"])
+def test_find_ocs_windows_exe(home, monkeypatch, where):
+    # Issue #65: on Windows the binary is ocs.exe, never a bare `ocs`.
+    monkeypatch.setattr(ocs.os, "name", "nt")
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    d = home / "bin" if where == "path" else home / ".local" / "bin"
+    d.mkdir(parents=True)
+    (d / "ocs").write_text("#!/bin/sh\n")  # sh shim: not runnable on Windows
+    (d / "ocs").chmod(0o755)
+    assert ocs.find_ocs() is None
+    exe = d / "ocs.exe"
+    exe.write_bytes(b"MZ")
+    exe.chmod(0o755)
+    assert ocs.find_ocs() == str(exe)
+
+
 def test_hidden_without_ocs_and_no_spawn(home, monkeypatch):
     calls = []
     monkeypatch.setattr(ocs, "mark_inflight", lambda sid: calls.append(sid))

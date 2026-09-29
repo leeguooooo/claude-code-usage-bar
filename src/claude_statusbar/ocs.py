@@ -39,17 +39,27 @@ def cache_path_for(session_id: str) -> Path:
     return _cache_root() / f"{h}.json"
 
 
+def _ocs_names() -> list:
+    """Candidate file names. On Windows the binary is ``ocs.exe`` (or a
+    ``.cmd`` shim) — honour PATHEXT like ``shutil.which`` does, and skip a
+    bare ``ocs`` there since CreateProcess can't run an extensionless file."""
+    if os.name != "nt":
+        return ["ocs"]
+    exts = os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD"
+    return ["ocs" + e.lower() for e in exts.split(";") if e]
+
+
 def find_ocs() -> Optional[str]:
     """PATH first, then ~/.local/bin/ocs (the installer's default target,
     which Claude Code's statusLine environment often lacks on PATH)."""
-    for d in os.environ.get("PATH", "").split(os.pathsep):
-        if d:
-            p = os.path.join(d, "ocs")
+    names = _ocs_names()
+    dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+    dirs.append(os.path.join(os.path.expanduser("~"), ".local", "bin"))
+    for d in dirs:
+        for name in names:
+            p = os.path.join(d, name)
             if os.path.isfile(p) and os.access(p, os.X_OK):
                 return p
-    p = os.path.join(os.path.expanduser("~"), ".local", "bin", "ocs")
-    if os.path.isfile(p) and os.access(p, os.X_OK):
-        return p
     return None
 
 
