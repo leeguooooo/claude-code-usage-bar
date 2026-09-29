@@ -9,6 +9,21 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.9 — 2026-09-29
+
+**`cs upgrade` no longer calls itself up to date while a new release is out.**
+
+- For about a minute after a release, the package index uv and pip read
+  from can lag PyPI's JSON API, even with `--refresh-package`. The
+  installer then exits 0 without upgrading, and `cs upgrade` reported
+  "already the latest". It now checks PyPI: if PyPI lists a newer version,
+  `cs upgrade` says the installer doesn't see it yet and to run it again in
+  a minute, and exits non-zero.
+- The background upgrade check no longer reports "Upgraded" when nothing
+  changed.
+
+---
+
 ## v3.43.8 — 2026-09-29
 
 **`cs upgrade` sees a new release right away.**
