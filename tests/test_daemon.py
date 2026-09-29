@@ -189,7 +189,7 @@ def test_thin_client_drift_tick_does_not_burn_spawn_debounce(monkeypatch, tmp_pa
 
     signalled, spawned = [], []
     monkeypatch.setattr(render_thin, "_signal_outdated_daemon",
-                        lambda meta: signalled.append(meta["pid"]))
+                        lambda meta: signalled.append(meta["pid"]) or True)
     monkeypatch.setattr(render_thin, "_spawn_daemon_async",
                         lambda: spawned.append(True))
     monkeypatch.setattr(render_thin, "_fallback_inline", lambda: 0)
@@ -197,6 +197,41 @@ def test_thin_client_drift_tick_does_not_burn_spawn_debounce(monkeypatch, tmp_pa
     assert render_thin.render() == 0
     assert signalled == [12345], "outdated daemon must be told to exit"
     assert spawned == [], "must not spawn while the outdated daemon is still alive"
+
+
+def test_thin_client_respawns_when_outdated_daemon_is_already_gone(
+        monkeypatch, tmp_path: Path):
+    """The daemon that wrote an outdated meta died (in the upgrade, or on an
+    earlier tick's signal). Nothing will rewrite that meta again, so without a
+    spawn here every tick took the drift branch and the daemon never came back:
+    Windows stayed on inline renders after `uv tool upgrade` until someone ran
+    `cs daemon start`."""
+    _setup_session_paths(monkeypatch, tmp_path)
+    sdir = tmp_path / "sessions" / "default"
+    sdir.mkdir(parents=True)
+    (sdir / "rendered.ansi").write_text("old\n", encoding="utf-8")
+    (sdir / "rendered.meta.json").write_text(json.dumps({
+        "generated_at": time.time() - 600,
+        "stale_after_seconds": 5.0,
+        "daemon_started_at": time.time() - 3600,
+        "pid": 12345,
+    }), encoding="utf-8")
+    monkeypatch.setattr(render_thin, "_pkg_mtime", lambda: time.time())
+    monkeypatch.setattr(render_thin, "_signal_outdated_daemon", lambda meta: False)
+    spawned = []
+    monkeypatch.setattr(render_thin, "_spawn_daemon_async",
+                        lambda: spawned.append(True))
+    monkeypatch.setattr(render_thin, "_fallback_inline", lambda: 0)
+
+    assert render_thin.render() == 0
+    assert spawned == [True]
+
+
+def test_signal_outdated_daemon_reports_a_dead_daemon(monkeypatch):
+    import claude_statusbar.daemon as daemon
+    monkeypatch.setattr(daemon, "_process_is_our_daemon", lambda pid: False)
+    assert render_thin._signal_outdated_daemon({"pid": 12345}) is False
+    assert render_thin._signal_outdated_daemon({}) is False
 
 
 def test_thin_client_handles_missing_fields():

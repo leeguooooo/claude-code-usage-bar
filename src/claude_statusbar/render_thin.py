@@ -135,7 +135,7 @@ def _is_outdated_daemon(meta: dict) -> bool:
     return _pkg_mtime() > started
 
 
-def _signal_outdated_daemon(meta: dict) -> None:
+def _signal_outdated_daemon(meta: dict) -> bool:
     """Send SIGTERM to the daemon pid recorded in `meta`. Used after
     `_is_fresh()` returns False due to code drift: the running daemon is
     serving stale renders and won't restart on its own (its pidfile is
@@ -145,18 +145,22 @@ def _signal_outdated_daemon(meta: dict) -> None:
     `meta["pid"]` can be arbitrarily old (a session's meta outlives the daemon
     that wrote it), so the pid may have been recycled onto an unrelated user
     process by now. Verify it is still our daemon before signalling.
+
+    Returns True only when a live daemon was signalled. False means the
+    daemon that wrote this meta is already gone.
     """
     pid = meta.get("pid")
     if not isinstance(pid, int) or pid <= 1:
-        return
+        return False
     try:
         import signal as _signal
         from .daemon import _process_is_our_daemon
         if not _process_is_our_daemon(pid):
-            return
+            return False
         os.kill(pid, _signal.SIGTERM)
+        return True
     except (OSError, ProcessLookupError, PermissionError, ImportError):
-        pass
+        return False
 
 
 # Legacy single-file path: still written for backward compat (old tooling
@@ -593,8 +597,16 @@ def render() -> int:
     # burned the 30s spawn debounce. That left every session inline-rendering
     # for 30s after an upgrade. Skip the spawn and let the next tick (~1s) do
     # it, once the old daemon has dropped its pidfile.
+    #
+    # But if that daemon is already gone — it died in the upgrade, or exited
+    # on a previous tick's signal — nothing will ever rewrite this meta, so
+    # returning here repeats every tick and the daemon never comes back.
+    # Without a service manager to restart it (Windows, Linux without
+    # systemd), the status line stayed on inline renders until someone ran
+    # `cs daemon start`. Spawn a fresh one instead.
     if meta is not None and _is_outdated_daemon(meta):
-        _signal_outdated_daemon(meta)
+        if not _signal_outdated_daemon(meta):
+            _spawn_daemon_async()
         return _inline_or_shed(payload, rendered_path)
 
     # Stale-while-revalidate (issue #49): the daemon fell behind its own
