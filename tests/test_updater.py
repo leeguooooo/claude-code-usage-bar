@@ -498,6 +498,7 @@ def _uv_upgrade_setup(monkeypatch, run_results, health):
     monkeypatch.setattr(updater, "_is_frozen", lambda: False)
     monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
     monkeypatch.setattr(updater, "get_current_version", lambda: "3.43.3")
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: None)  # no network
     cmd = ["uv", "tool", "install", "--upgrade", "claude-statusbar"]
     monkeypatch.setattr(updater, "get_upgrade_command", lambda: cmd)
     runs = []
@@ -684,3 +685,53 @@ def test_launcher_missing_from_receipt_is_still_a_shadow(tmp_path, monkeypatch):
     _uv_env_with_copied_launcher(
         tmp_path, monkeypatch, lambda e: (e.parent / "other.exe").as_posix())
     assert updater.is_shadow_install() is True
+
+
+# The installer's index can lag PyPI's JSON API for a minute after a release:
+# it exits 0 having upgraded nothing. That is "retry shortly", not "latest".
+
+def test_cs_upgrade_says_retry_when_installer_lags_pypi(monkeypatch):
+    runs = _uv_upgrade_setup(monkeypatch, [True], [])
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.43.8")
+    ok, msg = updater.upgrade_current_install()
+    assert ok is False
+    assert "v3.43.8" in msg and "again" in msg
+    assert "already the latest" not in msg
+
+
+def test_cs_upgrade_says_latest_when_pypi_agrees(monkeypatch):
+    _uv_upgrade_setup(monkeypatch, [True], [])
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.43.3")
+    ok, msg = updater.upgrade_current_install()
+    assert ok is True
+    assert "already the latest" in msg
+
+
+def test_cs_upgrade_says_latest_when_pypi_unreachable(monkeypatch):
+    _uv_upgrade_setup(monkeypatch, [True], [])
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: None)
+    ok, msg = updater.upgrade_current_install()
+    assert ok is True
+
+
+def test_background_upgrade_that_changed_nothing_is_not_success(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.43.8")
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.43.7")
+    monkeypatch.setattr(updater, "_cache_latest_version", lambda v: None)
+    monkeypatch.setattr(updater, "auto_upgrade", lambda: True)
+    ok, msg = updater.check_and_upgrade()
+    assert ok is False
+    assert "Upgraded" not in msg
+
+
+def test_background_upgrade_success_still_reported(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.43.8")
+    versions = iter(["3.43.7", "3.43.8"])
+    monkeypatch.setattr(updater, "get_current_version", lambda: next(versions))
+    monkeypatch.setattr(updater, "_cache_latest_version", lambda v: None)
+    monkeypatch.setattr(updater, "auto_upgrade", lambda: True)
+    ok, msg = updater.check_and_upgrade()
+    assert ok is True
+    assert "Upgraded from v3.43.7 to v3.43.8" in msg

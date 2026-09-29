@@ -599,6 +599,14 @@ def auto_upgrade() -> bool:
     )
 
 
+def _not_visible_yet(current: str, latest: str) -> str:
+    return (
+        f"PyPI lists v{latest}, but the installer doesn't see it yet "
+        f"(package index caches lag a release by up to a minute). Still on "
+        f"v{current} — run `cs upgrade` again in a minute."
+    )
+
+
 def upgrade_current_install() -> Tuple[bool, str]:
     """Upgrade the environment that is actually running this CLI."""
     current = get_current_version()
@@ -661,6 +669,13 @@ def upgrade_current_install() -> Tuple[bool, str]:
     if ok:
         refreshed = get_current_version()
         if refreshed == current:
+            # The installer can miss a release PyPI's JSON API already shows:
+            # its index is served from a CDN edge that lags for up to a minute
+            # (seen on Windows, 3.43.8 — even with --refresh-package). Saying
+            # "latest" then is wrong; say what's true and when to retry.
+            latest = resolve_latest_version()
+            if latest and compare_versions(current, latest):
+                return False, _not_visible_yet(current, latest)
             return True, f"{DIST_NAME} v{current} is already the latest."
         return True, f"Upgraded {DIST_NAME} from v{current} to v{refreshed}"
 
@@ -719,6 +734,11 @@ def check_and_upgrade() -> Tuple[bool, str]:
 
     # New version available, try to upgrade
     if auto_upgrade():
+        if not _is_frozen() and get_current_version() == current:
+            # The installer exited 0 without upgrading: it hasn't seen the
+            # release yet. (A frozen upgrade is already verified against
+            # the installed binary; this process's metadata is the old one.)
+            return False, _not_visible_yet(current, latest)
         return True, f"Upgraded from v{current} to v{latest}"
     else:
         return (
