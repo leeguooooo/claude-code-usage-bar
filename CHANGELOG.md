@@ -9,6 +9,27 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.10 — 2026-09-29
+
+**`cs upgrade` works on Windows again.**
+
+- 3.43.8 added `--refresh-package` to the Windows upgrade command, but
+  `uv tool upgrade` has no such option. uv rejected it ("unexpected
+  argument"), so every `cs upgrade` and background upgrade on Windows
+  failed. The install stayed intact
+  ([#67](https://github.com/leeguooooo/claude-code-usage-bar/issues/67)).
+  The flag is gone from the Windows command; the "run it again in a minute"
+  message from 3.43.9 already covers a lagging index. macOS and Linux keep
+  it, since `uv tool install` supports it.
+- When an upgrade fails, `cs upgrade` now shows the installer's own error
+  instead of only "run it by hand".
+- The tests now run our uv upgrade commands through the real uv, in CI and
+  before every release, so an argument uv doesn't accept fails the build.
+- **If you're on 3.43.8 or 3.43.9 on Windows**, upgrade once by hand:
+  `uv tool upgrade claude-statusbar`.
+
+---
+
 ## v3.43.9 — 2026-09-29
 
 **`cs upgrade` no longer calls itself up to date while a new release is out.**
