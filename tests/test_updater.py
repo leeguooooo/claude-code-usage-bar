@@ -79,6 +79,8 @@ def test_uv_channel_without_uv_anywhere_falls_back_to_pip(monkeypatch):
 # can never freeze the Claude Code statusLine render.
 # ---------------------------------------------------------------------------
 import subprocess
+
+import pytest
 import sys
 
 
@@ -542,3 +544,139 @@ def test_entrypoint_healthy_reads_exit_code_not_output(monkeypatch, tmp_path):
     fake.chmod(0o755)
     monkeypatch.setattr(updater, "path_entrypoint", lambda: fake)
     assert updater._entrypoint_healthy() is False
+
+
+# Windows can't delete or overwrite a file a process holds, and cs.exe always
+# is (daemon + every render). `uv tool install --upgrade` then half-deletes the
+# env; `uv tool upgrade` with the launchers renamed aside works. Both measured
+# on Windows 11.
+
+def test_windows_uv_uses_in_place_tool_upgrade(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "detect_install_channel", lambda exe=None: "uv")
+    monkeypatch.setattr(updater, "_find_tool", lambda name: "C:/uv/uv.exe")
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+    assert updater.get_upgrade_command() == [
+        "C:/uv/uv.exe", "tool", "upgrade", "claude-statusbar"]
+
+
+@pytest.fixture
+def winbin(tmp_path, monkeypatch):
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+    for name in updater._ENTRY_EXES:
+        (tmp_path / name).write_text("old")
+    monkeypatch.setattr(updater, "path_entrypoint", lambda: tmp_path / "cs.exe")
+    return tmp_path
+
+
+UV_UPGRADE = ["uv", "tool", "upgrade", "claude-statusbar"]
+
+
+def test_windows_uv_upgrade_moves_launchers_aside(winbin, monkeypatch):
+    def fake_uv(cmd, **k):
+        # uv must find the in-use launchers gone, then writes new ones
+        assert not (winbin / "cs.exe").exists()
+        for name in updater._ENTRY_EXES:
+            (winbin / name).write_text("new")
+        return True
+
+    monkeypatch.setattr(updater, "_run_upgrade_command", fake_uv)
+    assert updater._run_upgrade(UV_UPGRADE) is True
+    assert (winbin / "cs.exe").read_text() == "new"
+    # the old launchers weren't running here, so they're cleaned up at once
+    assert list(winbin.glob("*.old-*")) == []
+
+
+@pytest.mark.parametrize("uv_ok", [True, False])
+def test_windows_uv_upgrade_restores_launchers_uv_did_not_write(
+        winbin, monkeypatch, uv_ok):
+    # False: uv failed. True: "Nothing to upgrade" (already latest / pinned)
+    # exits 0 without writing launchers. Either way cs.exe must come back.
+    monkeypatch.setattr(updater, "_run_upgrade_command", lambda cmd, **k: uv_ok)
+    assert updater._run_upgrade(UV_UPGRADE) is uv_ok
+    for name in updater._ENTRY_EXES:
+        assert (winbin / name).read_text() == "old"
+    assert list(winbin.glob("*.old-*")) == []
+
+
+def test_windows_uv_upgrade_clears_stale_launchers(winbin, monkeypatch):
+    (winbin / "cs.exe.old-1").write_text("stale")
+    monkeypatch.setattr(updater, "_run_upgrade_command", lambda cmd, **k: True)
+    updater._run_upgrade(UV_UPGRADE)
+    assert not (winbin / "cs.exe.old-1").exists()
+
+
+def test_non_windows_upgrade_touches_no_launchers(winbin, monkeypatch):
+    monkeypatch.setattr(updater.sys, "platform", "linux")
+    monkeypatch.setattr(updater, "_run_upgrade_command", lambda cmd, **k: True)
+    updater._run_upgrade(UV_UPGRADE)
+    assert list(winbin.glob("*.old-*")) == []
+
+
+def test_windows_pip_cs_upgrade_prints_steps_instead_of_running(monkeypatch):
+    runs = _uv_upgrade_setup(monkeypatch, [], [])
+    monkeypatch.setattr(updater, "get_upgrade_command", lambda: [
+        "python", "-m", "pip", "install", "--upgrade", "claude-statusbar"])
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+    ok, msg = updater.upgrade_current_install()
+    assert ok is False
+    assert runs == []
+    assert "cs daemon stop" in msg
+
+
+def test_windows_pip_auto_upgrade_never_runs(monkeypatch):
+    monkeypatch.setattr(updater, "_is_frozen", lambda: False)
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
+    monkeypatch.setattr(updater, "get_upgrade_command", lambda: [
+        "python", "-m", "pip", "install", "--upgrade", "claude-statusbar"])
+    monkeypatch.setattr(updater.sys, "platform", "win32")
+
+    def boom(*a, **k):
+        raise AssertionError("must not upgrade pip in place on Windows")
+
+    monkeypatch.setattr(updater, "_run_upgrade", boom)
+    assert updater.auto_upgrade() is False
+
+
+def test_windows_uv_upgrade_judged_by_installed_version(winbin, monkeypatch):
+    # uv upgraded the env, then lost the launcher copy to a render (os error
+    # 32) and exited 1. The package is new; the restored launcher runs it.
+    versions = iter(["3.43.6", "3.43.7"])
+    monkeypatch.setattr(updater, "get_current_version", lambda: next(versions))
+    monkeypatch.setattr(updater, "_run_upgrade_command", lambda cmd, **k: False)
+    assert updater._run_upgrade(UV_UPGRADE) is True
+    assert (winbin / "cs.exe").read_text() == "old"
+
+
+def test_windows_uv_upgrade_failure_with_same_version_fails(winbin, monkeypatch):
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.43.6")
+    monkeypatch.setattr(updater, "_run_upgrade_command", lambda cmd, **k: False)
+    assert updater._run_upgrade(UV_UPGRADE) is False
+
+
+def _uv_env_with_copied_launcher(tmp_path, monkeypatch, receipt_path):
+    env = tmp_path / "uv" / "tools" / "claude-statusbar"
+    (env / "Scripts").mkdir(parents=True)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    entry = bindir / "cs.exe"
+    entry.write_text("launcher copy")
+    (env / "uv-receipt.toml").write_text(
+        "[tool]\nentrypoints = [\n"
+        f'    {{ name = "cs", install-path = "{receipt_path(entry)}", '
+        'from = "claude-statusbar" },\n]\n')
+    monkeypatch.setattr(updater.sys, "executable", str(env / "Scripts" / "python.exe"))
+    monkeypatch.setattr(updater.sys, "prefix", str(env))
+    monkeypatch.setattr(updater, "path_entrypoint", lambda: entry.resolve())
+
+
+def test_copied_uv_launcher_is_not_a_shadow(tmp_path, monkeypatch):
+    # Windows uv copies cs.exe into its bin dir; the receipt records it.
+    _uv_env_with_copied_launcher(tmp_path, monkeypatch, lambda e: e.as_posix())
+    assert updater.is_shadow_install() is False
+
+
+def test_launcher_missing_from_receipt_is_still_a_shadow(tmp_path, monkeypatch):
+    _uv_env_with_copied_launcher(
+        tmp_path, monkeypatch, lambda e: (e.parent / "other.exe").as_posix())
+    assert updater.is_shadow_install() is True

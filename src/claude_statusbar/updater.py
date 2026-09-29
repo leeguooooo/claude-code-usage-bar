@@ -234,7 +234,30 @@ def is_shadow_install() -> bool:
         here = Path(sys.executable).parent.resolve()
     except OSError:
         return False
-    return entry.parent != here
+    if entry.parent == here:
+        return False
+    # Windows: uv copies launchers into its bin dir instead of symlinking, so
+    # the dirs never match and every uv install looked like a shadow — auto-
+    # upgrade never ran there. uv's receipt names the launchers it installed.
+    return not _receipt_owns(entry)
+
+
+def _receipt_owns(entry: Path) -> bool:
+    """Is `entry` a launcher this env's uv-receipt.toml says uv installed?"""
+    import os
+    import re
+    try:
+        text = (Path(sys.prefix) / "uv-receipt.toml").read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return False
+    want = os.path.normcase(str(entry))
+    for raw in re.findall(r'install-path\s*=\s*"([^"]+)"', text):
+        try:
+            if os.path.normcase(str(Path(raw).resolve())) == want:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def find_duplicate_installs() -> list:
@@ -271,6 +294,11 @@ def get_upgrade_command(
     if channel == "uv":
         uv = _find_tool("uv")
         if uv:
+            if sys.platform == "win32":
+                # `tool install --upgrade` rebuilds the env and dies deleting
+                # the in-use Scripts\\, half-removed; `tool upgrade` syncs it
+                # in place. See _run_windows_uv_upgrade.
+                return [uv, "tool", "upgrade", DIST_NAME]
             return [uv, "tool", "install", "--upgrade", DIST_NAME]
 
     if channel == "pipx":
@@ -296,6 +324,12 @@ def _run_upgrade(cmd) -> bool:
     UnicodeDecodeError. The exception then made ``subprocess.run`` kill uv
     mid-install, leaving a tool env whose entry point had no package.
     """
+    if _is_windows_uv_upgrade(cmd):
+        return _run_windows_uv_upgrade(cmd)
+    return _run_upgrade_command(cmd)
+
+
+def _run_upgrade_command(cmd, log_failure: bool = True) -> bool:
     import os
     env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     try:
@@ -309,7 +343,7 @@ def _run_upgrade(cmd) -> bool:
             ValueError) as e:
         logging.error(f"Upgrade command {cmd!r} failed: {e}")
         return False
-    if result.returncode != 0:
+    if result.returncode != 0 and log_failure:
         err = (result.stderr or b"").decode("utf-8", "replace").strip()
         logging.error(f"Upgrade command {cmd!r} exited "
                       f"{result.returncode}: {err[-500:]}")
@@ -413,6 +447,107 @@ def installed_version_on_path() -> Optional[str]:
     return parts[-1] if parts else None
 
 
+# Console-script names from pyproject's [project.scripts].
+_ENTRY_EXES = ("cs.exe", "cstatus.exe", "claude-statusbar.exe")
+
+
+def _is_windows_uv_upgrade(cmd) -> bool:
+    return sys.platform == "win32" and list(cmd[1:3]) == ["tool", "upgrade"]
+
+
+def _run_windows_uv_upgrade(cmd) -> bool:
+    """`uv tool upgrade` with the in-use launchers moved out of its way.
+
+    Windows won't delete or overwrite a file a process has open, and while
+    Claude Code is open `cs.exe` always is: the daemon and every statusLine
+    render run it. uv then fails copying the new launcher over it (os error
+    32). A running exe CAN be renamed, so move the launchers aside first and
+    let uv write fresh ones. Verified on Windows 11 with the daemon, the
+    upgrading process and a render loop all holding files: exit 0, and `cs`
+    kept working throughout.
+
+    Any launcher uv didn't rewrite — it failed, or found nothing to upgrade —
+    is moved back, so this can never leave `cs` missing. Leftover `.old-*`
+    files are still locked by their processes; the next upgrade deletes them.
+
+    Success is judged by the installed version, not uv's exit code. A render
+    can run the new launcher the instant uv creates it, and uv then fails the
+    copy (os error 32) *after* the env is already upgraded in place. The
+    launcher is a generic trampoline, so the restored old one runs the new
+    package. Observed on Windows 11 with renders every 50ms.
+    """
+    import time
+    entry = path_entrypoint()
+    bindir = entry.parent if entry is not None else None
+    moved = []
+    if bindir is not None:
+        for stale in bindir.glob("*.exe.old-*"):
+            try:
+                stale.unlink()
+            except OSError:
+                pass  # its process is still running; next time
+        stamp = time.time_ns()
+        for name in _ENTRY_EXES:
+            live = bindir / name
+            if not live.is_file():
+                continue
+            aside = bindir / f"{name}.old-{stamp}"
+            try:
+                live.rename(aside)
+            except OSError:
+                continue  # uv reports it if it still can't write this one
+            moved.append((live, aside))
+    before = get_current_version()
+    try:
+        ok = _run_upgrade_command(cmd, log_failure=False)
+    finally:
+        _restore_launchers(moved)
+    if not ok and get_current_version() != before:
+        logging.info("uv exited nonzero but the package was upgraded")
+        return True
+    if not ok:
+        logging.error(f"Upgrade command {cmd!r} failed; run it by hand to "
+                      f"see uv's error")
+    return ok
+
+
+def _restore_launchers(moved) -> None:
+    for live, aside in moved:
+        if live.exists():
+            try:
+                aside.unlink()  # uv wrote a new one; the old is free unless running
+            except OSError:
+                pass  # still running — the next upgrade clears it
+            continue
+        try:
+            aside.rename(live)
+        except OSError as e:
+            logging.error(f"could not restore {live}: {e}")
+
+
+def _windows_in_place() -> bool:
+    """A pip/pipx install on Windows, which can't safely upgrade itself.
+
+    The upgrade runs from the env's own python.exe and the daemon and every
+    statusLine render hold its files; nothing has verified pip or pipx cope,
+    and a half-done upgrade removes the status line. uv installs (the Windows
+    installer's) go through _run_windows_uv_upgrade instead.
+    """
+    return (sys.platform == "win32" and not _is_frozen()
+            and not _is_windows_uv_upgrade(get_upgrade_command()))
+
+
+def _windows_upgrade_steps(cmd) -> str:
+    return (
+        "Windows can't upgrade a running pip/pipx install of cs in place, "
+        "so cs won't upgrade itself here. To upgrade:\n"
+        "  1. Quit every Claude Code session (each one keeps running cs.exe).\n"
+        "  2. In a new terminal: cs daemon stop\n"
+        f"  3. {' '.join(cmd)}\n"
+        "  4. cs --version"
+    )
+
+
 def auto_upgrade() -> bool:
     """Attempt automatic upgrade. Bounded by _UPGRADE_TIMEOUT_S per attempt."""
     if is_shadow_install():
@@ -420,6 +555,12 @@ def auto_upgrade() -> bool:
         # replacing whatever install the user actually uses. Never behind
         # their back; an explicit `cs upgrade` still works.
         logging.info("skipping auto-upgrade: not the install that owns `cs`")
+        return False
+
+    if _windows_in_place():
+        # Unattended, a half-done pip/pipx upgrade would take the status line
+        # with it. The ↑newver hint still shows; `cs upgrade` prints the steps.
+        logging.info("skipping auto-upgrade: Windows can't upgrade in place")
         return False
 
     if _is_frozen():
@@ -438,9 +579,10 @@ def auto_upgrade() -> bool:
     ok, broken = _upgrade_with_repair(get_upgrade_command())
     if ok:
         return True
-    if broken:
-        # The status line is already gone; a pip install into a different
-        # environment won't bring it back. Leave it for `cs upgrade` / manual.
+    if broken or sys.platform == "win32":
+        # Broken: the status line is already gone, and a pip install into a
+        # different environment won't bring it back. Windows: the fallbacks
+        # below would upgrade in place, which only the uv path handles.
         return False
 
     pipx = _find_tool("pipx")
@@ -508,9 +650,14 @@ def upgrade_current_install() -> Tuple[bool, str]:
 
     cmd = get_upgrade_command()
 
+    if _windows_in_place():
+        return False, _windows_upgrade_steps(cmd)
+
     ok, broken = _upgrade_with_repair(cmd)
     if ok:
         refreshed = get_current_version()
+        if refreshed == current:
+            return True, f"{DIST_NAME} v{current} is already the latest."
         return True, f"Upgraded {DIST_NAME} from v{current} to v{refreshed}"
 
     rendered_cmd = " ".join(cmd)
