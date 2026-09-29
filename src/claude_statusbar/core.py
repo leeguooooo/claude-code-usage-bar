@@ -1303,14 +1303,17 @@ def main(json_output: bool = False,
                 cwd_kwargs = {"cwd_text":
                               os.path.basename(_raw_cwd.rstrip('/')) or _raw_cwd}
 
-    # Optional ocs address segment: reads a per-session cache; a stale entry
-    # triggers a background `ocs whoami --json` — never blocks the render.
+    # Optional ocs line (address, unread DMs, LAN state): reads a per-session
+    # cache; a stale entry triggers a background refresh — never blocks the render.
     if cfg.show_ocs:
         try:
-            from .ocs import ocs_label
-            _ocs = ocs_label(str(stdin_data.get('session_id') or ''))
+            from .ocs import ocs_label, ocs_status
+            _sid = str(stdin_data.get('session_id') or '')
+            _ocs = ocs_label(_sid)
             if _ocs:
-                cwd_kwargs = {**cwd_kwargs, "ocs_text": _ocs}
+                _st = ocs_status(_sid)
+                cwd_kwargs = {**cwd_kwargs, "ocs_text": _ocs,
+                              "ocs_unread": _st["unread"], "ocs_lan": _st["lan"]}
         except Exception:
             pass
 

@@ -25,17 +25,27 @@ def home(tmp_path, monkeypatch):
     return tmp_path
 
 
-def _fake_ocs(home, payload, code=0):
-    """Install a fake `ocs` on PATH that prints payload and exits code."""
+def _fake_ocs(home, payload, code=0, inbox=None, lan=None):
+    """Install a fake `ocs` on PATH: `whoami` prints payload and exits code;
+    `inbox` / `lan status` answer with the given (payload, code) pairs, or
+    fail like an ocs that lacks them when None."""
     bindir = home / "bin"
     bindir.mkdir(exist_ok=True)
     p = bindir / "ocs"
+    replies = {
+        "whoami": (payload, code, ["whoami", "--json", "--session"]),
+        "inbox": (*(inbox or ("ocs: unknown flag: --session", 1)),
+                  ["inbox", "--json", "--session"]),
+        "lan": (*(lan or ("ocs: unknown command", 1)),
+                ["lan", "status", "--json"]),
+    }
     p.write_text(
         f"#!{sys.executable}\n"
         "import sys\n"
-        f"assert sys.argv[1:4] == ['whoami', '--json', '--session'], sys.argv\n"
-        f"sys.stdout.write({payload!r})\n"
-        f"sys.exit({code})\n")
+        f"out, code, argv = {replies!r}[sys.argv[1]]\n"
+        "assert sys.argv[1:1 + len(argv)] == argv, sys.argv\n"
+        "sys.stdout.write(out)\n"
+        "sys.exit(code)\n")
     p.chmod(p.stat().st_mode | stat.S_IXUSR)
     return p
 
@@ -185,3 +195,70 @@ def test_no_ocs_line_without_label():
     out = _strip(_render(use_color=False, show_project_branch=True,
                          identity=_info(), identity_dirty=False))
     assert "ocs" not in out
+
+
+INBOX = json.dumps([{"channel": "dm-a", "unread": 2}, {"channel": "dm-b", "unread": 1},
+                    {"channel": "dm-c", "unread": 0}])
+
+
+def _lan(running=True, peers=()):
+    return json.dumps({"running": running, "peers": [
+        {"label": label, "name": "host", "last_seen": seen} for label, seen in peers]})
+
+
+def _iso(age_s):
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(time.time() - age_s, timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def test_refresh_collects_unread_and_lan(home):
+    _fake_ocs(home, json.dumps({"id": "claude-7d5a5d07", "name": "boss"}),
+              inbox=(INBOX, 0), lan=(_lan(peers=[("win", _iso(60)), ("nas", _iso(86400))]), 0))
+    ocs.refresh(SID)
+    st = ocs.ocs_status(SID)
+    assert st["unread"] == 3
+    assert st["lan"] == {"running": True, "peers": [("win", True), ("nas", False)], "more": 0}
+
+
+def test_old_ocs_without_inbox_session_hides_only_extras(home):
+    _fake_ocs(home, json.dumps({"id": "claude-7d5a5d07", "name": "boss"}))
+    ocs.refresh(SID)
+    assert ocs.ocs_label(SID, spawn=False) == "boss · claude-7d5a5d07"
+    assert ocs.ocs_status(SID) == {"unread": None, "lan": None}
+
+
+def test_zero_unread_and_idle_lan_hide():
+    entry = {"ok": True, "unread": 0, "lan": {"running": False, "peers": []}}
+    assert ocs.format_unread(entry) is None
+    assert ocs.format_lan(entry) is None
+
+
+def test_lan_caps_peers_recent_first():
+    now = time.time()
+    peers = [{"label": f"p{i}", "seen": now - 86400} for i in range(4)]
+    peers.append({"label": "live", "seen": now - 5})
+    lan = ocs.format_lan({"ok": True, "lan": {"running": True, "peers": peers}}, now=now)
+    assert lan["peers"][0] == ("live", True)
+    assert len(lan["peers"]) == ocs.MAX_PEERS_SHOWN and lan["more"] == 2
+
+
+def test_lan_status_rejects_garbage():
+    assert ocs.parse_lan_status("nope") is None
+    assert ocs.parse_lan_status(json.dumps({"peers": []})) is None
+    assert ocs.parse_inbox(json.dumps({"x": 1})) is None
+
+
+@pytest.mark.parametrize("use_color", [True, False])
+@pytest.mark.parametrize("unread,lan,expected", [
+    (3, {"running": True, "peers": [("win", True)], "more": 0},
+     "ocs boss · claude-7d5a5d07 · ✉3 · lan win"),
+    (None, {"running": False, "peers": [("win", False)], "more": 0},
+     "ocs boss · claude-7d5a5d07 · lan off"),
+    (None, {"running": True, "peers": [], "more": 0},
+     "ocs boss · claude-7d5a5d07 · lan on"),
+    (None, None, "ocs boss · claude-7d5a5d07"),
+])
+def test_ocs_line_extras(use_color, unread, lan, expected):
+    out = _strip(_render(use_color=use_color, ocs_text="boss · claude-7d5a5d07",
+                         ocs_unread=unread, ocs_lan=lan))
+    assert expected in out.split("\n")

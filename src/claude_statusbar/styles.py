@@ -565,6 +565,38 @@ def _ocs_segment(ocs_text: str, theme: Theme) -> str:
     return f"{EDGE}ocs{RESET} {INK}{ocs_text}{RESET}"
 
 
+def _ocs_extras(unread, lan, theme: Theme, use_color: bool) -> str:
+    """` · ✉3 · lan win` — unread DMs in warn, LAN peers seen recently in ink,
+    stale ones muted, a stopped bridge that still has peers as `lan off`."""
+    parts = []
+    if unread:
+        parts.append(f"{_fg(theme.s_warn)}✉{unread}{RESET}" if use_color
+                     else f"✉{unread}")
+    if lan:
+        if not lan.get("running"):
+            parts.append(f"{_fg(theme.edge)}lan{RESET} {_fg(theme.s_warn)}off{RESET}"
+                         if use_color else "lan off")
+        else:
+            peers = lan.get("peers") or []
+            if use_color:
+                names = " ".join(
+                    f"{_fg(theme.pill_ink if recent else theme.mute)}{label}{RESET}"
+                    for label, recent in peers)
+            else:
+                names = " ".join(label for label, _recent in peers)
+            if lan.get("more"):
+                more = f"+{lan['more']}"
+                names += " " + (f"{_fg(theme.mute)}{more}{RESET}" if use_color else more)
+            if not peers:
+                names = f"{_fg(theme.mute)}on{RESET}" if use_color else "on"
+            parts.append((f"{_fg(theme.edge)}lan{RESET} " if use_color else "lan ")
+                         + names)
+    if not parts:
+        return ""
+    sep = f" {_fg(theme.mute)}·{RESET} " if use_color else " · "
+    return sep + sep.join(parts)
+
+
 def render_activity_line(activity, *, theme: Theme, use_color: bool = True,
                          show_todos: bool = False, show_tools: bool = False,
                          show_tool_rollup: bool = False) -> str:
@@ -875,6 +907,8 @@ def render(style: str, **kwargs) -> str:
     lines_text = kwargs.pop("identity_lines", "")
     cwd_text = kwargs.pop("cwd_text", "")
     ocs_text = kwargs.pop("ocs_text", "")
+    ocs_unread = kwargs.pop("ocs_unread", None)
+    ocs_lan = kwargs.pop("ocs_lan", None)
     worktree_glyph = kwargs.pop("worktree_glyph", "⑂")
     ip_line_text = kwargs.pop("ip_line_text", "")
     ip_line_level = kwargs.pop("ip_line_level", "ok")
@@ -964,6 +998,7 @@ def render(style: str, **kwargs) -> str:
         # Always its own line — the address other agents copy, not branch info.
         out = out + "\n" + (_ocs_segment(ocs_text, theme) if use_color
                             else f"ocs {ocs_text}")
+        out += _ocs_extras(ocs_unread, ocs_lan, theme, use_color)
 
     party_line = render_party_line(party, theme=theme, use_color=use_color)
     if party_line:
