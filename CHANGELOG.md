@@ -9,6 +9,25 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.6 — 2026-09-29
+
+**`cs upgrade` no longer breaks the install on Chinese-locale Windows.**
+
+- On a GBK (code page 936) system, `cs upgrade` decoded uv's UTF-8 output
+  with the locale codec. The decode error killed the upgrade mid-install and
+  left `cs` failing with `ModuleNotFoundError`, taking the status line with
+  it. Upgrade output is now captured as bytes, and uv runs with
+  `PYTHONUTF8=1`
+  ([#66](https://github.com/leeguooooo/claude-code-usage-bar/issues/66)).
+- If an upgrade fails and `cs` no longer runs, both `cs upgrade` and the
+  daily background upgrade retry once. If `cs` is still broken, `cs upgrade`
+  says so and prints the repair command, instead of a plain "Upgrade failed".
+- The other text-mode subprocess reads (`ocs whoami`, git status, …) decode
+  as UTF-8 with replacement, so a non-ASCII session name or path can't crash
+  them either.
+
+---
+
 ## v3.43.5 — 2026-09-29
 
 **The ocs address line shows up on Windows.**
