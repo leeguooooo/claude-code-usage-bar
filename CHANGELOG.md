@@ -9,6 +9,26 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.44.0 — 2026-09-30
+
+**The ocs line shows unread DMs and the LAN bridge.**
+
+- The ocs line now reads `ocs boss · claude-7d5a5d07 · ✉3 · lan win`.
+  `✉3` is this session's unread ocs DMs, drawn in amber and hidden at
+  zero. It comes from `ocs inbox --json --session <id>`, so it appears
+  once ocs accepts `--session` there; until then that part stays hidden
+  and the rest of the line is unchanged.
+- `lan win` lists the paired LAN peers from `ocs lan status --json`, up
+  to three, with `+N` for the rest. A peer ocs heard from in the last
+  10 minutes is drawn in ink, older ones muted. `lan on` means the
+  bridge runs with nothing paired; `lan off` in amber means peers are
+  paired but the bridge is stopped (`ocs lan up`). The part is hidden
+  when the bridge is off and nothing is paired.
+- Both come from the same background refresh as the address, cached
+  about 30 seconds per session. `show_ocs false` hides the whole line.
+
+---
+
 ## v3.43.11 — 2026-09-29
 
 **The daemon comes back after an upgrade.**

@@ -3,7 +3,7 @@
 Shows this session's ocs name + stable id so other agents can `ocs dm` it,
 plus its unread DM count and the LAN bridge state. The only interfaces we
 depend on are the ocs CLI's JSON output — ``ocs whoami --json --session <sid>``,
-``ocs inbox --json --session <sid>`` (ocs >= 0.6.6) and ``ocs lan status --json``
+``ocs inbox --json --session <sid>`` and ``ocs lan status --json``
 — never ~/.ocs internals, whose format ocs reserves the right to change. Each
 extra part hides on its own when its command fails (older ocs, LAN never set up).
 
@@ -262,7 +262,7 @@ def _refresh_locked(session_id: str, timeout_s: float) -> None:
                            timeout_s, parse_whoami)
         if parsed is not None:
             entry.update(ok=True, **parsed)
-            # Unknown flag on ocs < 0.6.6 → non-zero exit → no unread part.
+            # An ocs whose inbox lacks --session exits non-zero → no unread part.
             entry["unread"] = _run_json(
                 exe, ["inbox", "--json", "--session", session_id],
                 timeout_s, parse_inbox)
