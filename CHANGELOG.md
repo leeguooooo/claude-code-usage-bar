@@ -9,6 +9,32 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.7 — 2026-09-29
+
+**`cs upgrade` works on Windows, and no longer breaks the install.**
+
+- Windows won't delete or overwrite a file that a process has open, and
+  `cs.exe` always has one while Claude Code is running: the daemon and
+  every statusLine render use it. `uv tool install --upgrade` rebuilds the
+  tool environment, so it failed halfway deleting `Scripts\` ("access
+  denied") and left `cs` failing with `ModuleNotFoundError` until a manual
+  `uv tool install --force`
+  ([#66](https://github.com/leeguooooo/claude-code-usage-bar/issues/66)).
+- On Windows, cs now upgrades with `uv tool upgrade`, which updates the
+  environment in place. First it renames the in-use `cs.exe` launchers
+  aside; Windows allows renaming a running exe. Any launcher uv didn't
+  rewrite is moved back, so `cs` can't go missing. Tested on Windows 11
+  while the daemon, the upgrading process and a render loop were all
+  running: `cs` kept working throughout.
+- Auto-upgrade had never run on Windows. uv copies launchers into its bin
+  folder instead of symlinking them, so every uv install looked like
+  someone else's copy of `cs`. uv's install receipt now settles who owns
+  the launcher.
+- pip and pipx installs on Windows don't upgrade themselves. `cs upgrade`
+  prints the steps instead.
+
+---
+
 ## v3.43.6 — 2026-09-29
 
 **`cs upgrade` no longer breaks the install on Chinese-locale Windows.**
