@@ -99,7 +99,7 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/ma
 <sub>Security-conscious? Download and read it first — the header lists exactly what it touches.
 On platforms without a prebuilt binary it falls back to pip.</sub>
 
-**Windows** (PowerShell — needs [uv](https://docs.astral.sh/uv/), e.g. `winget install --id=astral-sh.uv -e`; no Python or admin required):
+**Windows** (PowerShell — installs [uv](https://docs.astral.sh/uv/) via winget if needed; no Python or admin required):
 
 ```powershell
 irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 | iex
