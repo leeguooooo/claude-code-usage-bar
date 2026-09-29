@@ -9,6 +9,18 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.5 — 2026-09-29
+
+**The ocs address line shows up on Windows.**
+
+- `find_ocs()` only looked for a file named exactly `ocs`, so on Windows,
+  where the binary is `ocs.exe`, the segment stayed hidden with no error. It
+  now tries the PATHEXT extensions (`.exe`, `.cmd`, …) on PATH and in
+  `~/.local/bin`, and skips an extensionless `ocs` there since Windows can't
+  run it ([#65](https://github.com/leeguooooo/claude-code-usage-bar/issues/65)).
+
+---
+
 ## v3.43.4 — 2026-09-29
 
 **The Windows installer installs uv for you instead of stopping.**
