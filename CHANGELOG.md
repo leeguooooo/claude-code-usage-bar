@@ -9,6 +9,18 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.43.4 — 2026-09-29
+
+**The Windows installer installs uv for you instead of stopping.**
+
+- `install.ps1` used to stop with `uv not found` when uv was missing. It now
+  installs uv with winget (built into Windows 10/11), reloads PATH in the same
+  window and carries on. It still never runs a remote install script; only
+  without winget does it stop and print install hints
+  ([#64](https://github.com/leeguooooo/claude-code-usage-bar/pull/64)).
+
+---
+
 ## v3.43.3 — 2026-09-28
 
 **`cs` works on Windows, with a PowerShell one-liner to install it.**
