@@ -199,6 +199,34 @@ def run() -> int:
     except Exception as e:
         _line("version", _red(str(e)), ok=False)
 
+    # --- update channel ---
+    # A version line that is always ✓ hid an install stuck for months: it was
+    # behind, and auto-upgrade was silently refusing to run. Read the cache the
+    # updater already writes rather than hitting the network from here.
+    try:
+        from .updater import LATEST_VERSION_CACHE, compare_versions, get_current_version
+        latest = json.loads(LATEST_VERSION_CACHE.read_text(encoding="utf-8"))["version"]
+        if compare_versions(get_current_version(), latest):
+            _line("latest", _yellow(f"{latest} available — run: cs upgrade"), ok=None)
+        else:
+            _line("latest", f"{latest} (up to date)")
+    except Exception:
+        pass  # no cache yet or unreadable: say nothing rather than guess
+    try:
+        from .config import load_config
+        from .updater import is_shadow_install
+        if os.environ.get("CLAUDE_STATUSBAR_NO_UPDATE", "").lower() in ("1", "true", "yes"):
+            _line("auto-upgrade", "off (CLAUDE_STATUSBAR_NO_UPDATE)")
+        elif not load_config().auto_upgrade:
+            _line("auto-upgrade", "off (config auto_upgrade=false)")
+        elif is_shadow_install():
+            _line("auto-upgrade", _yellow(
+                "blocked — `cs` on PATH belongs to another install"), ok=None)
+        else:
+            _line("auto-upgrade", "on")
+    except Exception as e:
+        _line("auto-upgrade", _dim(f"check skipped: {e}"))
+
     # --- python ---
     _line("python", f"{sys.version.split()[0]}  ({sys.executable})")
 
