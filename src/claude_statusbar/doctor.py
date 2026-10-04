@@ -201,31 +201,47 @@ def run() -> int:
 
     # --- update channel ---
     # A version line that is always ✓ hid an install stuck for months: it was
-    # behind, and auto-upgrade was silently refusing to run. Read the cache the
-    # updater already writes rather than hitting the network from here.
+    # behind, and auto-upgrade was silently refusing to run. Mirror the gates
+    # in check_for_updates()/auto_upgrade(), and read the cache the updater
+    # already writes rather than hitting the network from here.
+    auto_on = False
     try:
+        from .config import load_config
+        from .updater import _windows_in_place, is_shadow_install
+        if os.environ.get("CLAUDE_STATUSBAR_NO_UPDATE", "").lower() in ("1", "true", "yes"):
+            auto = ("off (CLAUDE_STATUSBAR_NO_UPDATE)", True)
+        elif not load_config().auto_upgrade:
+            auto = ("off (config auto_upgrade=false)", True)
+        elif is_shadow_install():
+            auto = (_yellow("blocked — `cs` on PATH belongs to another install"), None)
+        elif _windows_in_place():
+            auto = (_yellow("blocked — Windows pip/pipx can't upgrade in place; "
+                            "run: cs upgrade"), None)
+        else:
+            auto, auto_on = ("on", True), True
+    except Exception as e:
+        auto = (_dim(f"check skipped: {e}"), True)
+    try:
+        import time as _time
         from .updater import LATEST_VERSION_CACHE, compare_versions, get_current_version
-        latest = json.loads(LATEST_VERSION_CACHE.read_text(encoding="utf-8"))["version"]
-        if compare_versions(get_current_version(), latest):
+        data = json.loads(LATEST_VERSION_CACHE.read_text(encoding="utf-8"))
+        latest, current = str(data["version"]), get_current_version()
+        age_d = int((_time.time() - float(data.get("checked_at", 0))) // 86400)
+        if current == "0.0.0":
+            pass  # source checkout without an installed dist: no real version
+        elif age_d > 7:
+            # Same cutoff as the bar's ↑ hint. A blocked updater stops
+            # refreshing this file, so an old "latest" is not evidence.
+            _line("latest", _yellow(f"unknown — last checked {age_d}d ago")
+                  if auto_on else f"unknown — last checked {age_d}d ago",
+                  ok=None if auto_on else True)
+        elif compare_versions(current, latest):
             _line("latest", _yellow(f"{latest} available — run: cs upgrade"), ok=None)
         else:
             _line("latest", f"{latest} (up to date)")
     except Exception:
         pass  # no cache yet or unreadable: say nothing rather than guess
-    try:
-        from .config import load_config
-        from .updater import is_shadow_install
-        if os.environ.get("CLAUDE_STATUSBAR_NO_UPDATE", "").lower() in ("1", "true", "yes"):
-            _line("auto-upgrade", "off (CLAUDE_STATUSBAR_NO_UPDATE)")
-        elif not load_config().auto_upgrade:
-            _line("auto-upgrade", "off (config auto_upgrade=false)")
-        elif is_shadow_install():
-            _line("auto-upgrade", _yellow(
-                "blocked — `cs` on PATH belongs to another install"), ok=None)
-        else:
-            _line("auto-upgrade", "on")
-    except Exception as e:
-        _line("auto-upgrade", _dim(f"check skipped: {e}"))
+    _line("auto-upgrade", auto[0], ok=auto[1])
 
     # --- python ---
     _line("python", f"{sys.version.split()[0]}  ({sys.executable})")
