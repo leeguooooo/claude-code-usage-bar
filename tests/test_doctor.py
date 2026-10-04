@@ -205,7 +205,7 @@ def test_doctor_flags_newer_version_available(capsys, _isolated, _updates):
     doctor.run()
     out = capsys.readouterr().out
     assert "3.44.0 available — run: cs upgrade" in out
-    assert "auto-upgrade" in out and " on" in out
+    assert any(l.split()[1:] == ["auto-upgrade", "on"] for l in out.splitlines())
 
 
 def test_doctor_says_up_to_date(capsys, _isolated, _updates):
