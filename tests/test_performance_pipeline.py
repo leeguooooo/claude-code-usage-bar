@@ -130,6 +130,27 @@ def test_scoped_failed_refresh_keeps_last_good_limits(tmp_path, monkeypatch):
     assert scoped_usage.cached_limits(spawn=False) == []  # long outage: hidden
 
 
+def test_scoped_successful_refresh_stamps_ok_ts(tmp_path, monkeypatch):
+    import io
+    import urllib.request
+    from claude_statusbar import scoped_usage, predict
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setattr(predict, 'account_id', lambda: 'fixture-account')
+    monkeypatch.setattr(scoped_usage, '_token', lambda: 'tok')
+    reset = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    body = json.dumps({'limits': [{'kind': 'weekly_scoped', 'percent': 40,
+        'resets_at': reset, 'scope': {'model': {'display_name': 'Fable'}}}]}).encode()
+
+    class Opener:
+        def open(self, req, timeout):
+            return io.BytesIO(body)
+    monkeypatch.setattr(urllib.request, 'build_opener', lambda *a: Opener())
+    scoped_usage.refresh('fixture-account')
+    data = json.loads(scoped_usage._path('fixture-account').read_text())
+    assert abs(data['ok_ts'] - time.time()) < 5
+    assert [r['label'] for r in scoped_usage.cached_limits(spawn=False)] == ['Fable']
+
+
 def test_scoped_account_switch_never_reuses_previous_account(tmp_path, monkeypatch):
     from claude_statusbar import scoped_usage, predict
     monkeypatch.setenv('HOME', str(tmp_path))

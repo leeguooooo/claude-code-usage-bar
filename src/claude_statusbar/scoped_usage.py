@@ -91,7 +91,7 @@ def refresh(account):
                 limits = parse_limits(json.loads(response.read(1024 * 1024)))
             ok_ts = time.time()
         except Exception:
-            pass  # Negative-cache failures; never expose credentials/errors.
+            pass  # Keep last good limits; ts still backs off retries. Never expose credentials/errors.
         if account_id() == account:
             atomic_write_text(path, json.dumps(dict(ts=time.time(), ok_ts=ok_ts, limits=limits)))
     finally:
