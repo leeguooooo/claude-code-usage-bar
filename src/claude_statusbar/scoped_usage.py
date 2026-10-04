@@ -69,10 +69,13 @@ def refresh(account):
             if 0 <= time.time() - old['ts'] < 300:
                 return
         except (OSError, ValueError, KeyError, TypeError):
-            pass
+            old = {}
         if account_id() != account:
             return
-        limits = []
+        # A failed fetch keeps the last good limits (still bounded by ok_ts in
+        # cached_limits) instead of blanking the segment until the next retry.
+        limits = old.get('limits', [])
+        ok_ts = old.get('ok_ts', old.get('ts'))
         try:
             token = _token()
             if not isinstance(token, str) or not token:
@@ -86,10 +89,11 @@ def refresh(account):
                 'anthropic-beta': 'oauth-2025-04-20'})
             with build_opener(NoRedirect).open(req, timeout=3) as response:
                 limits = parse_limits(json.loads(response.read(1024 * 1024)))
+            ok_ts = time.time()
         except Exception:
             pass  # Negative-cache failures; never expose credentials/errors.
         if account_id() == account:
-            atomic_write_text(path, json.dumps(dict(ts=time.time(), limits=limits)))
+            atomic_write_text(path, json.dumps(dict(ts=time.time(), ok_ts=ok_ts, limits=limits)))
     finally:
         lock.close()
 
@@ -102,12 +106,13 @@ def cached_limits(*, spawn=True):
     try:
         data = json.loads(_path(account).read_text())
         age = time.time() - data['ts']
+        ok_age = time.time() - (data.get('ok_ts') or data['ts'])
     except (OSError, ValueError, KeyError, TypeError):
-        data, age = {}, float('inf')
+        data, age, ok_age = {}, float('inf'), float('inf')
     if spawn and not 0 <= age < 300:
         from .refresh_pool import submit
         submit(('scoped', account), refresh, account)
-    return data.get('limits', []) if 0 <= age < 600 else []
+    return data.get('limits', []) if 0 <= ok_age < 600 else []
 
 
 def render_limits(limits, theme, use_color, warning, critical, projection=True):
