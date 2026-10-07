@@ -7,7 +7,6 @@ down for good. The daemon stayed up with nothing watching it, while
 `cs daemon install` had promised a restart on crash, and `cs doctor` printed
 a green ✓ next to "launchd state: not running".
 """
-import pytest
 
 from claude_statusbar import service as svc
 

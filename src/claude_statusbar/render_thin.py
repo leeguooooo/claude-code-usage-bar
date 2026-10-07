@@ -327,6 +327,18 @@ def _inject_session_env(payload: bytes) -> bytes:
         v = os.environ.get(k)
         if v:
             env[k] = v
+    base = os.environ.get('ANTHROPIC_BASE_URL', '').strip()
+    key = (os.environ.get('ANTHROPIC_API_KEY', '').strip() or
+           os.environ.get('ANTHROPIC_AUTH_TOKEN', '').strip())
+    if base and key:
+        from .balance_cache import fingerprint
+        env['CS_BALANCE_FP'] = fingerprint(base, key)
+        # Only the client owns this session's credentials. The daemon gets a
+        # cache identifier, never a credential or a frozen ambient account.
+        from .config import load_config
+        from .core import is_no_quota_mode, relay_balance
+        if load_config().show_balance and is_no_quota_mode(env):
+            relay_balance(os.environ)
     d["_cs_env"] = env
     try:
         return json.dumps(d).encode("utf-8")

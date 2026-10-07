@@ -26,6 +26,10 @@ Paste the output verbatim in any bug report — it's almost always enough to dia
 
 **`cs doctor` says "missing"** — A Claude Code upgrade can wipe `statusLine` from `~/.claude/settings.json`. Run `cs --setup` (or `cs --setup --fast` if you want daemon mode) to restore it. The package also self-heals once per day automatically.
 
+**Quota is unknown after an account switch** — The bar waits for that account's rate-limit data. It does not reuse another account's cached quota. Once Claude Code sends a response with quota, all windows for that account share the new reading.
+
+**Balance shows `⟳`** — The relay usage query failed. The amount is the last valid reading, not a newly confirmed balance; the client retries in the background.
+
 **Numbers stuck / not updating** — Two possibilities:
 1. `refreshInterval` not set — Claude Code only re-renders on activity. Add `"refreshInterval": 30` (or `1` for live cache-age).
 2. Daemon mode running stale data — `cs daemon stop && cs daemon start`. Or just `cs doctor` and check `daemon` row freshness.

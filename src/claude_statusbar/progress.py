@@ -3,9 +3,8 @@
 import json
 import re
 from pathlib import Path
-from typing import Optional
 
-from .themes import Theme, get_theme
+from .themes import get_theme
 
 FILL = "█"
 EMPTY = "░"

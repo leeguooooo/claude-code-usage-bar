@@ -61,4 +61,32 @@ jobs:
 
       - name: Run Ruff
         run: ruff check .
-        continue-on-error: true
+
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: false
+      - name: Check workflow contracts
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          actionlint .github/workflows/*.yml
+
+  platform-regressions:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install -e . pytest
+      - name: Check native platform locks and session boundaries
+        run: python -m pytest tests/test_review_regressions.py tests/test_release_recovery.py tests/test_setup_windows_exe.py -q

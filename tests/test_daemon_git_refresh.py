@@ -2,7 +2,6 @@
 assert the cache file converges."""
 import os
 import subprocess
-import sys
 
 import pytest
 

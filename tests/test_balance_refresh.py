@@ -1,5 +1,4 @@
 """Billing-probe parsing + balance math, with urllib stubbed out."""
-import time
 
 from claude_statusbar import _balance_refresh as br
 from claude_statusbar import balance_cache
@@ -39,14 +38,13 @@ def test_probe_falls_back_to_system_hard_limit(monkeypatch):
     assert out["balance"] == 100.0
 
 
-def test_probe_missing_usage_means_zero_used(monkeypatch):
+def test_probe_missing_usage_is_unknown(monkeypatch):
     _stub_responses(monkeypatch, {
         "/v1/dashboard/billing/subscription": {"hard_limit_usd": 50},
         # no usage endpoint
     })
     out = br._probe("https://relay.example", "sk-x")
-    assert out["used"] == 0.0
-    assert out["balance"] == 50.0
+    assert out is None
 
 
 def test_probe_tries_root_prefix_when_v1_absent(monkeypatch):

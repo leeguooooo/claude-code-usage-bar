@@ -9,7 +9,40 @@ background-refreshed cache.
 
 import os
 import tempfile
+import time
+from contextlib import contextmanager
 from pathlib import Path
+
+
+@contextmanager
+def file_transaction(path: Path, timeout: float = 0.5):
+    """Serialize a complete read/modify/write, with bounded contention."""
+    lock_path = path.with_name(path.name + '.lock')
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open('a+b') as handle:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if os.name == 'nt':
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('cache transaction busy') from None
+                time.sleep(0.005)
+        try:
+            yield
+        finally:
+            if os.name == 'nt':
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def atomic_write_text(path: Path, text: str, *, durable: bool = True) -> bool:

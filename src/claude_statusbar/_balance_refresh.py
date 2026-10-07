@@ -21,6 +21,7 @@ Balance math follows the OpenAI / new-api / one-api convention:
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import time
@@ -56,9 +57,7 @@ def _get_json(url: str, token: str) -> dict | None:
 
 
 def _probe(base: str, token: str) -> dict | None:
-    """Return {balance,total,used,currency} for the first prefix that yields a
-    valid subscription object, else None. ``usage`` is best-effort: a missing
-    usage object just means used=0 (balance == granted limit)."""
+    """Return a balance only when both limit and usage are known."""
     base = base.rstrip("/")
     for prefix in _PREFIXES:
         sub = _get_json(f"{base}{prefix}/subscription", token)
@@ -67,15 +66,16 @@ def _probe(base: str, token: str) -> dict | None:
         total = sub.get("hard_limit_usd")
         if total is None:
             total = sub.get("system_hard_limit_usd")
-        if not isinstance(total, (int, float)):
+        if (isinstance(total, bool) or not isinstance(total, (int, float))
+                or not math.isfinite(total) or total < 0):
             # Subscription object exists but carries no limit we understand —
             # try the next prefix rather than declaring support.
             continue
         usage = _get_json(f"{base}{prefix}/usage", token)
-        used_cents = 0.0
-        if isinstance(usage, dict) and isinstance(
-                usage.get("total_usage"), (int, float)):
-            used_cents = float(usage["total_usage"])
+        used_cents = usage.get('total_usage') if isinstance(usage, dict) else None
+        if (isinstance(used_cents, bool) or not isinstance(used_cents, (int, float))
+                or not math.isfinite(used_cents) or used_cents < 0):
+            continue
         used = used_cents / 100.0
         return {
             "balance": round(float(total) - used, 4),
@@ -116,8 +116,12 @@ def _refresh_locked(base, key, auth, fp):
 
     try:
         if result is None:
+            previous = balance_cache.read_cache(fp)
+            entry = dict(previous) if isinstance(previous, dict) else {'supported': False}
+            entry.update(attempted_at=time.time(), refresh_failed=True)
+            entry.setdefault('ts', entry['attempted_at'])
             balance_cache.write_cache_atomic(
-                fp, {"ts": time.time(), "supported": False})
+                fp, entry)
         else:
             balance_cache.write_cache_atomic(
                 fp, {"ts": time.time(), "supported": True, **result})

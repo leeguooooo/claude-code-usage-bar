@@ -3,9 +3,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,6 +70,23 @@ func cached(root, runtime string, d map[string]any) bool {
 			env[k] = v
 		}
 	}
+	base := strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL"))
+	key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+	if key == "" {
+		key = strings.TrimSpace(os.Getenv("ANTHROPIC_AUTH_TOKEN"))
+	}
+	parsed, _ := url.Parse(base)
+	if !strings.Contains(base, "//") {
+		parsed, _ = url.Parse("//" + base)
+	}
+	relay := parsed != nil && strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".") != "api.anthropic.com"
+	if base != "" && key != "" {
+		fp := fmt.Sprintf("%x", sha1.Sum([]byte(base+"\x00"+key)))
+		env["CS_BALANCE_FP"] = fp
+		if relay && balanceDue(root, fp) {
+			return false // Python client probes with the live credentials.
+		}
+	}
 	d["_cs_env"] = env
 	b, err := json.Marshal(d)
 	if err != nil {
@@ -118,6 +137,9 @@ func cached(root, runtime string, d map[string]any) bool {
 	if b, e := os.ReadFile(filepath.Join(home, ".claude", "settings.json")); e == nil {
 		if json.Unmarshal(b, &settings) == nil && settings.StatusLine.Command != "" {
 			fields := strings.Fields(settings.StatusLine.Command)
+			if len(fields) == 0 {
+				return false
+			}
 			name := filepath.Base(strings.Trim(fields[0], "\"'"))
 			if name != "cs" && name != "cstatus" && name != "claude-statusbar" {
 				return false
@@ -133,6 +155,47 @@ func cached(root, runtime string, d map[string]any) bool {
 	}
 	_, err = os.Stdout.Write(b)
 	return err == nil
+}
+
+func balanceDue(root, fp string) bool {
+	home, _ := os.UserHomeDir()
+	var cfg struct {
+		ShowBalance *bool `json:"show_balance"`
+	}
+	if b, err := os.ReadFile(filepath.Join(home, ".claude", "claude-statusbar.json")); err == nil {
+		_ = json.Unmarshal(b, &cfg)
+	}
+	if cfg.ShowBalance != nil && !*cfg.ShowBalance {
+		return false
+	}
+	var entry struct {
+		TS        float64 `json:"ts"`
+		Supported bool    `json:"supported"`
+		Failed    bool    `json:"refresh_failed"`
+		Attempted float64 `json:"attempted_at"`
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	if b, err := os.ReadFile(filepath.Join(root, "balance", fp+".json")); err == nil && json.Unmarshal(b, &entry) == nil {
+		ts, ttl := entry.TS, 3600.0
+		if entry.Supported {
+			ttl = 300
+		}
+		if entry.Failed {
+			ts, ttl = entry.Attempted, 30
+		}
+		if age := now - ts; age >= 0 && age < ttl {
+			return false
+		}
+	}
+	var inflight struct {
+		TS float64 `json:"ts"`
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "balance", fp+".inflight")); err == nil && json.Unmarshal(b, &inflight) == nil {
+		if age := now - inflight.TS; age >= 0 && age < 60 {
+			return false
+		}
+	}
+	return true
 }
 
 func main() {

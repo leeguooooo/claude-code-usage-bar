@@ -24,7 +24,6 @@ def test_atomic_write_text_overwrites(tmp_path):
 def test_atomic_write_text_no_temp_on_failure(tmp_path, monkeypatch):
     """If os.replace fails, the temp file must be cleaned up."""
     p = tmp_path / "f.txt"
-    real_replace = os.replace
 
     def fail(*args, **kwargs):
         raise OSError("simulated")

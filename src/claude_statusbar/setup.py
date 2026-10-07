@@ -666,7 +666,7 @@ def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = True
                 for s in skipped:
                     print(f"    {s}")
             if failed:
-                print(f"! Could not install:")
+                print("! Could not install:")
                 for s in failed:
                     print(f"    {s}")
             print("  Try /statusbar in Claude Code.")
@@ -685,7 +685,7 @@ def run_setup(verbose: bool = True, install_cmds: bool = True, fast: bool = True
                 for s in s_skipped:
                     print(f"    {s}")
             if s_failed:
-                print(f"! Could not install skill:")
+                print("! Could not install skill:")
                 for s in s_failed:
                     print(f"    {s}")
 

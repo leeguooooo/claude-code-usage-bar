@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-statusbar"
-version = "3.45.0"
+version = "3.45.1"
 authors = [
     {name = "leeguooooo", email = "leeguooooo@gmail.com"}
 ]
@@ -56,6 +56,15 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 claude_statusbar = ["*.py", "commands/*.md", "skills/**/*.md"]
+
+[tool.ruff]
+target-version = "py39"
+extend-exclude = ["build", "dist", ".codegraph"]
+
+[tool.ruff.lint]
+# Block undefined names, unused imports/variables and syntax errors first.
+# Styling rules can be added independently without weakening this gate.
+select = ["F", "E9"]
 
 [dependency-groups]
 dev = [

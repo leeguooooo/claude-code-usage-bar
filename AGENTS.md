@@ -11,8 +11,10 @@
 - Build distribution: `python -m build` (requires `build`/`wheel`).
 - Release: bump the version in `pyproject.toml` (plus both `.claude-plugin`
   manifests) and add the CHANGELOG section — merging that to `main` triggers
-  `.github/workflows/release.yml`, which tags, releases, builds binaries and
-  uploads to PyPI. `./publish.sh` is the manual fallback (expects
+  `.github/workflows/release.yml`, which creates a draft, builds binaries and
+  uploads to PyPI, then verifies binary checksums before publishing the release.
+  A retry fills missing artifacts from the original tag; existing platform
+  bundles stay intact. `./publish.sh` is the manual fallback (expects
   `PYPI_API_TOKEN` or `~/.pypirc`; offers TestPyPI first).
 - Install optional dependency for richer data: `python -m claude_statusbar.cli --install-deps` then follow prompts for `claude-monitor`.
 
@@ -22,7 +24,9 @@
 - Prefer pure functions with clear return types; add `typing` hints where missing and keep logging quiet (current default ERROR).
 
 ## Testing Guidelines
-- No automated suite exists yet; add targeted `pytest` cases around `core.main`, calculation helpers, and file parsing when you touch logic.
+- Run `PYTHONPATH=src python -m pytest tests/ -q` for the automated suite. Add regression cases around parsing, account isolation and cross-process cache updates when changing logic.
+- Run `ruff check .` and `actionlint .github/workflows/*.yml`; both are blocking CI checks.
+- Use synthetic credentials and isolated homes in tests and benchmarks. Benchmark official-quota and no-quota sessions separately.
 - For manual checks: place sample Claude JSONL data under `~/.claude/projects/`, run `claude-statusbar`, and confirm token/cost figures and reset timer behave as expected across empty/malformed files.
 - If introducing flags, verify CLI help stays readable: `python -m claude_statusbar.cli --help`.
 

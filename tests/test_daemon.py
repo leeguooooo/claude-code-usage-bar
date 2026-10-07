@@ -15,7 +15,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
 
 from claude_statusbar import daemon as _d
 from claude_statusbar import render_thin

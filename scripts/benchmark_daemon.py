@@ -12,6 +12,7 @@ import time
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('binary', type=Path)
+    parser.add_argument('--mode', choices=('no-quota', 'official'), default='no-quota')
     args = parser.parse_args()
     binary = args.binary.resolve()
     with tempfile.TemporaryDirectory(prefix='cs-daemon-bench-') as directory:
@@ -25,16 +26,29 @@ def main():
         (cfg/'claude-statusbar.json').write_text(json.dumps(dict(
             show_language=False, show_balance=False,
             show_mode=False, show_ip_risk=False, show_fp_risk=False,
+            show_ocs=False,
             auto_upgrade=False)))
-        env = {**os.environ, 'HOME':str(home), 'COLUMNS':'',
-               'CLAUDE_STATUSBAR_NO_UPDATE':'1', 'CS_API_MODE':'on'}
+        env = {key: value for key, value in os.environ.items()
+               if key not in ('CLAUDE_CONFIG_DIR', 'ANTHROPIC_BASE_URL',
+                              'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN',
+                              'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX')}
+        api_mode = 'off' if args.mode == 'official' else 'on'
+        env.update(HOME=str(home), COLUMNS='', CLAUDE_STATUSBAR_NO_UPDATE='1',
+                   CS_API_MODE=api_mode)
+        (home / '.claude.json').write_text(json.dumps({
+            'oauthAccount': {'accountUuid': '00000000-0000-0000-0000-000000000001'}}))
         payloads = []
         for i in range(16):
-            data = json.dumps(dict(session_id=f's{i}',
+            payload = dict(session_id=f's{i}',
                 model={'id':'fixture', 'display_name':'Fixture'},
                 workspace={'current_dir':str(repo)},
                 context_window={'used_percentage':10, 'context_window_size':200000},
-                _cs_env={'CS_API_MODE':'on'})).encode()
+                _cs_env={'CS_API_MODE':api_mode})
+            if args.mode == 'official':
+                payload['rate_limits'] = {
+                    'five_hour': {'used_percentage': 20, 'resets_at': int(time.time()) + 14400},
+                    'seven_day': {'used_percentage': 30, 'resets_at': int(time.time()) + 518400}}
+            data = json.dumps(payload).encode()
             payloads.append(data)
             p = root/'sessions'/f's{i}'
             p.mkdir(parents=True)
@@ -83,7 +97,7 @@ def main():
             metrics = json.loads((root/'scheduler.json').read_text())
             git = [json.loads(p.read_text()) for p in (root/'git').glob('*.json')]
             count = sum(p.get('refresh_count',0) for p in git)
-            print(json.dumps(dict(routes=routes, warm_routes=warm_routes,
+            print(json.dumps(dict(mode=args.mode, routes=routes, warm_routes=warm_routes,
                 cold_start_seconds=cold_start_seconds,
                 max_cache_age_seconds=round(max_age,3), peak_burst_clients=peak,
                 git_refreshes=count, scheduler=metrics), indent=2))

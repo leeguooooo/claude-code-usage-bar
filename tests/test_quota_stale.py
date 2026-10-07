@@ -6,7 +6,6 @@ dropped to two blank `--%` bars (indistinguishable from a fresh session). The
 bar must now say it's stale, and only when the cache genuinely rotted.
 """
 import json
-import time
 
 from claude_statusbar import predict, progress
 

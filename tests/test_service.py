@@ -5,7 +5,6 @@ The actual `launchctl bootstrap` / `systemctl --user enable` calls aren't
 exercised — those need real OS state. Manual verification covers them.
 """
 
-import os
 import sys
 from pathlib import Path
 

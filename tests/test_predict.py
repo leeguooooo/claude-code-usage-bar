@@ -1,7 +1,7 @@
 # tests/test_predict.py
 from claude_statusbar.predict import (
     format_eta, project_window, forecast_chip, forecast, reconcile_account,
-    WINDOW_LEN_S, MIN_ELAPSED_S, DEBUG_PLACEHOLDER,
+    WINDOW_LEN_S,
 )
 
 W5 = WINDOW_LEN_S["five_hour"]    # 18000
@@ -200,7 +200,6 @@ def test_reconcile_stale_blob_cannot_confirm_or_upgrade(tmp_path):
     # confirmation that restarts the downgrade grace clock. Observed live
     # 2026-06-10: frozen sessions replaying 7d=15% kept the bar from healing
     # to the official 3%.
-    from claude_statusbar.predict import DOWNGRADE_GRACE_S
     p = tmp_path / "latest.json"
     now = 100000.0
     r5_fresh, r7 = now + 3000, now + 500000

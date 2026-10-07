@@ -1,7 +1,7 @@
 {
   "name": "claude-statusbar",
   "description": "Lightweight Claude Code status-line monitor: 5h/7d rate-limit usage, reset timers, projection/forecast, model + context, prompt-cache countdown, optional cost/balance, project/branch/session/activity lines, and a macOS desktop HUD (`cs hud`). 3 styles x 9 themes with slash commands. Requires the `cs` CLI (`curl … install.sh | bash`, or PyPI: pip install claude-statusbar / uv tool install claude-statusbar).",
-  "version": "3.45.0",
+  "version": "3.45.1",
   "author": {
     "name": "leeguooooo",
     "email": "leeguooooo@gmail.com"

@@ -9,7 +9,7 @@ import sys
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 # Heavy stdlib imports (logging, subprocess, shutil, re) are deferred to
 # the functions that use them — they collectively cost ~12ms at import time
@@ -45,7 +45,6 @@ def parse_stdin_data() -> Dict[str, Any]:
         if not raw:
             return result
 
-        debug_file = Path.home() / ".cache" / "claude-statusbar" / "last_stdin.json"
         data = json.loads(raw)
         # Mark stdin as valid the moment we parse it. If any per-field
         # extraction below raises (e.g. Anthropic ships an unexpected shape),
@@ -65,14 +64,11 @@ def parse_stdin_data() -> Dict[str, Any]:
         else:
             _env = os.environ
 
-        # Only cache stdin when it contains rate_limits (avoid overwriting with empty data).
-        # Skip when the environment is a relay/cloud backend: a relay that happens
-        # to forward a five_hour object would otherwise get cached as official-looking
-        # quota and later suppress no-quota detection. Atomic write — Ctrl+C must
-        # not corrupt the cache.
-        if data.get('rate_limits', {}).get('five_hour') and not is_no_quota_mode(_env):
-            from .cache import atomic_write_text
-            atomic_write_text(debug_file, raw)
+        # Keep quota-only snapshots scoped to the current account/session.
+        # The global stdin file is diagnostic input, never a quota authority.
+        if not is_no_quota_mode(_env):
+            from .quota_cache import remember
+            remember(data)
 
         # Session ID
         result['session_id'] = data.get('session_id', '')
@@ -138,12 +134,7 @@ def parse_stdin_data() -> Dict[str, Any]:
         # bogus authoritative 0%.
         FIVE_HOUR_S  = 5 * 3600
         SEVEN_DAY_S  = 7 * 86400
-        # Don't fall back to a stale cache; if no session has refreshed
-        # last_stdin.json in this long, assume we don't know the value.
-        # 10 min covers low-frequency status-bar pollers (some tmux/i3bar
-        # configs refresh every several minutes) without re-introducing
-        # the multi-session contention window.
-        LAST_STDIN_FALLBACK_MAX_AGE_S = 600
+        # quota_cache rejects snapshots older than ten minutes.
 
         def _rollover_cached(pct, resets_at, window_s):
             try:
@@ -169,14 +160,11 @@ def parse_stdin_data() -> Dict[str, Any]:
             result['rate_limit_7d_pct'] = _pct(sd.get('used_percentage', 0))
             result['rate_limit_7d_resets_at'] = sd.get('resets_at')
 
-        # Fallback: load rate_limits from previous session's cached stdin,
-        # but only if the cache is fresh enough to be trustworthy.
+        # Fallback only to quota with a matching account/session owner.
         if not fh and not sd:
             try:
-                if _time.time() - debug_file.stat().st_mtime > LAST_STDIN_FALLBACK_MAX_AGE_S:
-                    raise OSError("cache too old")
-                cached = json.loads(debug_file.read_text(encoding="utf-8"))
-                cached_rl = cached.get('rate_limits', {})
+                from .quota_cache import read
+                cached_rl = read(data)
                 cached_fh = cached_rl.get('five_hour', {})
                 cached_sd = cached_rl.get('seven_day', {})
                 if cached_fh:
@@ -369,7 +357,8 @@ def _format_balance(entry: dict) -> str:
     bal = entry.get("balance")
     if not isinstance(bal, (int, float)):
         return ""
-    return f"bal ${bal:,.2f}"
+    suffix = ' ⟳' if entry.get('refresh_failed') else ''
+    return f"bal ${bal:,.2f}{suffix}"
 
 
 def _balance_remaining_pct(entry: dict):
@@ -405,14 +394,22 @@ def relay_balance(env: Dict[str, str], *, spawn: bool = True):
     base = (env.get("ANTHROPIC_BASE_URL") or "").strip()
     key = (env.get("ANTHROPIC_API_KEY") or "").strip()
     auth = (env.get("ANTHROPIC_AUTH_TOKEN") or "").strip()
-    if not base or not (key or auth):
+    fp = env.get('CS_BALANCE_FP', '')
+    if not base:
         return None
 
     from . import balance_cache
-    fp = balance_cache.fingerprint(base, key or auth)
+    if key or auth:
+        fp = balance_cache.fingerprint(base, key or auth)
+    elif not (isinstance(fp, str) and len(fp) == 40
+              and all(c in '0123456789abcdef' for c in fp)):
+        return None
     entry = balance_cache.read_cache(fp)
     if balance_cache.is_fresh(entry):
         return entry if entry.get("supported") else None
+
+    if not (key or auth):
+        return entry if entry and entry.get('supported') else None
 
     from . import identity as _identity
     if spawn and _identity._BACKGROUND_COLLECTORS:
@@ -1394,6 +1391,8 @@ def main(json_output: bool = False,
                         if _rp is not None:
                             balance_pct = _rp
                             balance_amount = f"${_bentry['balance']:,.2f}"
+                            if _bentry.get('refresh_failed'):
+                                balance_amount += ' ⟳'
 
             if json_output:
                 print(json.dumps({

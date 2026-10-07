@@ -7,7 +7,7 @@ from io import StringIO
 
 import pytest
 
-from claude_statusbar import core
+from claude_statusbar import core, quota_cache
 
 
 def _stdin_with(payload: dict, monkeypatch):
@@ -220,8 +220,10 @@ def test_cached_fallback_expired_window_returns_none(monkeypatch, isolated_cache
     cache_dir.mkdir(parents=True)
     now = _time.time()
     expired = int(now - 3600)
-    cache_path = cache_dir / "last_stdin.json"
+    cache_path = quota_cache.path_for({"session_id": "abc"})
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps({
+        "ts": now,
         "rate_limits": {
             "five_hour": {"used_percentage": 99, "resets_at": expired},
         },
@@ -241,8 +243,10 @@ def test_cached_fallback_active_window_renders_pct(monkeypatch, isolated_cache, 
     cache_dir.mkdir(parents=True)
     now = _time.time()
     future = int(now + 1800)
-    cache_path = cache_dir / "last_stdin.json"
+    cache_path = quota_cache.path_for({"session_id": "abc"})
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps({
+        "ts": now,
         "rate_limits": {
             "five_hour": {"used_percentage": 47, "resets_at": future},
         },
@@ -262,15 +266,18 @@ def test_cached_fallback_skipped_when_cache_too_old(monkeypatch, isolated_cache,
     cache_dir.mkdir(parents=True)
     now = _time.time()
     future = int(now + 1800)
-    cache_path = cache_dir / "last_stdin.json"
+    cache_path = quota_cache.path_for({"session_id": "abc"})
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps({
+        "ts": now,
         "rate_limits": {
             "five_hour": {"used_percentage": 99, "resets_at": future},
         },
     }), encoding="utf-8")
     # Backdate cache mtime to 20 minutes ago (well past the 10-min gate).
-    old = now - 1200
-    os.utime(cache_path, (old, old))
+    cached = json.loads(cache_path.read_text())
+    cached["ts"] = now - 1200
+    cache_path.write_text(json.dumps(cached))
 
     _stdin_with({"session_id": "abc"}, monkeypatch)
     out = core.parse_stdin_data()

@@ -10,7 +10,7 @@ Weights are proxycheck.io's published baselines (datacenter 33 / VPN 50 /
 Tor 75 / proxy 100); abuser tiers are ipapi.is's (>20% very-high … <0.05%
 very-low). Region is the one officially-stated Anthropic trigger.
 """
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 # proxycheck.io category baselines.
 _HOSTING, _VPN, _TOR, _PROXY = 33, 50, 75, 100

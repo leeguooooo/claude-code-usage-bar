@@ -5,7 +5,7 @@ No segment's color leaks into another. The | separator and [ ] / ( )
 brackets are always theme.mute so they don't carry severity.
 """
 import re
-from claude_statusbar.progress import format_status_line, _fg
+from claude_statusbar.progress import format_status_line
 from claude_statusbar.themes import get_theme
 
 GRAPHITE = get_theme("graphite")

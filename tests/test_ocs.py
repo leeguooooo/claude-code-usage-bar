@@ -1,6 +1,5 @@
 """ocs address segment: whoami parsing, cache/TTL, never-block contract, render."""
 import json
-import os
 import stat
 import sys
 import time

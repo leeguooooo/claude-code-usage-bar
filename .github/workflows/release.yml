@@ -6,15 +6,14 @@ name: Release
 # CHANGELOG section as its notes, attaches the platform binaries and uploads
 # the wheel to PyPI.
 #
-# Re-runnable by design: the plan job skips everything when the tag already
-# exists, so a re-push of main or a manual run against an already-released
-# version is a no-op rather than a duplicate release.
+# Existing tags are immutable; retry only missing artifacts from that tag.
+# New releases stay drafts until every binary and checksum is verified.
 
 on:
   # Every push to main, not just ones touching pyproject.toml: the plan job is
   # a checkout and one script, and running it always means a release that died
   # half-way (tag cut, upload failed) retries on the next push instead of
-  # needing someone to notice. The tag check is what decides, not the paths.
+  # needing someone to notice. Artifact completeness decides, not the paths.
   push:
     branches: [main]
   workflow_dispatch:
@@ -40,6 +39,10 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
       title: ${{ steps.plan.outputs.title }}
+      ref: ${{ steps.plan.outputs.ref }}
+      binaries: ${{ steps.plan.outputs.binaries }}
+      pypi: ${{ steps.plan.outputs.pypi }}
+      draft: ${{ steps.plan.outputs.draft }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,34 +56,31 @@ jobs:
         id: plan
         env:
           REQUESTED: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version="${REQUESTED:-$(python scripts/release_meta.py version)}"
-          tag="v${version}"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-
-          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::${tag} already exists — nothing to release."
-            exit 0
-          fi
-
-          # Fail loudly rather than shipping a release whose plugin manifests
-          # or notes disagree with the wheel.
-          python scripts/release_meta.py check "${version}"
-          {
-            echo "release=true"
-            echo "title=$(python scripts/release_meta.py title "${version}")"
-          } >> "$GITHUB_OUTPUT"
+          python scripts/release_plan.py "${version}"
 
   tests:
     name: Tests
     needs: plan
     if: needs.plan.outputs.release == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suite: tests/
+          - os: macos-14
+            suite: tests/test_review_regressions.py tests/test_release_recovery.py tests/test_setup_windows_exe.py
+          - os: windows-latest
+            suite: tests/test_review_regressions.py tests/test_release_recovery.py tests/test_setup_windows_exe.py
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -95,7 +95,7 @@ jobs:
       # place where "it passed on the PR" is not good enough: the tag is public
       # and PyPI uploads are immutable.
       - name: Run tests
-        run: PYTHONPATH=src pytest tests/ -q
+        run: python -m pytest ${{ matrix.suite }} -q
 
   github-release:
     name: GitHub Release
@@ -106,6 +106,8 @@ jobs:
       contents: write   # creates the tag and the release
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -114,19 +116,35 @@ jobs:
       - name: Render release notes
         run: python scripts/release_meta.py notes "${{ needs.plan.outputs.version }}" > release-notes.md
 
+      - name: Ensure immutable tag exists before creating a draft
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Draft releases may defer tag creation until publication. Binary
+          # and PyPI jobs must already be able to check out the exact source.
+          git ls-remote --tags origin "refs/tags/$TAG" > existing-tag.txt
+          if [ ! -s existing-tag.txt ]; then
+            git tag "$TAG" HEAD
+            git push origin "refs/tags/$TAG"
+          else
+            git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+            test "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)"
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ needs.plan.outputs.ref }}
           name: ${{ needs.plan.outputs.title }}
           body_path: release-notes.md
-          draft: false
+          draft: ${{ needs.plan.outputs.draft == 'true' }}
           prerelease: false
 
   binaries:
     name: Binaries
     needs: [plan, github-release]
-    if: needs.plan.outputs.release == 'true'
+    if: needs.plan.outputs.binaries == 'true'
     # Called, not triggered: a release created with GITHUB_TOKEN does not fire
     # `release: published`, so waiting for that event would hang forever.
     uses: ./.github/workflows/release-binaries.yml
@@ -134,11 +152,12 @@ jobs:
       contents: write
     with:
       tag: ${{ needs.plan.outputs.tag }}
+      draft: ${{ needs.plan.outputs.draft == 'true' }}
 
   pypi:
     name: PyPI
     needs: [plan, github-release]
-    if: needs.plan.outputs.release == 'true'
+    if: needs.plan.outputs.pypi == 'true'
     runs-on: ubuntu-latest
     # No `environment:` — a trusted publisher configured WITHOUT an environment
     # name must not find one here, or PyPI rejects the upload. Add it on both
@@ -167,9 +186,38 @@ jobs:
       - name: Publish (trusted publishing)
         if: env.HAS_TOKEN != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
       - name: Publish (API token)
         if: env.HAS_TOKEN == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+
+  finalize:
+    name: Verify and publish
+    needs: [plan, github-release, binaries, pypi]
+    if: >-
+      always() && needs.plan.outputs.release == 'true' &&
+      needs.github-release.result == 'success' &&
+      (needs.binaries.result == 'success' || needs.binaries.result == 'skipped') &&
+      (needs.pypi.result == 'success' || needs.pypi.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Verification tooling comes from the workflow revision; artifacts come
+      # from the immutable release tag, even when repairing an older version.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify checksums and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          python scripts/verify_release_assets.py "$TAG"
+          gh release edit "$TAG" --draft=false

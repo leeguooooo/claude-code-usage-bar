@@ -10,15 +10,14 @@ from pathlib import Path
 import objc
 import Quartz
 from AppKit import (
-    NSApplication, NSPanel, NSColor, NSTextField, NSFont, NSScreen, NSView,
+    NSApplication, NSColor, NSTextField, NSFont, NSScreen, NSView,
     NSBezierPath, NSGradient,
     NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel,
     NSBackingStoreBuffered, NSStatusWindowLevel,
     NSMakeRect, NSMakePoint,
     NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorStationary,
     NSWindowCollectionBehaviorFullScreenAuxiliary, NSApp,
-    NSApplicationActivationPolicyAccessory, NSEvent, NSFontWeightMedium,
-    NSFontWeightSemibold, NSFontWeightBold, NSFontWeightRegular,
+    NSApplicationActivationPolicyAccessory, NSEvent, NSFontWeightSemibold, NSFontWeightBold, NSFontWeightRegular,
     NSLineBreakByTruncatingTail, NSTextAlignmentRight, NSTextAlignmentCenter,
     NSMutableAttributedString, NSForegroundColorAttributeName, NSFontAttributeName,
 )

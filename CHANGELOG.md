@@ -9,6 +9,27 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.45.1 — 2026-10-07
+
+**Quota stays isolated across accounts and concurrent windows; relay balances survive daemon mode.**
+
+- Serialize account quota and projection updates across render processes, so
+  parallel windows cannot overwrite a newer reading or lose sibling sessions.
+- Recover missing quota only from account-owned snapshots (or the same session
+  when the account is unknown); global diagnostic stdin is no longer a fallback.
+- Daemon renders read relay balances through a credential-free fingerprint.
+  The session client refreshes the balance; failed usage queries keep the last
+  known value with a stale marker instead of reporting the full credit limit.
+- Identical quota snapshots no longer trigger repeated writes or fsyncs.
+- New releases stay drafts until binary checksums pass. Retries use the original
+  tag and complete missing platform assets or PyPI files without replacing
+  already uploaded platform bundles.
+- CI blocks Ruff correctness violations and invalid workflows, checks platform
+  regressions on macOS and Windows, and benchmarks official-quota sessions as
+  well as API sessions before uploading binaries.
+
+---
+
 ## v3.45.0 — 2026-10-07
 
 **AgentParty support is removed.**

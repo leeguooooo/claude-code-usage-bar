@@ -424,6 +424,18 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
     DOWNGRADE_GRACE_S. Never raises — on any error returns the inputs."""
     p = Path(path) if path is not None else _latest_path(transcript_path)
     try:
+        from .cache import file_transaction
+        with file_transaction(p):
+            return _reconcile_account_locked(
+                p, used_5h, resets_5h, used_7d, resets_7d, now,
+                session_id, record, model)
+    except Exception:
+        return used_5h, resets_5h, used_7d, resets_7d
+
+
+def _reconcile_account_locked(p, used_5h, resets_5h, used_7d, resets_7d,
+                              now, session_id, record, model):
+    try:
         if now is None:
             import time as _t
             now = _t.time()
@@ -1237,13 +1249,15 @@ def projection(used_5h, resets_5h, used_7d, resets_7d, now: float, session_id: s
                 result = _PROJECTION_RESULT_CACHE.get("result")
                 if isinstance(result, tuple) and len(result) == 2:
                     return result
-        store = load_projection_store(transcript_path=transcript_path)
-        since = regime_changed_at(transcript_path=transcript_path)
-        p5 = _projection_for_window(store, "five_hour", u5, r5, now, session_id,
-                                    since=since)
-        p7 = _projection_for_window(store, "seven_day", u7, r7, now, session_id,
-                                    since=since)
-        save_projection_store(store, transcript_path=transcript_path)
+        from .cache import file_transaction
+        with file_transaction(_projection_path(transcript_path)):
+            store = load_projection_store(transcript_path=transcript_path)
+            since = regime_changed_at(transcript_path=transcript_path)
+            p5 = _projection_for_window(store, "five_hour", u5, r5, now, session_id,
+                                        since=since)
+            p7 = _projection_for_window(store, "seven_day", u7, r7, now, session_id,
+                                        since=since)
+            save_projection_store(store, transcript_path=transcript_path)
         result = (p5, p7)
         if key is not None:
             _PROJECTION_RESULT_CACHE = {

@@ -689,7 +689,7 @@ def test_launcher_missing_from_receipt_is_still_a_shadow(tmp_path, monkeypatch):
 # it exits 0 having upgraded nothing. That is "retry shortly", not "latest".
 
 def test_cs_upgrade_says_retry_when_installer_lags_pypi(monkeypatch):
-    runs = _uv_upgrade_setup(monkeypatch, [True], [])
+    _uv_upgrade_setup(monkeypatch, [True], [])
     monkeypatch.setattr(updater, "resolve_latest_version", lambda: "3.43.8")
     ok, msg = updater.upgrade_current_install()
     assert ok is False

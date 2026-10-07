@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from claude_statusbar.identity import (
-    IdentityInfo,
     dirty_with_async_refresh,
     read_head,
     resolve_identity,

@@ -4,7 +4,6 @@ import os
 import shutil
 import subprocess
 import time
-from pathlib import Path
 
 import pytest
 
@@ -95,3 +94,50 @@ def test_native_cold_start_budget(native, tmp_path):
         for slot in slots:
             slot.close()
     assert invoke(native, tmp_path, {'session_id':'cold'}).stdout.startswith('fallback:')
+
+
+def test_native_and_python_stamp_the_same_secret_free_environment(native, tmp_path, monkeypatch):
+    from claude_statusbar import balance_cache, core, render_thin
+    setup_cache(tmp_path)
+    env = {'ANTHROPIC_BASE_URL': 'https://relay.example', 'ANTHROPIC_API_KEY': 'synthetic-primary',
+           'ANTHROPIC_AUTH_TOKEN': 'synthetic-fallback', 'CS_API_MODE': 'on',
+           'CLAUDE_CODE_USE_BEDROCK': '0', 'CLAUDE_CODE_USE_VERTEX': '0', 'COLUMNS': ''}
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    fp = balance_cache.fingerprint(env['ANTHROPIC_BASE_URL'], env['ANTHROPIC_API_KEY'])
+    p = tmp_path / '.cache' / 'claude-statusbar' / 'balance' / (fp + '.json')
+    p.parent.mkdir()
+    p.write_text(json.dumps({'ts': time.time(), 'supported': True, 'balance': 25}))
+    monkeypatch.setattr(core, 'relay_balance', lambda *a, **k: None)
+    py = json.loads(render_thin._inject_session_env(b'{"session_id":"s"}'))
+    result = invoke(native, tmp_path, {'session_id': 's'}, **env)
+    assert result.stdout == 'CURRENT\n'
+    stored = (tmp_path / '.cache/claude-statusbar/sessions/s/last_stdin.json').read_text()
+    assert json.loads(stored)['_cs_env'] == py['_cs_env']
+    assert 'synthetic-primary' not in stored and 'synthetic-fallback' not in stored
+
+
+def test_native_stale_balance_delegates_to_live_credentials_client(native, tmp_path):
+    setup_cache(tmp_path)
+    result = invoke(native, tmp_path, {'session_id': 's'},
+                    ANTHROPIC_BASE_URL='https://relay.example', ANTHROPIC_API_KEY='synthetic')
+    assert result.stdout.startswith('fallback:')
+
+
+def test_native_disabled_balance_never_probes(native, tmp_path):
+    setup_cache(tmp_path)
+    config = tmp_path / '.claude/claude-statusbar.json'
+    config.parent.mkdir()
+    config.write_text('{"show_balance":false}')
+    result = invoke(native, tmp_path, {'session_id': 's'},
+                    ANTHROPIC_BASE_URL='https://relay.example', ANTHROPIC_API_KEY='synthetic')
+    assert result.stdout == 'CURRENT\n'
+
+
+def test_native_whitespace_settings_delegate_without_panicking(native, tmp_path):
+    setup_cache(tmp_path)
+    settings = tmp_path / '.claude/settings.json'
+    settings.parent.mkdir()
+    settings.write_text('{"statusLine":{"command":"   "}}')
+    result = invoke(native, tmp_path, {'session_id': 's'})
+    assert result.returncode == 0 and result.stdout.startswith('fallback:')

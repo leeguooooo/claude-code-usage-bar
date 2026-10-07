@@ -135,7 +135,6 @@ def render_capsule(
     theme = theme or get_theme("graphite")
     INK    = _fg(theme.pill_ink)
     EDGE   = _fg(theme.edge)
-    MUTE   = _fg(theme.mute)
 
     pad = DENSITY_PAD.get(density, " ")
 

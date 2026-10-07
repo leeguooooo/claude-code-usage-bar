@@ -1,7 +1,6 @@
 """Tests for `cs preview` — style × theme matrix renderer."""
 
 import io
-import sys
 from contextlib import redirect_stdout
 
 from claude_statusbar import preview

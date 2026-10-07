@@ -6,14 +6,11 @@ import os
 import signal
 import sys
 import time
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 
 from claude_statusbar import daemon, render_thin
-from claude_statusbar.daemon import session_meta_path, session_rendered_path
 
 
 def _write_session(tmp_home, sid, *, daemon_started_at, ansi="hello"):

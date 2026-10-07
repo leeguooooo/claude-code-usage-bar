@@ -11,7 +11,6 @@ here without needing a real Windows box:
 3. render_thin spawn debounce (marker-file mtime, one attempt per 30s)
 """
 
-import ctypes
 import os
 import sys
 import time

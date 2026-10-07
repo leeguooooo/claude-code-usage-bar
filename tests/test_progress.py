@@ -163,7 +163,6 @@ def test_format_status_line_with_color():
 # ── language segment tests ────────────────────────────────────────────────────
 
 import json
-import os
 import pytest
 from claude_statusbar import progress as _prog
 from claude_statusbar.progress import format_language_segment

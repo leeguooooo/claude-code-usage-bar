@@ -84,7 +84,6 @@ def test_a_star_appears_over_several_phases():
 
 
 def test_star_color_is_fill_hue_lightened():
-    bright = _bg  # placeholder to keep import; use _lighten below
     target = _lighten(TH.s_ok, _SPARKLE_GLINT)
     code = f"\033[38;2;{target[0]};{target[1]};{target[2]}m"
     found = any(

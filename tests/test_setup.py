@@ -319,7 +319,6 @@ def test_project_setup_refuses_unreadable_existing_file(tmp_path: Path):
     """If the existing settings.json can't be read (e.g. permission denied),
     we must NOT silently overwrite it — otherwise a misconfigured project
     loses its settings."""
-    import os
 
     proj_settings = tmp_path / ".claude" / "settings.json"
     proj_settings.parent.mkdir(parents=True)

@@ -67,8 +67,13 @@ def is_fresh(entry: Optional[dict], now: Optional[float] = None) -> bool:
     ts = entry.get("ts")
     if not isinstance(ts, (int, float)):
         return False
-    ttl = TTL_SECONDS if entry.get("supported") else NEGATIVE_TTL_SECONDS
-    return (now or time.time()) - ts < ttl
+    if entry.get('refresh_failed'):
+        ts = entry.get('attempted_at', ts)
+        ttl = 30
+    else:
+        ttl = TTL_SECONDS if entry.get("supported") else NEGATIVE_TTL_SECONDS
+    age = (time.time() if now is None else now) - ts
+    return 0 <= age < ttl
 
 
 def write_cache_atomic(fp: str, entry: dict) -> None:

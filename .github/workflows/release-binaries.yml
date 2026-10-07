@@ -73,11 +73,31 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
 
+      - name: Check existing platform assets
+        id: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release-assets.json
+          python - <<'PYCODE'
+          import json, os
+          assets = json.load(open('release-assets.json'))['assets']
+          names = {a['name'] for a in assets if a.get('state') == 'uploaded' and a.get('size', 0) > 0}
+          asset = os.environ['ASSET']
+          complete = asset in names and asset + '.sha256' in names
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('complete=' + str(complete).lower() + '\n')
+          PYCODE
+
       - uses: actions/setup-python@v5
+        if: steps.assets.outputs.complete != 'true'
         with:
           python-version: "3.12"
 
       - name: Install package + PyInstaller
+        if: steps.assets.outputs.complete != 'true'
         # The [hud] extra pulls in PyObjC — its `sys_platform == 'darwin'`
         # markers mean it installs on the macOS runner (so the spec can bundle
         # the desktop HUD) and is skipped on Linux automatically.
@@ -86,19 +106,23 @@ jobs:
           pip install '.[hud]' pyinstaller certifi
 
       - name: Build binary
+        if: steps.assets.outputs.complete != 'true'
         run: pyinstaller packaging/cs.spec --noconfirm
 
       - uses: actions/setup-go@v5
+        if: steps.assets.outputs.complete != 'true'
         with:
           go-version: '1.23.x'
           cache: false
 
       - name: Build native statusline entrypoint
+        if: steps.assets.outputs.complete != 'true'
         run: |
           mv dist/cs/cs dist/cs/cs-python
           go build -trimpath -ldflags='-s -w' -o dist/cs/cs packaging/native/main.go
 
       - name: Smoke-test the binary
+        if: steps.assets.outputs.complete != 'true'
         run: |
           ./dist/cs/cs --version
           ./dist/cs/cs styles >/dev/null
@@ -109,10 +133,12 @@ jobs:
           test -d ./dist/cs/_internal
           python scripts/benchmark_native.py ./dist/cs/cs
           python scripts/benchmark_daemon.py ./dist/cs/cs
+          python scripts/benchmark_daemon.py ./dist/cs/cs --mode official
           # macOS: verify the HUD (pyobjc) actually got bundled — non-GUI check.
           if [ "$RUNNER_OS" = "macOS" ]; then ./dist/cs/cs hud check; fi
 
       - name: Package (tar.gz + sha256)
+        if: steps.assets.outputs.complete != 'true'
         run: |
           tar -czf "${{ matrix.asset }}" -C dist cs
           if command -v sha256sum >/dev/null 2>&1; then
@@ -123,6 +149,7 @@ jobs:
           ls -lh "${{ matrix.asset }}"*
 
       - name: Upload to release
+        if: steps.assets.outputs.complete != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name || inputs.tag }}
