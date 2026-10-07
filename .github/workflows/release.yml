@@ -211,7 +211,7 @@ jobs:
         if: needs.plan.outputs.binaries == 'true'
         with:
           pattern: cs-*.tar.gz
-          path: release-assets
+          path: new-assets
           merge-multiple: true
       - name: Verify checksums and render notes
         env:
@@ -219,6 +219,9 @@ jobs:
           TAG: ${{ needs.plan.outputs.tag }}
         run: |
           mkdir -p release-assets
+          if [ "${{ needs.plan.outputs.binaries }}" = "true" ]; then
+            cp new-assets/* release-assets/
+          fi
           if [ "${{ needs.plan.outputs.draft }}" != "true" ]; then
             mkdir -p existing-assets
             gh release download "$TAG" --dir existing-assets --pattern 'cs-*.tar.gz*'
@@ -227,6 +230,7 @@ jobs:
           python scripts/verify_release_assets.py --directory release-assets
           python scripts/release_meta.py notes "${{ needs.plan.outputs.version }}" > release-notes.md
       - uses: softprops/action-gh-release@v2
+        if: needs.plan.outputs.binaries == 'true'
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           # The immutable tag already identifies the tested source. Current
@@ -237,5 +241,5 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release-assets/cs-*.tar.gz
-            release-assets/cs-*.tar.gz.sha256
+            new-assets/cs-*.tar.gz
+            new-assets/cs-*.tar.gz.sha256

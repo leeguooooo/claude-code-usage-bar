@@ -179,13 +179,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: cs-*.tar.gz
-          path: release-assets
+          path: new-assets
           merge-multiple: true
       - name: Verify all platform bundles
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
+          mkdir -p release-assets
+          if compgen -G "new-assets/*" >/dev/null; then cp new-assets/* release-assets/; fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             mkdir -p existing-assets
             gh release download "$TAG" --dir existing-assets --pattern 'cs-*.tar.gz*'
@@ -197,5 +199,5 @@ jobs:
           tag_name: ${{ github.event.release.tag_name || inputs.tag }}
           target_commitish: ${{ github.sha }}
           files: |
-            release-assets/cs-*.tar.gz
-            release-assets/cs-*.tar.gz.sha256
+            new-assets/cs-*.tar.gz
+            new-assets/cs-*.tar.gz.sha256
