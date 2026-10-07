@@ -65,7 +65,11 @@ warn_about_duplicate_installs() {
 TMP_DIR=""
 INSTALL_STAGE=""
 INSTALLED_BUNDLE_DIR=""
+DMG_MOUNT=""
 cleanup() {
+    if [ -n "${DMG_MOUNT:-}" ]; then
+        hdiutil detach "$DMG_MOUNT" -quiet || hdiutil detach "$DMG_MOUNT" -force -quiet || return 0
+    fi
     [ -n "${TMP_DIR:-}" ] && rm -rf "$TMP_DIR"
     [ -n "${INSTALL_STAGE:-}" ] && rm -rf "$INSTALL_STAGE"
     return 0
@@ -146,6 +150,32 @@ sha256_of() {
         sha256sum "$1" | awk '{print $1}'
     else
         shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+verify_checksum() {
+    local base="$1" asset="$2" directory="$3" want got
+    if ! curl -fsSL "$base/$asset.sha256" -o "$directory/$asset.sha256"; then
+        err "Checksum file unavailable for $asset; refusing to install."
+        exit 1
+    fi
+    want="$(awk '{print $1}' "$directory/$asset.sha256")"
+    got="$(sha256_of "$directory/$asset")"
+    if [ "$want" != "$got" ]; then
+        err "Checksum mismatch for $asset; refusing to install."
+        exit 1
+    fi
+    ok "✓ Checksum verified"
+}
+
+verify_apple_signature() {
+    local target="$1" info
+    codesign --verify --strict "$target" || { err "Apple signature verification failed."; exit 1; }
+    info="$(codesign --display --verbose=4 "$target" 2>&1)"
+    if ! [[ "$info" == *"Authority=Developer ID Application:"* &&
+            "$info" == *"TeamIdentifier=6ZPXG4KVVS"* ]]; then
+        err "Unexpected developer identity; refusing to install."
+        exit 1
     fi
 }
 
@@ -269,25 +299,43 @@ main() {
     TMP_DIR="$(mktemp -d)"
     local tmp="$TMP_DIR"
 
+    # Prefer a stapled, notarized disk image on supported Macs. Only a genuine
+    # 404 (or an absent offline fixture) permits the legacy tar path; a network
+    # or server error must not silently downgrade the authenticity checks.
+    if [ "$(uname -s)" = "Darwin" ]; then
+        local dmg_asset="cs-darwin-arm64.dmg" status
+        say "Checking for the notarized macOS disk image..."
+        if status="$(curl -sSL -w '%{http_code}' "$base/$dmg_asset" -o "$tmp/$dmg_asset")"; then
+            if [ "$status" = "200" ] || [ "$status" = "000" ]; then
+                verify_checksum "$base" "$dmg_asset" "$tmp"
+                verify_apple_signature "$tmp/$dmg_asset"
+                spctl --assess --type open --context context:primary-signature "$tmp/$dmg_asset" || {
+                    err "Gatekeeper did not accept the disk image; refusing to install."; exit 1;
+                }
+                ok "✓ Apple signature and notarization verified"
+                mkdir -p "$tmp/mounted"
+                hdiutil attach "$tmp/$dmg_asset" -readonly -nobrowse -noautoopen -mountpoint "$tmp/mounted" >/dev/null
+                DMG_MOUNT="$tmp/mounted"
+                verify_apple_signature "$DMG_MOUNT/cs/cs"
+                verify_apple_signature "$DMG_MOUNT/cs/cs-python"
+                install_onedir_bundle "$DMG_MOUNT/cs"
+                finish_install "onedir" "$INSTALLED_BUNDLE_DIR"
+                return
+            elif [ "$status" != "404" ]; then
+                err "Disk image download returned HTTP $status; refusing to downgrade."; exit 1
+            fi
+        elif [[ "$base" != file://* ]]; then
+            err "Disk image download failed; retry when the network is available."; exit 1
+        fi
+    fi
+
     say "Downloading $asset from the latest release..."
     if ! curl -fsSL "$base/$asset" -o "$tmp/$asset"; then
         warn "Download failed (no release asset yet?)."
         fall_back_to_pip
     fi
 
-    # Verify checksum if the .sha256 sidecar is present.
-    if curl -fsSL "$base/$asset.sha256" -o "$tmp/$asset.sha256" 2>/dev/null; then
-        local want got
-        want="$(awk '{print $1}' "$tmp/$asset.sha256")"
-        got="$(sha256_of "$tmp/$asset")"
-        if [ "$want" != "$got" ]; then
-            err "Checksum mismatch! expected $want, got $got. Aborting."
-            exit 1
-        fi
-        ok "✓ Checksum verified"
-    else
-        warn "No .sha256 published for $asset — skipping checksum verification."
-    fi
+    verify_checksum "$base" "$asset" "$tmp"
 
     say "Extracting..."
     tar -xzf "$tmp/$asset" -C "$tmp"
@@ -318,6 +366,12 @@ main() {
         exit 1
     fi
 
+    finish_install "$install_mode" "$bundle_dir"
+}
+
+finish_install() {
+    local install_mode="$1" bundle_dir="$2"
+
     # Ensure the install dir is on PATH.
     if ! command -v cs >/dev/null 2>&1 || [ "$(command -v cs)" != "$INSTALL_DIR/cs" ]; then
         if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -336,12 +390,15 @@ main() {
 
     say "Wiring Claude Code statusLine (cs --setup)..."
     local setup_ok=1
-    if ! "$INSTALL_DIR/cs" --setup; then
+    if [ "${CS_SKIP_SETUP:-0}" = "1" ]; then
+        setup_ok=0
+        say "Binary installed; setup skipped."
+    elif ! "$INSTALL_DIR/cs" --setup; then
         setup_ok=0
         warn "cs --setup reported an issue; run it manually if the bar doesn't appear."
     fi
 
-    if [ "$install_mode" = "onedir" ]; then
+    if [ "$install_mode" = "onedir" ] && [ "${CS_SKIP_SETUP:-0}" != "1" ]; then
         # The new process is onedir, so this scan cannot create another `_MEI`.
         # cleanup.py refuses to delete unless lsof proves the legacy directory
         # inactive; if that proof is unavailable, it leaves everything alone.
@@ -353,12 +410,9 @@ main() {
     # so a single install covers BOTH surfaces — the terminal statusLine and the
     # desktop panel — with no extra steps. The macOS binary bundles the HUD, so
     # this needs no Python/pip and rides the same auto-update.
-    if [ "$(uname -s)" = "Darwin" ] && \
+    if [ "${CS_SKIP_SETUP:-0}" != "1" ] && [ "$(uname -s)" = "Darwin" ] && \
        { [ -d "/Applications/Claude.app" ] || [ -d "$HOME/Applications/Claude.app" ]; }; then
         say "Detected the Claude desktop app — installing the floating HUD..."
-        # curl-installed binaries carry no com.apple.quarantine attribute, but
-        # strip it defensively so Gatekeeper never blocks the HUD's window.
-        xattr -dr com.apple.quarantine "$INSTALL_DIR/cs" 2>/dev/null || true
         if "$INSTALL_DIR/cs" hud install; then
             ok "✓ Desktop HUD installed — auto-starts on login (drag to place, click to expand)"
         else

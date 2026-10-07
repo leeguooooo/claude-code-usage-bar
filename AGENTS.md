@@ -38,3 +38,16 @@
 ## Security & Configuration Tips
 - The tool reads from user-local Claude data under `~/.claude/`; avoid logging or committing any captured traces.
 - Publishing requires secrets (`PYPI_API_TOKEN`); export them locally and never bake into scripts. Use TestPyPI when unsure about release artifacts.
+
+## macOS signing
+- Public macOS releases from 3.46.0 require a Developer ID signed, notarized and
+  stapled DMG plus its checksum, alongside the compatibility tar archive.
+- `scripts/sign_macos.py` signs nested binaries before framework seals, validates
+  the signer, notarizes and staples the DMG, then generates both archive checksums.
+- CI reuses the existing Apple signing configuration in encrypted repository
+  Secrets. `scripts/macos_ci_keychain.sh` creates a disposable signing keychain;
+  the workflow must run its cleanup step with `always()`.
+- Never export credentials into source, logs or artifacts. Shared configuration
+  transfers must be encrypted for the target repository public key.
+- `CS_SKIP_SETUP=1` permits isolated installer acceptance without touching live
+  daemon/HUD services. Public installation keeps setup enabled.

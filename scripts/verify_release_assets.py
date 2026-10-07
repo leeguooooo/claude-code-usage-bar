@@ -3,14 +3,15 @@ import argparse
 import hashlib
 from pathlib import Path
 
-from release_plan import ASSETS
+from release_plan import required_assets
 
 
-def verify(directory):
-    for name in ASSETS:
+def verify(directory, version=None):
+    assets = required_assets(version)
+    for name in assets:
         if not (directory / name).is_file() or not (directory / name).stat().st_size:
             raise ValueError('missing release asset: ' + name)
-    for name in ASSETS:
+    for name in assets:
         if name.endswith('.sha256'):
             continue
         tokens = (directory / (name + '.sha256')).read_text().split()
@@ -27,8 +28,9 @@ def verify(directory):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--directory', required=True, type=Path)
+    parser.add_argument('--version')
     args = parser.parse_args()
-    verify(args.directory)
+    verify(args.directory, args.version)
 
 
 if __name__ == '__main__':

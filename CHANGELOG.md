@@ -9,6 +9,20 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.46.0 — 2026-10-07
+
+**macOS downloads are Developer ID signed and Apple notarized.**
+
+- Mac installs prefer a signed, notarized DMG with a stapled ticket, and verify
+  the developer identity before copying the CLI, runtime and desktop HUD.
+- The installer requires checksums and no longer removes quarantine attributes.
+  Existing tar archives remain available for older clients and other platforms.
+- Signing covers the native launcher, Python runtime and embedded libraries;
+  failed signatures or notarization stop publication. CI signing credentials
+  live only in a temporary keychain and are removed after the job.
+
+---
+
 ## v3.45.1 — 2026-10-07
 
 **Quota stays isolated across accounts and concurrent windows; relay balances survive daemon mode.**

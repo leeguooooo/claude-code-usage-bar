@@ -61,8 +61,10 @@ jobs:
         include:
           - os: macos-14        # Apple Silicon
             asset: cs-darwin-arm64.tar.gz
+            extra_assets: cs-darwin-arm64.dmg*
           - os: ubuntu-22.04    # glibc 2.35 — broad compat
             asset: cs-linux-x86_64.tar.gz
+            extra_assets: ""
         # Intel macOS (macos-13) is intentionally omitted: GitHub-hosted Intel
         # runners can queue for hours or never get assigned on this account.
         # Intel-Mac users fall through install.sh to the pip installer, which
@@ -94,6 +96,9 @@ jobs:
           names = {a['name'] for a in assets if a.get('state') == 'uploaded' and a.get('size', 0) > 0}
           asset = os.environ['ASSET']
           complete = asset in names and asset + '.sha256' in names
+          version = tuple(map(int, os.environ['TAG'].lstrip('v').split('.')))
+          if asset.startswith('cs-darwin') and version >= (3, 46, 0):
+              complete = complete and {'cs-darwin-arm64.dmg', 'cs-darwin-arm64.dmg.sha256'} <= names
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('complete=' + str(complete).lower() + '\n')
           PYCODE
@@ -127,6 +132,29 @@ jobs:
         run: |
           mv dist/cs/cs dist/cs/cs-python
           go build -trimpath -ldflags='-s -w' -o dist/cs/cs packaging/native/main.go
+
+      - uses: actions/checkout@v4
+        if: steps.assets.outputs.complete != 'true' && runner.os == 'macOS'
+        with:
+          ref: ${{ github.sha }}
+          path: release-tools
+
+      - name: Import temporary macOS signing credentials
+        if: steps.assets.outputs.complete != 'true' && runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: bash release-tools/scripts/macos_ci_keychain.sh prepare
+
+      - name: Sign and notarize macOS distribution
+        if: steps.assets.outputs.complete != 'true' && runner.os == 'macOS'
+        env:
+          SIGNING_IDENTITY: Developer ID Application
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: python release-tools/scripts/sign_macos.py dist/cs --output .
 
       - name: Smoke-test the binary
         if: steps.assets.outputs.complete != 'true'
@@ -163,8 +191,13 @@ jobs:
           path: |
             ${{ matrix.asset }}
             ${{ matrix.asset }}.sha256
+            ${{ matrix.extra_assets }}
           if-no-files-found: error
           retention-days: 7
+
+      - name: Remove temporary signing credentials
+        if: always() && runner.os == 'macOS' && steps.assets.outputs.complete != 'true'
+        run: bash release-tools/scripts/macos_ci_keychain.sh cleanup
 
   publish:
     name: Publish validated binaries
@@ -190,10 +223,10 @@ jobs:
           if compgen -G "new-assets/*" >/dev/null; then cp new-assets/* release-assets/; fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             mkdir -p existing-assets
-            gh release download "$TAG" --dir existing-assets --pattern 'cs-*.tar.gz*'
+            gh release download "$TAG" --dir existing-assets --pattern 'cs-*'
             cp -n existing-assets/* release-assets/
           fi
-          python scripts/verify_release_assets.py --directory release-assets
+          python scripts/verify_release_assets.py --directory release-assets --version "${TAG#v}"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name || inputs.tag }}
@@ -201,3 +234,5 @@ jobs:
           files: |
             new-assets/cs-*.tar.gz
             new-assets/cs-*.tar.gz.sha256
+            new-assets/cs-*.dmg
+            new-assets/cs-*.dmg.sha256

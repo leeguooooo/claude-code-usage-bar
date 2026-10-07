@@ -14,10 +14,16 @@ ASSETS = tuple(name + suffix for name in
                for suffix in ('', '.sha256'))
 
 
-def plan(release, pypi_present):
+def required_assets(version=None):
+    if version and tuple(map(int, version.split('.'))) >= (3, 46, 0):
+        return ASSETS + ('cs-darwin-arm64.dmg', 'cs-darwin-arm64.dmg.sha256')
+    return ASSETS
+
+
+def plan(release, pypi_present, version=None):
     names = {asset['name'] for asset in (release or {}).get('assets', [])
              if asset.get('state') == 'uploaded' and asset.get('size', 0) > 0}
-    binaries = not set(ASSETS) <= names
+    binaries = not set(required_assets(version)) <= names
     publish = release is None or release.get('draft', False)
     return {'release': binaries or publish or not pypi_present,
             'binaries': binaries, 'pypi': not pypi_present,
@@ -68,7 +74,7 @@ def main():
         if release_meta._plugin_version(json.loads(git_text(ref, path))) != version:
             raise SystemExit('plugin version drift')
     notes = release_meta.changelog_section(version, git_text(ref, 'CHANGELOG.md'))
-    result = plan(release_info(os.environ['GITHUB_REPOSITORY'], tag), pypi_has_version(version))
+    result = plan(release_info(os.environ['GITHUB_REPOSITORY'], tag), pypi_has_version(version), version)
     result.update(version=version, tag=tag, ref=ref,
                   title=release_meta.title(version, notes))
     with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:

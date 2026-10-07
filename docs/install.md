@@ -104,3 +104,11 @@ The repo ships a `.claude-plugin/plugin.json`, distributed via the **leeguooooo/
 ```
 
 You still need the `cs` CLI (`pip install claude-statusbar` or `uv tool install claude-statusbar`) — the plugin only carries the slash commands; the heavy lifting is the Python package.
+
+## Signed macOS downloads
+
+From v3.46.0, the macOS installer prefers `cs-darwin-arm64.dmg`. It checks the
+checksum, Developer ID signature and Gatekeeper acceptance before installation.
+The disk image carries a stapled Apple notarization ticket. The installer does
+not remove quarantine attributes. CLI tar archives remain available for older
+clients; neither path needs sudo or a separate Python installation.
