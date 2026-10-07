@@ -21,7 +21,7 @@ For a quick overview of the latest release, see the
   The session client refreshes the balance; failed usage queries keep the last
   known value with a stale marker instead of reporting the full credit limit.
 - Identical quota snapshots no longer trigger repeated writes or fsyncs.
-- New releases stay drafts until binary checksums pass. Retries use the original
+- Binary artifacts stay in CI until checksum validation passes. Retries use the original
   tag and complete missing platform assets or PyPI files without replacing
   already uploaded platform bundles.
 - CI blocks Ruff correctness violations and invalid workflows, checks platform

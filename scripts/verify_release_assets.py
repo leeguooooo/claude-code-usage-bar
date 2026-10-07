@@ -1,12 +1,9 @@
-"""Verify all binary sidecars before making a draft release public."""
+"""Verify all staged binary sidecars before publishing a release."""
 import argparse
 import hashlib
-import os
-import subprocess
-import tempfile
 from pathlib import Path
 
-from release_plan import ASSETS, release_info
+from release_plan import ASSETS
 
 
 def verify(directory):
@@ -29,28 +26,9 @@ def verify(directory):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('tag')
-    parser.add_argument('--publish', action='store_true')
+    parser.add_argument('--directory', required=True, type=Path)
     args = parser.parse_args()
-    repo = os.environ['GITHUB_REPOSITORY']
-    release = release_info(repo, args.tag)
-    if release is None:
-        raise SystemExit('release is missing or draft access is unavailable')
-    assets = {asset['name']: asset for asset in release['assets']}
-    with tempfile.TemporaryDirectory() as tmp:
-        for name in ASSETS:
-            asset = assets.get(name)
-            if asset is None:
-                raise SystemExit('missing release asset: ' + name)
-            with (Path(tmp) / name).open('wb') as output:
-                subprocess.run(['gh', 'api', f'repos/{repo}/releases/assets/{asset["id"]}',
-                                '-H', 'Accept: application/octet-stream'], stdout=output, check=True)
-        verify(Path(tmp))
-    if args.publish:
-        subprocess.run(['gh', 'api', '--method', 'PATCH',
-                        f'repos/{repo}/releases/{release["id"]}',
-                        '-F', 'draft=false', '-f', 'make_latest=true'],
-                       stdout=subprocess.DEVNULL, check=True)
+    verify(args.directory)
 
 
 if __name__ == '__main__':

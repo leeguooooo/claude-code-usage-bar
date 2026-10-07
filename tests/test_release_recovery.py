@@ -59,17 +59,11 @@ def test_auth_failure_does_not_masquerade_as_missing_release(monkeypatch):
         release_plan.release_info('owner/repo', 'v1.0.0')
 
 
-def test_draft_lookup_uses_paginated_list_instead_of_tag_endpoint(monkeypatch):
-    calls = []
-    def run(args, **kwargs):
-        calls.append(args)
-        return SimpleNamespace(returncode=0, stdout=json.dumps([
-            [{'tag_name': 'v2.0.0', 'id': 2, 'draft': False}],
-            [{'tag_name': 'v1.0.0', 'id': 1, 'draft': True}]]))
-    monkeypatch.setattr(release_plan.subprocess, 'run', run)
-    assert release_plan.release_info('owner/repo', 'v1.0.0')['id'] == 1
-    assert '--paginate' in calls[0] and '--slurp' in calls[0]
-    assert not any('/releases/tags/' in arg for arg in calls[0])
+def test_missing_public_release_is_planned_as_staged_work(monkeypatch):
+    monkeypatch.setattr(release_plan.subprocess, 'run', lambda *a, **k:
+                        SimpleNamespace(returncode=1, stderr='HTTP 404', stdout=''))
+    assert release_plan.release_info('owner/repo', 'v1.0.0') is None
+    assert release_plan.plan(None, True)['binaries']
 
 
 def test_existing_tag_supplies_version_and_notes_on_recovery(tmp_path, monkeypatch):
@@ -125,7 +119,7 @@ def test_bad_assets_block_publication(tmp_path, damage):
 
 
 @pytest.mark.skipif(os.name == 'nt' or not shutil.which('bash'), reason='Linux workflow shell')
-def test_workflow_creates_tag_before_draft_and_never_moves_it(tmp_path):
+def test_workflow_creates_tag_before_building_and_never_moves_it(tmp_path):
     remote = tmp_path / 'remote.git'
     checkout = tmp_path / 'checkout'
     subprocess.run(['git', 'init', '--bare', '-q', str(remote)], check=True)
@@ -140,7 +134,12 @@ def test_workflow_creates_tag_before_draft_and_never_moves_it(tmp_path):
     original = git('rev-parse', 'HEAD')
     workflow = (SCRIPTS.parent / '.github/workflows/release.yml').read_text()
     step = workflow.split('      - name: Ensure immutable tag exists', 1)[1]
-    script = textwrap.dedent(step.split('        run: |\n', 1)[1].split('\n      - uses:', 1)[0])
+    block = []
+    for line in step.split('        run: |\n', 1)[1].splitlines():
+        if line.strip() and not line.startswith('          '):
+            break
+        block.append(line)
+    script = textwrap.dedent('\n'.join(block))
     env = {**os.environ, 'TAG': 'v1.0.0'}
     for _ in range(2):
         result = subprocess.run(['bash', '-c', script], cwd=checkout, env=env,

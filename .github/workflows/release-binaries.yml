@@ -18,8 +18,8 @@ on:
         description: "Existing tag to build + upload assets for (e.g. v3.29.12)"
         required: true
         type: string
-      draft:
-        description: "Keep the release private until all assets pass validation"
+      stage_only:
+        description: "Stage artifacts for the parent workflow to publish after validation"
         type: boolean
         default: false
   workflow_dispatch:
@@ -28,13 +28,14 @@ on:
         description: "Existing tag to build + upload assets for (e.g. v3.29.12)"
         required: true
         type: string
-      draft:
-        description: "Keep the release private until all assets pass validation"
+      stage_only:
+        description: "Stage artifacts for the parent workflow to publish after validation"
         type: boolean
         default: false
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-binaries-${{ github.event.release.tag_name || inputs.tag }}
@@ -80,14 +81,16 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
           ASSET: ${{ matrix.asset }}
         run: |
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > release-pages.json
+          if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release-assets.json 2> lookup-error.txt; then
+            if ! grep -q 'HTTP 404' lookup-error.txt; then
+              cat lookup-error.txt >&2
+              exit 1
+            fi
+            echo '{"assets":[]}' > release-assets.json
+          fi
           python - <<'PYCODE'
           import json, os
-          pages = json.load(open('release-pages.json'))
-          release = next((r for page in pages for r in page if r['tag_name'] == os.environ['TAG']), None)
-          if release is None:
-              raise SystemExit('Release missing or draft access unavailable')
-          assets = release['assets']
+          assets = json.load(open('release-assets.json'))['assets']
           names = {a['name'] for a in assets if a.get('state') == 'uploaded' and a.get('size', 0) > 0}
           asset = os.environ['ASSET']
           complete = asset in names and asset + '.sha256' in names
@@ -152,12 +155,47 @@ jobs:
           fi
           ls -lh "${{ matrix.asset }}"*
 
-      - name: Upload to release
+      - name: Stage validated platform bundle
         if: steps.assets.outputs.complete != 'true'
-        uses: softprops/action-gh-release@v2
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.event.release.tag_name || inputs.tag }}
-          draft: ${{ inputs.draft || github.event.release.draft || false }}
-          files: |
+          name: ${{ matrix.asset }}
+          path: |
             ${{ matrix.asset }}
             ${{ matrix.asset }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish validated binaries
+    permissions:
+      contents: write
+      actions: read
+    needs: build
+    if: inputs.stage_only != true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cs-*.tar.gz
+          path: release-assets
+          merge-multiple: true
+      - name: Verify all platform bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            mkdir -p existing-assets
+            gh release download "$TAG" --dir existing-assets --pattern 'cs-*.tar.gz*'
+            cp -n existing-assets/* release-assets/
+          fi
+          python scripts/verify_release_assets.py --directory release-assets
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || inputs.tag }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            release-assets/cs-*.tar.gz
+            release-assets/cs-*.tar.gz.sha256

@@ -11,7 +11,7 @@
 - Build distribution: `python -m build` (requires `build`/`wheel`).
 - Release: bump the version in `pyproject.toml` (plus both `.claude-plugin`
   manifests) and add the CHANGELOG section — merging that to `main` triggers
-  `.github/workflows/release.yml`, which creates a draft, builds binaries and
+  `.github/workflows/release.yml`, which stages binary build artifacts and
   uploads to PyPI, then verifies binary checksums before publishing the release.
   A retry fills missing artifacts from the original tag; existing platform
   bundles stay intact. `./publish.sh` is the manual fallback (expects

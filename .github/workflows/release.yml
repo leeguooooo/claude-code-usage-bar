@@ -7,7 +7,7 @@ name: Release
 # the wheel to PyPI.
 #
 # Existing tags are immutable; retry only missing artifacts from that tag.
-# New releases stay drafts until every binary and checksum is verified.
+# Binary artifacts stay private in CI until every checksum is verified.
 
 on:
   # Every push to main, not just ones touching pyproject.toml: the plan job is
@@ -34,8 +34,6 @@ jobs:
   plan:
     name: Plan
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # push access is required to list draft releases
     outputs:
       release: ${{ steps.plan.outputs.release }}
       version: ${{ steps.plan.outputs.version }}
@@ -100,7 +98,7 @@ jobs:
         run: python -m pytest ${{ matrix.suite }} -q
 
   github-release:
-    name: GitHub Release
+    name: Prepare tag
     needs: [plan, tests]
     if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
@@ -118,13 +116,12 @@ jobs:
       - name: Render release notes
         run: python scripts/release_meta.py notes "${{ needs.plan.outputs.version }}" > release-notes.md
 
-      - name: Ensure immutable tag exists before creating a draft
+      - name: Ensure immutable tag exists before building bundles
         env:
           TAG: ${{ needs.plan.outputs.tag }}
         run: |
           set -euo pipefail
-          # Draft releases may defer tag creation until publication. Binary
-          # and PyPI jobs must already be able to check out the exact source.
+          # Binary and PyPI jobs check out this immutable source tag.
           git ls-remote --tags origin "refs/tags/$TAG" > existing-tag.txt
           if [ ! -s existing-tag.txt ]; then
             git tag "$TAG" HEAD
@@ -134,14 +131,6 @@ jobs:
             test "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)"
           fi
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.plan.outputs.tag }}
-          target_commitish: ${{ needs.plan.outputs.ref }}
-          name: ${{ needs.plan.outputs.title }}
-          body_path: release-notes.md
-          draft: ${{ needs.plan.outputs.draft == 'true' }}
-          prerelease: false
 
   binaries:
     name: Binaries
@@ -152,9 +141,10 @@ jobs:
     uses: ./.github/workflows/release-binaries.yml
     permissions:
       contents: write
+      actions: read
     with:
       tag: ${{ needs.plan.outputs.tag }}
-      draft: ${{ needs.plan.outputs.draft == 'true' }}
+      stage_only: true
 
   pypi:
     name: PyPI
@@ -209,6 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
       # Verification tooling comes from the workflow revision; artifacts come
       # from the immutable release tag, even when repairing an older version.
@@ -216,9 +207,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Verify checksums and publish
+      - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.binaries == 'true'
+        with:
+          pattern: cs-*.tar.gz
+          path: release-assets
+          merge-multiple: true
+      - name: Verify checksums and render notes
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.plan.outputs.tag }}
         run: |
-          python scripts/verify_release_assets.py "$TAG" --publish
+          mkdir -p release-assets
+          if [ "${{ needs.plan.outputs.draft }}" != "true" ]; then
+            mkdir -p existing-assets
+            gh release download "$TAG" --dir existing-assets --pattern 'cs-*.tar.gz*'
+            cp -n existing-assets/* release-assets/
+          fi
+          python scripts/verify_release_assets.py --directory release-assets
+          python scripts/release_meta.py notes "${{ needs.plan.outputs.version }}" > release-notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.plan.outputs.tag }}
+          # The immutable tag already identifies the tested source. Current
+          # HEAD avoids a workflow-write permission check against an old tag.
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.plan.outputs.title }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/cs-*.tar.gz
+            release-assets/cs-*.tar.gz.sha256
