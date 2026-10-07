@@ -303,9 +303,11 @@ main() {
     # 404 (or an absent offline fixture) permits the legacy tar path; a network
     # or server error must not silently downgrade the authenticity checks.
     if [ "$(uname -s)" = "Darwin" ]; then
-        local dmg_asset="cs-darwin-arm64.dmg" status
+        local dmg_asset="cs-darwin-arm64.dmg" status effective
         say "Checking for the notarized macOS disk image..."
-        if status="$(curl -sSL -w '%{http_code}' "$base/$dmg_asset" -o "$tmp/$dmg_asset")"; then
+        if status="$(curl -sSL -w '%{http_code} %{url_effective}' "$base/$dmg_asset" -o "$tmp/$dmg_asset")"; then
+            effective="${status#* }"
+            status="${status%% *}"
             if [ "$status" = "200" ] || [ "$status" = "000" ]; then
                 verify_checksum "$base" "$dmg_asset" "$tmp"
                 verify_apple_signature "$tmp/$dmg_asset"
@@ -321,7 +323,25 @@ main() {
                 install_onedir_bundle "$DMG_MOUNT/cs"
                 finish_install "onedir" "$INSTALLED_BUNDLE_DIR"
                 return
-            elif [ "$status" != "404" ]; then
+            elif [ "$status" = "404" ]; then
+                if [[ "$base" == */download/v* && "$effective" != */download/v* ]]; then
+                    effective="$base/"
+                fi
+                if [[ "$base" == "https://github.com/$REPO/releases/latest/download" &&
+                      "$effective" != */download/v* ]]; then
+                    local latest
+                    latest="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" |
+                        sed -n 's/.*"tag_name":[[:space:]]*"\(v[0-9]*\.[0-9]*\.[0-9]*\)".*/\1/p')"
+                    [ -n "$latest" ] || { err "Could not resolve the release; retry later."; exit 1; }
+                    effective="https://github.com/$REPO/releases/download/$latest/"
+                fi
+                if [[ "$effective" =~ /download/v([0-9]+)\.([0-9]+)\.([0-9]+)/ ]] &&
+                   { [ "${BASH_REMATCH[1]}" -gt 3 ] ||
+                     { [ "${BASH_REMATCH[1]}" -eq 3 ] && [ "${BASH_REMATCH[2]}" -ge 46 ]; }; }; then
+                    err "The notarized disk image is missing for this release; refusing to downgrade."
+                    exit 1
+                fi
+            else
                 err "Disk image download returned HTTP $status; refusing to downgrade."; exit 1
             fi
         elif [[ "$base" != file://* ]]; then

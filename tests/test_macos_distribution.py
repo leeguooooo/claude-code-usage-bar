@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -68,6 +69,7 @@ def test_installer_cannot_accept_missing_checksum(tmp_path):
 
 
 def test_new_release_cannot_publish_without_notarized_disk_image():
+    sys.path.insert(0, str(ROOT / 'scripts'))
     import release_plan
     info = {'assets': [{'name': name, 'state': 'uploaded', 'size': 100}
                        for name in release_plan.ASSETS], 'draft': False}
@@ -76,3 +78,23 @@ def test_new_release_cannot_publish_without_notarized_disk_image():
     for name in ('cs-darwin-arm64.dmg', 'cs-darwin-arm64.dmg.sha256'):
         info['assets'].append({'name': name, 'state': 'uploaded', 'size': 100})
     assert not release_plan.plan(info, True, '3.46.0')['binaries']
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX installer')
+def test_modern_mac_release_never_downgrades_when_dmg_is_missing(tmp_path):
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    uname = bin_dir / 'uname'
+    uname.write_text('#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo arm64;; esac\n')
+    uname.chmod(0o755)
+    curl = bin_dir / 'curl'
+    curl.write_text('#!/bin/sh\nprintf "404 https://github.com/leeguooooo/claude-code-usage-bar/releases/download/v3.46.0/cs-darwin-arm64.dmg"\n')
+    curl.chmod(0o755)
+    env = {**os.environ, 'HOME': str(tmp_path / 'home'),
+           'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'], 'CS_SKIP_SETUP': '1',
+           'CS_RELEASE_BASE_URL': 'https://github.com/leeguooooo/claude-code-usage-bar/releases/download/v3.46.0'}
+    result = subprocess.run(['bash', str(ROOT / 'install.sh')], env=env,
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode != 0
+    assert 'refusing to downgrade' in result.stderr
+    assert not (tmp_path / 'home/.local/bin/cs').exists()
