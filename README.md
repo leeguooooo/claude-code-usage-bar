@@ -40,7 +40,7 @@ got left, and when does it reset?"*
 - **Two surfaces** — inline `statusLine` in the terminal, or an always-on-top floating HUD for the Claude desktop app (macOS).
 - **3 styles × 9 themes** — switch the whole look with one command: battery-bar, capsule, or hairline.
 - **Fast mode** — release bundles use a native cache reader and two persistent render workers. Git and network collection run on separate, bounded background queues.
-- **More when you want it** — git branch & diff stats, session activity, AgentParty/Codex presence, IELTS writing-coach progress — each opt-in.
+- **More when you want it** — git branch & diff stats, session activity, IELTS writing-coach progress — each opt-in.
 - **Zero-dependency install** — a single prebuilt binary (no Python needed) or a `pip` package. Auto-updates.
 
 ## Install
@@ -117,15 +117,15 @@ cs --setup                       # wires the statusLine hook + installs the skil
 ```
 
 Restart Claude Code and the bar appears at the bottom. Other paths (skill-only, plugin
-marketplace, Codex/AgentParty bridge) are in the **[install guide](docs/install.md)**.
+marketplace) are in the **[install guide](docs/install.md)**.
 
 > **Deep dive:** [Is that `cache 4m23s` line actually accurate? — how the prompt-cache countdown is computed](https://blog.leeguoo.com/en/posts/claude-statusbar-cache-countdown/)
 
 ### Claude desktop app (macOS) — `cs hud`
 
 The desktop app has no status line, so `cs hud` adds an always-on-top floating panel with the
-same **official** 5h / 7d usage (sampled by the desktop app itself, not an estimate) and your
-active AgentParty channels.
+same **official** 5h / 7d usage (sampled by the desktop app itself, not an estimate) and reset
+countdowns.
 
 **If you used the `curl … install.sh | bash` one-liner above, the HUD is already installed** —
 the macOS binary bundles it and the installer auto-registers it when the desktop app is present.
@@ -173,7 +173,6 @@ Every icon, color threshold, and toggle is documented in the
 | [Desktop HUD (`cs hud`)](docs/desktop-hud.md) | macOS floating panel for the Claude desktop app |
 | [Fast mode (daemon)](docs/daemon.md) | Sub-1% CPU daemon, launchd / systemd auto-start |
 | [No-quota mode](docs/no-quota-mode.md) | Relay / Bedrock / Vertex layout, context battery, balance |
-| [AgentParty / Codex bridge](docs/agentparty.md) | Local workspace-presence line |
 | [Cache countdown](docs/cache-countdown.md) | Data source + how `cache 4m23s` is computed |
 | [Troubleshooting](docs/troubleshooting.md) | `cs doctor`, common problems, upgrading |
 

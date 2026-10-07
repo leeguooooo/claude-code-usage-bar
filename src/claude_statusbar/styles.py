@@ -651,89 +651,6 @@ def _clip_width(s: str, limit: int) -> str:
     return clip_line(s, limit)
 
 
-def render_party_line(party, *, theme: Theme, use_color: bool = True) -> str:
-    """Render the AgentParty block: a header line plus the last message.
-
-    Header  ``#seamail · ⬡ leo-zego-voice · ◉ watching @mentions``
-    Message ``   ↳ ●@ Jarvis  <preview>  28m``
-
-    Glyphs are monochrome geometry, not emoji: they inherit the theme color (so
-    the listener state reads as a signal lamp — ``◉`` live, ``⊘`` down, ``◌``
-    unattached) and stay single-width. ``⬡`` is an agent, ``⬢`` a human.
-
-    The message gets its own line so a long preview can't push the header off
-    screen. Its two leading glyphs are the message's state: ``●`` unread /
-    ``○`` read, then ``@`` when the preview mentions us (a space otherwise, so
-    the sender column stays put).
-    """
-    if party is None:
-        return ""
-    channel = str(_attr(party, "channel", "") or "").strip()
-    identity = str(_attr(party, "identity_name", "") or "").strip()
-    kind = str(_attr(party, "identity_kind", "agent") or "agent").strip()
-    unread = int(_attr(party, "unread", 0) or 0)
-    listener_mode = str(_attr(party, "listener_mode", "") or "").strip()
-    last_from = str(_attr(party, "last_from", "") or "").strip()
-    last_preview = str(_attr(party, "last_preview", "") or "").strip()
-    last_age = str(_attr(party, "last_age", "") or "").strip()
-    fresh = bool(_attr(party, "fresh", True))
-    listener_stale = bool(_attr(party, "listener_stale", False))
-    listener_present = bool(_attr(party, "listener_present", bool(listener_mode)))
-    mentions_only = bool(_attr(party, "listener_mentions_only", False))
-    mentioned = bool(_attr(party, "mentioned", False))
-
-    if not any((channel, identity, unread, listener_mode, last_preview)):
-        return ""
-
-    INK  = _fg(theme.ink)
-    MUTE = _fg(theme.mute)
-    EDGE = _fg(theme.edge)
-    OK   = _fg(theme.s_ok)
-    WARN = _fg(theme.s_warn)
-    HOT  = _fg(theme.s_hot)
-    SEP  = f"{EDGE} · {RESET}"
-
-    # ---- header ---------------------------------------------------------
-    # The `#` is ours; a channel that already carries one must not render `##`.
-    chan = (channel.lstrip("#") or "AgentParty") if channel else "AgentParty"
-    head = [f"{EDGE}#{RESET}{INK}{chan}{RESET}"]
-    if identity:
-        icon = "⬢" if kind == "human" else "⬡"
-        head.append(f"{MUTE}{icon} {identity}{RESET}")
-
-    # Listening state is the question the header must answer outright: are we
-    # attached and hearing messages, or not? The glyph alone carries it.
-    if not listener_present:
-        head.append(f"{MUTE}◌ not listening{RESET}")
-    elif listener_stale:
-        head.append(f"{HOT}⊘ listener down{RESET}")
-    else:
-        verb = "serving" if listener_mode == "serve" else "watching"
-        scope = f" {MUTE}@mentions{RESET}" if mentions_only else ""
-        head.append(f"{OK}◉ {verb}{RESET}{scope}")
-
-    if unread > 0:
-        head.append(f"{WARN}{unread} unread{RESET}")
-    if not fresh:
-        head.append(f"{HOT}stale{RESET}")
-
-    lines = [SEP.join(head)]
-
-    # ---- last message, on its own line ----------------------------------
-    if last_preview:
-        hot_msg = unread > 0 or mentioned
-        dot = f"{WARN}●{RESET}" if unread > 0 else f"{EDGE}○{RESET}"
-        at = f"{WARN}@{RESET}" if mentioned else " "
-        who = f"{INK}{last_from}{RESET}" if hot_msg else f"{MUTE}{last_from}{RESET}"
-        who = f"{who}  " if last_from else ""
-        body = f"{MUTE}{_clip_width(last_preview, 54)}{RESET}"
-        age = f" {EDGE}{last_age}{RESET}" if last_age else ""
-        lines.append(f"   {EDGE}↳{RESET} {dot}{at} {who}{body}{age}")
-
-    out = "\n".join(lines)
-    return out if use_color else _strip(out)
-
-
 def render_agent_lines(agents, *, theme: Theme, use_color: bool = True) -> list:
     """One line per running subagent: `◐ <name>[<model>] <description> <elapsed>`.
 
@@ -924,7 +841,6 @@ def render(style: str, **kwargs) -> str:
     kwargs.pop("mode_phase", None)   # accepted for back-compat; gradient is static
     activity = kwargs.pop("activity", None)
     activity_opts = kwargs.pop("activity_opts", None)
-    party = kwargs.pop("party", None)
     per_model_limits = kwargs.pop('per_model_limits', [])
     per_model_projection = kwargs.pop('per_model_projection', True)
     theme = kwargs.get("theme") or get_theme("graphite")
@@ -999,10 +915,6 @@ def render(style: str, **kwargs) -> str:
         out = out + "\n" + (_ocs_segment(ocs_text, theme) if use_color
                             else f"ocs {ocs_text}")
         out += _ocs_extras(ocs_unread, ocs_lan, theme, use_color)
-
-    party_line = render_party_line(party, theme=theme, use_color=use_color)
-    if party_line:
-        out = out + "\n" + party_line
 
     # Dedicated egress-IP risk warning — appears only above the risk threshold
     # (ip_risk.SHOW_THRESHOLD), amber for suspicious, red for bad. May be

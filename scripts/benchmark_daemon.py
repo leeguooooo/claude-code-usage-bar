@@ -23,7 +23,7 @@ def main():
         cfg = home/'.claude'
         cfg.mkdir()
         (cfg/'claude-statusbar.json').write_text(json.dumps(dict(
-            show_language=False, show_balance=False, show_party=False,
+            show_language=False, show_balance=False,
             show_mode=False, show_ip_risk=False, show_fp_risk=False,
             auto_upgrade=False)))
         env = {**os.environ, 'HOME':str(home), 'COLUMNS':'',

@@ -2,10 +2,10 @@
 """Floating session HUD — Claude-branded design.
 
 Draggable, click-to-expand/minimize, anchored bottom-right of the Claude window.
-5h/7d official usage (plan-usage-history) + scrollable AgentParty channels.
+5h/7d official usage (plan-usage-history) with reset countdowns.
 Visual spec mirrors the Claude Usage Panel design (warm #faf9f5 card, orange
 gradient bars, colored status dots)."""
-import sys, os, time, json, subprocess, shutil
+import sys, os, time, json
 from pathlib import Path
 import objc
 import Quartz
@@ -21,7 +21,6 @@ from AppKit import (
     NSFontWeightSemibold, NSFontWeightBold, NSFontWeightRegular,
     NSLineBreakByTruncatingTail, NSTextAlignmentRight, NSTextAlignmentCenter,
     NSMutableAttributedString, NSForegroundColorAttributeName, NSFontAttributeName,
-    NSMenu, NSMenuItem,
 )
 from Foundation import NSTimer
 
@@ -38,28 +37,17 @@ INK     = _c("#3d3929")
 INK_Hdr = _c("#6f6b5c")
 GREY    = _c("#83827d")
 GREY2   = _c("#a6a294")
-DIVIDER = _c("#3d3929", 0.08)
 BORDER  = _c("#3d3929", 0.08)
 TRACK   = _c("#e8e5db")
 ORANGE  = _c("#c96442")
 ORANGE2 = _c("#d97757")
 GREEN   = _c("#4a8a52")
-DOT_GREEN = _c("#5cad63")
-DOT_GOLD  = _c("#e2b93b")
-DOT_RED   = _c("#8f2f2a")
-HOVER   = _c("#c96442", 0.06)
 
 SH = 22            # shadow margin around the card
 PAD = 16
 EXP_W = 384
-HEADER_H = 104     # header + usage + divider (fixed top block)
-PARTY_HDR = 30     # "AGENTPARTY" label block
-LIST_TOP = HEADER_H + PARTY_HDR
-AGENT_ROW_H = 46
-LIST_H = 172       # scrollable area height (≈3.7 rows)
-EXP_H = LIST_TOP + LIST_H + 8
+EXP_H = 104        # header + usage rows
 COLLAPSED_W = 190
-COLLAPSED_W_LOCKED = 340      # wider pill when a channel is pinned
 COLLAPSED_H = 32
 MARGIN = 14
 SNAP_DIST = 46          # px within which a dragged edge snaps to the Claude window
@@ -68,8 +56,8 @@ DURATION = 0
 
 HUD_STATE_PATH = Path.home() / ".claude" / "claude-statusbar-hud.json"
 HUD_PID_PATH = Path.home() / ".claude" / "claude-statusbar-hud.pid"
-state = {"expanded": False, "u": HD.Usage(), "channels": [], "locked": None,
-         "rows": [], "scroll": 0.0, "abs": None, "snap": "br", "last_data": 0.0}
+state = {"expanded": False, "u": HD.Usage(), "abs": None, "snap": "br",
+         "last_data": 0.0}
 
 
 def load_persist():
@@ -77,7 +65,7 @@ def load_persist():
         d = json.loads(HUD_STATE_PATH.read_text(encoding="utf-8"))
         state["abs"] = d.get("abs")
         state["snap"] = d.get("snap", "br")
-        state["locked"] = d.get("locked"); state["expanded"] = bool(d.get("expanded", False))
+        state["expanded"] = bool(d.get("expanded", False))
     except Exception:
         pass
 
@@ -86,7 +74,7 @@ def save_persist():
     try:
         HUD_STATE_PATH.write_text(json.dumps({
             "abs": state["abs"], "snap": state["snap"],
-            "locked": state["locked"], "expanded": state["expanded"]}), encoding="utf-8")
+            "expanded": state["expanded"]}), encoding="utf-8")
     except Exception:
         pass
 
@@ -94,31 +82,7 @@ def save_persist():
 def refresh_data(force=False):
     if force or time.time() - state["last_data"] > DATA_EVERY:
         state["u"] = HD.snapshot()
-        state["channels"] = HD.all_channels(top_n=12)
         state["last_data"] = time.time()
-
-
-def dot_color(age):
-    return DOT_GREEN if age < 300 else (DOT_GOLD if age < 1800 else DOT_RED)
-
-
-def _pick_collapsed_channel():
-    chs = state["channels"]
-    if not chs:
-        return None
-    if state["locked"]:
-        for c in chs:
-            if c["key"] == state["locked"]:
-                return c
-    return chs[0]
-
-
-def _list_h():
-    return LIST_H
-
-
-def _max_scroll():
-    return max(0.0, len(state["channels"]) * AGENT_ROW_H - _list_h())
 
 
 # ---------------- custom views ----------------
@@ -184,22 +148,10 @@ def _round_view(parent, frame, color, radius):
     return v
 
 
-def _dot(parent, frame, color):
-    v = NSView.alloc().initWithFrame_(frame)
-    v.setWantsLayer_(True)
-    v.layer().setBackgroundColor_(color.CGColor())
-    v.layer().setCornerRadius_(frame.size.height / 2)
-    v.layer().setBorderWidth_(1.0)
-    v.layer().setBorderColor_(_c("#3d3929", 0.12).CGColor())
-    parent.addSubview_(v)
-    return v
-
-
 # ---------------- content ----------------
 def build_content(card):
     for v in list(card.subviews()):
         v.removeFromSuperview()
-    state["rows"] = []
     u = state["u"]
 
     if not state["expanded"]:
@@ -208,15 +160,10 @@ def build_content(card):
 
 
 def _build_collapsed(card, u):
-    c = _pick_collapsed_channel() if state["locked"] else None
-    w = COLLAPSED_W_LOCKED if c else COLLAPSED_W
+    w = COLLAPSED_W
     fh = "–" if u.fh is None else f"{u.fh}"
     sd = "–" if u.sd is None else f"{u.sd}"
     base = f"5h {fh}%    ·    7d {sd}%"
-    if c:
-        icon = "🟢" if c["age_s"] < 300 else ("🟡" if c["age_s"] < 1800 else "⚪")
-        unread = f"  {c['unread']}" if c["unread"] else ""
-        base += f"    {icon} {c['channel']}{unread}"
     s = NSMutableAttributedString.alloc().initWithString_(base)
     full = s.string()
     def paint(sub, color, font):
@@ -231,12 +178,10 @@ def _build_collapsed(card, u):
     paint("·", _c("#c9c5b8"), f_lbl)
     if u.fh is not None: paint(f"{fh}%", GREEN, f_pct)
     if u.sd is not None: paint(f"{sd}%", GREEN, f_pct)
-    if c: paint(c["channel"], INK, f_lbl)
     lab = _lbl(card, NSMakeRect(14, 7, w - 28, 18), 12.5, NSFontWeightSemibold, GREY, "")
     lab.setAttributedStringValue_(s)
-    if not c:
-        d = GoldDot.alloc().initWithFrame_(NSMakeRect(w - 26, 9, 14, 14))
-        d.setWantsLayer_(True); card.addSubview_(d)
+    d = GoldDot.alloc().initWithFrame_(NSMakeRect(w - 26, 9, 14, 14))
+    d.setWantsLayer_(True); card.addSubview_(d)
 
 
 def _build_expanded(card, u):
@@ -259,53 +204,6 @@ def _build_expanded(card, u):
         _lbl(card, NSMakeRect(w - PAD - 52, y, 52, 16), 11.5, NSFontWeightRegular, GREY2,
              HD.fmt_dur(cd), right=True)
         y += 28
-    # ---- divider ----
-    dv = NSView.alloc().initWithFrame_(NSMakeRect(0, HEADER_H - 1, w, 1))
-    dv.setWantsLayer_(True); dv.layer().setBackgroundColor_(DIVIDER.CGColor())
-    card.addSubview_(dv)
-    # ---- agentparty header ----
-    _lbl(card, NSMakeRect(PAD, HEADER_H + 12, 200, 14), 11, NSFontWeightSemibold, INK_Hdr, "AGENTPARTY")
-    # ---- scrollable list ----
-    chs = state["channels"]
-    if not chs:
-        _lbl(card, NSMakeRect(PAD, LIST_TOP + 6, w - 2 * PAD, 15), 12, NSFontWeightRegular, GREY2, "No active channels")
-        return
-    state["scroll"] = max(0.0, min(state["scroll"], _max_scroll()))
-    clip = Flipped.alloc().initWithFrame_(NSMakeRect(0, LIST_TOP, w, LIST_H))
-    clip.setWantsLayer_(True); clip.layer().setMasksToBounds_(True)
-    card.addSubview_(clip)
-    total = len(chs) * AGENT_ROW_H
-    inner = Flipped.alloc().initWithFrame_(NSMakeRect(0, -state["scroll"], w, max(total, LIST_H)))
-    clip.addSubview_(inner)
-    for i, c in enumerate(chs):
-        yy = i * AGENT_ROW_H
-        state["rows"].append(c["key"])
-        if c["key"] == state["locked"]:
-            _round_view(inner, NSMakeRect(PAD - 8, yy + 3, w - 2 * (PAD - 8), AGENT_ROW_H - 6), HOVER, 8)
-        _dot(inner, NSMakeRect(PAD, yy + 11, 10, 10), dot_color(c["age_s"]))
-        name_w = w - PAD - 18 - PAD - 40
-        _lbl(inner, NSMakeRect(PAD + 20, yy + 6, name_w, 18), 13.5, NSFontWeightSemibold, INK, c["channel"])
-        if c["unread"]:
-            bw = 20 + len(str(c["unread"])) * 7
-            badge = _round_view(inner, NSMakeRect(w - PAD - bw, yy + 7, bw, 16), ORANGE, 8)
-            _lbl(badge, NSMakeRect(0, 0, bw, 16), 10.5, NSFontWeightBold, BG, str(c["unread"]), center=True)
-        prev = (c["last_preview"] or "").replace("\n", " ")
-        if c["last_from"] or prev:
-            m = NSMutableAttributedString.alloc().initWithString_(f"{c['last_from']}: {prev}")
-            fs = full = m.string()
-            fr = fs.rangeOfString_(f"{c['last_from']}:")
-            fnt = NSFont.systemFontOfSize_weight_(12, NSFontWeightRegular)
-            m.addAttribute_value_range_(NSFontAttributeName, fnt, (0, len(fs)))
-            m.addAttribute_value_range_(NSForegroundColorAttributeName, GREY, (0, len(fs)))
-            if fr.length:
-                m.addAttribute_value_range_(NSForegroundColorAttributeName, GREY2, fr)
-            pl = _lbl(inner, NSMakeRect(PAD + 20, yy + 24, w - PAD - 20 - PAD, 15), 12, NSFontWeightRegular, GREY, "")
-            pl.setAttributedStringValue_(m)
-    if _max_scroll() > 0:
-        frac = LIST_H / max(total, LIST_H)
-        th = max(24, LIST_H * frac)
-        ty = LIST_TOP + (LIST_H - th) * (state["scroll"] / _max_scroll())
-        sb = _round_view(card, NSMakeRect(w - 5, ty, 3, th), _c("#3d3929", 0.16), 1.5)
 
 
 # ---------------- interaction ----------------
@@ -334,11 +232,6 @@ class HUDView(objc.lookUpClass("NSView")):
         state["abs"] = [float(np.x + f.size.width), float(np.y)]
         self._down = loc
 
-    def scrollWheel_(self, ev):
-        if not state["expanded"]: return
-        state["scroll"] = max(0.0, min(_max_scroll(), state["scroll"] - ev.deltaY() * 6))
-        self.ctrl.relayout()
-
     @objc.python_method
     def _detect_snap(self):
         b = claude_bounds()
@@ -366,85 +259,8 @@ class HUDView(objc.lookUpClass("NSView")):
                 state["snap"] = snap; state["abs"] = None
                 self.ctrl.relayout()                            # jump onto the edge
             self._down = None; save_persist(); return
-        if state["expanded"]:
-            loc = ev.locationInWindow()
-            h = self.frame().size.height
-            # card is inset by SH; convert to card-flipped coords
-            fy = (h - loc.y) - SH
-            if LIST_TOP <= fy <= LIST_TOP + LIST_H:
-                idx = int((fy - LIST_TOP + state["scroll"]) / AGENT_ROW_H)
-                if 0 <= idx < len(state["rows"]):
-                    self._show_channel_menu(ev, state["rows"][idx])
-                    self._down = None; return
-            state["expanded"] = False
-        else:
-            state["expanded"] = True
+        state["expanded"] = not state["expanded"]
         self.ctrl.relayout(); self._down = None; save_persist()
-
-    # ---- right-click a channel: jump to its session / AgentParty ----
-    @objc.python_method
-    def _channel_key_at(self, ev):
-        if not state["expanded"]:
-            return None
-        loc = ev.locationInWindow(); h = self.frame().size.height
-        fy = (h - loc.y) - SH
-        if LIST_TOP <= fy <= LIST_TOP + LIST_H:
-            idx = int((fy - LIST_TOP + state["scroll"]) / AGENT_ROW_H)
-            if 0 <= idx < len(state["rows"]):
-                return state["rows"][idx]
-        return None
-
-    @objc.python_method
-    def _rec(self, key):
-        return next((c for c in state["channels"] if c["key"] == key), None)
-
-    def rightMouseDown_(self, ev):
-        key = self._channel_key_at(ev)
-        if key:
-            self._show_channel_menu(ev, key)
-
-    @objc.python_method
-    def _show_channel_menu(self, ev, key):
-        pinned = state["locked"] == key
-        menu = NSMenu.alloc().init()
-        items = (
-            ("Open session in Claude", "openSession:"),
-            ("Open in AgentParty", "openParty:"),
-            ("Unpin from bar" if pinned else "Pin to bar", "pinChannel:"),
-        )
-        for title, action in items:
-            it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, "")
-            it.setTarget_(self); it.setRepresentedObject_(key)
-            menu.addItem_(it)
-        NSMenu.popUpContextMenu_withEvent_forView_(menu, ev, self)
-
-    def pinChannel_(self, sender):
-        key = sender.representedObject()
-        state["locked"] = None if state["locked"] == key else key
-        self.ctrl.relayout(); save_persist()
-
-    def openSession_(self, sender):
-        rec = self._rec(sender.representedObject())
-        if not rec:
-            return
-        tgt = HD.channel_session(rec.get("ws", ""))
-        if tgt:
-            subprocess.Popen(["open", f"claude://resume?session={tgt[1]}"])
-
-    def openParty_(self, sender):
-        rec = self._rec(sender.representedObject())
-        if not rec:
-            return
-        from urllib.parse import quote
-        channel = rec.get("channel", "")
-        server = rec.get("server", "")
-        # Deep-link protocol: the AgentParty client registers the agentparty://
-        # scheme and decides how to open the channel (web page or native view).
-        # HUD only supplies channel + server; the client does the rest.
-        url = f"agentparty://channel/{quote(channel)}"
-        if server:
-            url += f"?server={quote(server, safe='')}"
-        subprocess.Popen(["open", url])
 
 
 class Ctrl(objc.lookUpClass("NSObject")):
@@ -459,8 +275,7 @@ class Ctrl(objc.lookUpClass("NSObject")):
     def _content_size(self):
         if state["expanded"]:
             return (EXP_W, EXP_H)
-        w = COLLAPSED_W_LOCKED if (state["locked"] and _pick_collapsed_channel()) else COLLAPSED_W
-        return (w, COLLAPSED_H)
+        return (COLLAPSED_W, COLLAPSED_H)
 
     def _panel_size(self):
         cw, ch = self._content_size()
@@ -519,8 +334,7 @@ class Ctrl(objc.lookUpClass("NSObject")):
         if not self.panel.isVisible():
             self.panel.orderFrontRegardless()
         refresh_data()
-        sig = (state["u"].fh, state["u"].sd, state["expanded"], state["locked"],
-               round(state["scroll"]), tuple((c["key"], c["unread"]) for c in state["channels"]))
+        sig = (state["u"].fh, state["u"].sd, state["expanded"])
         if sig != self._sig:
             self._sig = sig
             self.relayout()
@@ -573,7 +387,7 @@ def run(argv=None):
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
     refresh_data(force=True)
-    print("[hud] 5h/7d:", state["u"].fh, state["u"].sd, "| channels:", len(state["channels"]))
+    print("[hud] 5h/7d:", state["u"].fh, state["u"].sd)
 
     pw, ph = (EXP_W + 2 * SH, EXP_H + 2 * SH)
     panel = FreePanel.alloc().initWithContentRect_styleMask_backing_defer_(

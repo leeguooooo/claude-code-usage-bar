@@ -37,7 +37,7 @@ Claude Code 几乎不告诉你离限额还有多远。`claude-statusbar` 把真�
 - **两处都能显示**：终端 `statusLine` 里内联，或者给桌面端 Claude 应用挂一个置顶悬浮 HUD（macOS）。
 - **3 种样式 × 9 套主题**：一条命令换整套外观，电量条、胶囊、细线随你挑。
 - **生来就快**：可选的常驻进程即便按每秒刷新，CPU 占用也远低于 1%。
-- **想要才加**：git 分支与增删行、会话活跃度、AgentParty/Codex 在场、雅思写作陪练进度，每一项都可单独开关。
+- **想要才加**：git 分支与增删行、会话活跃度、雅思写作陪练进度，每一项都可单独开关。
 - **零依赖安装**：一个预编译二进制（不需要 Python），或一个 `pip` 包。自动更新。
 
 ## 安装
@@ -66,15 +66,14 @@ pip install claude-statusbar     # 或：uv tool install / pipx install
 cs --setup                       # 接好 statusLine 钩子，并装上 skill
 ```
 
-重启 Claude Code，状态栏就出现在底部了。其余安装方式（只装 skill、插件市场、Codex/AgentParty
-桥接）都在 **[安装指南](docs/install.md)** 里。
+重启 Claude Code，状态栏就出现在底部了。其余安装方式（只装 skill、插件市场）都在 **[安装指南](docs/install.md)** 里。
 
 > **延伸阅读：**[`cache 4m23s` 这行到底准不准？prompt 缓存倒计时是怎么算出来的](https://blog.leeguoo.com/posts/claude-statusbar-cache-countdown/)
 
 ### Claude 桌面端（macOS）· `cs hud`
 
 桌面端应用没有状态栏，所以 `cs hud` 给它挂一个置顶悬浮面板，显示同一套**官方** 5h / 7d 用量
-（由桌面端应用自己采样，不是估算），以及你正在用的 AgentParty 频道。
+（由桌面端应用自己采样，不是估算）和重置倒计时。
 
 ```bash
 pip install 'claude-statusbar[hud]'   # 装 PyObjC（macOS 的 GUI 依赖）
@@ -117,7 +116,6 @@ cs hud install                        # launchd：登录自启 + 保活
 | [桌面 HUD（`cs hud`）](docs/desktop-hud.md) | 给桌面端 Claude 应用用的 macOS 悬浮面板 |
 | [快速模式（常驻）](docs/daemon.md) | CPU 占用低于 1% 的常驻进程，launchd / systemd 自启 |
 | [无额度模式](docs/no-quota-mode.md) | 中转 / Bedrock / Vertex 布局、上下文电量条、余额 |
-| [AgentParty / Codex 桥接](docs/agentparty.md) | 本地工作区在场行 |
 | [缓存倒计时](docs/cache-countdown.md) | 数据来源 + `cache 4m23s` 的算法 |
 | [排障](docs/troubleshooting.md) | `cs doctor`、常见问题、升级 |
 

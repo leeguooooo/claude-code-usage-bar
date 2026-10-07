@@ -82,20 +82,6 @@ Restart Claude Code to see the bar. `cs --setup` writes the following into `~/.c
 
 Since v3.6.0 `cs --setup` defaults to daemon mode (`cs render` + `refreshInterval: 1`), which keeps CPU under 1% continuously while ticking the cache-age countdown every second. The daemon is auto-started by `cs --setup` and lazy-respawns on `cs render` if it ever dies, so you never see a frozen bar. Opt out with `cs --setup --inline` (writes plain `cs`, ~3% CPU at 1Hz) or set `refreshInterval` to a higher value — `cs --setup` preserves any explicit value you've already chosen. See [Fast mode (daemon)](daemon.md) for details.
 
-## Codex: AgentParty local status bridge
-
-Codex support is intentionally local and narrow: `cs` can show the AgentParty
-context for the current workspace when AgentParty has written
-`~/.agentparty/state/<workspaceId>/statusline.json`. See [AgentParty
-bridge](agentparty.md) for the full picture.
-
-```text
-#agentparty · ⬡ xdream-agent · ◉ serving · 3 unread
-   ↳ ●@ bob  shipped the auth patch 2m
-```
-
-Disable it with `cs config set show_party false`.
-
 ## Skill-only install (already have `cs`)
 
 If you already have the `cs` binary installed (e.g. via `pip install`) and just want the conversational `claude-statusbar` skill so Claude Code routes natural-language requests like "switch theme to nord" or "余量颜色改成 #4ec85b" to the right `cs` command:

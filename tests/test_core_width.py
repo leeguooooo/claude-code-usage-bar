@@ -41,7 +41,6 @@ def _run(tmp_path, monkeypatch, capsys, session_env, terminal_width=None):
         "show_cache_age": False,
         "show_todos": False,
         "show_mode": False,
-        "show_party": False,
         "show_version": False,
     }), encoding="utf-8")
 

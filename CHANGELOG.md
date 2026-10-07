@@ -9,6 +9,22 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.45.0 — 2026-10-07
+
+**AgentParty support is removed.**
+
+- The AgentParty line is gone from the status bar, and the `show_party`
+  config key with it. A `show_party` value left in
+  `~/.claude/claude-statusbar.json` is ignored; `cs config set show_party`
+  now reports an unknown key.
+- The desktop HUD (`cs hud`) no longer lists AgentParty channels. The
+  expanded panel shows only the 5h / 7d bars and reset countdowns, and the
+  collapsed pill no longer pins a channel.
+- `cs` no longer reads `~/.agentparty/` or scans transcripts for `party`
+  commands.
+
+---
+
 ## v3.44.0 — 2026-09-30
 
 **The ocs line shows unread DMs and the LAN bridge.**

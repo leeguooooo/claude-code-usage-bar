@@ -13,7 +13,6 @@ Reference docs for [`claude-statusbar`](../README.md). Start with the main
 - [Desktop HUD (`cs hud`)](desktop-hud.md) — macOS floating panel for the Claude desktop app
 - [Fast mode (daemon)](daemon.md) — sub-1% CPU daemon, launchd / systemd auto-start
 - [No-quota mode](no-quota-mode.md) — relay / Bedrock / Vertex layout, context battery, balance
-- [AgentParty / Codex bridge](agentparty.md) — local workspace-presence line
 
 ## Reference
 - [Cache countdown](cache-countdown.md) — data source + how `cache 4m23s` is computed

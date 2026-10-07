@@ -17,7 +17,6 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "balance_bar": true,
   "show_cache_age": true,
   "show_project_branch": true,
-  "show_party": true,
   "show_ocs": true,
   "show_todos": true,
   "show_tools": false,
@@ -39,7 +38,6 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_cache_age` | bool, `true` | `cache 4m23s` prompt-cache countdown (TTL auto-detected 5m/1h) |
 | `show_project_branch` | bool, `true` | Second line: `⧉ worktree` (linked worktrees only) + project + branch + `●` dirty dot |
 | `show_ahead_behind` | bool, `false` | `↑2↓1` commits ahead/behind on the branch line |
-| `show_party` | bool, `true` | AgentParty / Codex bridge line (reads local cache only) |
 | `show_ocs` | bool, `true` | `ocs boss · claude-7d5a5d07 · ✉3 · lan win` on its own line — this session's [open-cross-session](https://github.com/leeguooooo/open-cross-session) address, unread DMs and LAN bridge state; auto-hidden unless ocs ≥ 0.5.0 is installed |
 | `show_todos` | bool, `true` | Activity line: in-progress todo + `done/total` |
 | `show_tools` / `show_tool_rollup` | bool, `false` | Active tool / completed-tool frequency rollup |
@@ -101,7 +99,6 @@ cs config set style hairline    # persist style → ~/.claude/claude-statusbar.j
 cs config set theme linen       # persist theme
 cs config set show_cost true    # session $ cost segment
 cs config set show_cache_age false  # hide prompt-cache age segment
-cs config set show_party false  # hide local AgentParty channel/unread line
 cs config set show_tools true   # activity line: active tool + completed rollup
 cs config set show_agents true  # bottom line(s): running subagents + elapsed
 cs config set show_duration true # identity line: ⏱ session duration

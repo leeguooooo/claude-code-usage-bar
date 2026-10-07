@@ -1258,36 +1258,10 @@ def main(json_output: bool = False,
             ahead, behind = read_ahead_behind(info.toplevel)
             identity_kwargs["identity_ahead"] = ahead
             identity_kwargs["identity_behind"] = behind
-    # Optional AgentParty line (#54): local-only cwd-scoped status cache. This
-    # never imports or shells out to AgentParty and never reads tokens.
-    #
-    # Session gate: the cache is cwd-scoped, but sessions sharing a project
-    # dir don't all join AgentParty — without the gate, every window showed
-    # whichever session's channel/identity wrote the cache last (dead
-    # listeners included). Only sessions whose own transcript shows a party
-    # command get the line; when no transcript is available (preview, tests,
-    # bare `cs`), keep the old always-show behavior.
     if cfg.show_per_model and not no_quota:
         from .scoped_usage import cached_limits
         identity_kwargs['per_model_limits'] = cached_limits(spawn=_suppress_side_effects)
         identity_kwargs['per_model_projection'] = cfg.show_projection
-    party_kwargs = {}
-    if cfg.show_party:
-        try:
-            from .party import read_party_status, session_party_context
-            _transcript = str(stdin_data.get('transcript_path') or '')
-            _sid = str(stdin_data.get('session_id') or '')
-            _party_cwd = str(stdin_data.get('workspace_current_dir') or os.getcwd())
-            _party_context = session_party_context(
-                _transcript, _sid, cwd=_party_cwd)
-            _gated = bool(_transcript and _sid) and not _party_context.attached
-            if not _gated:
-                _party = read_party_status(
-                    _party_cwd, config_path=_party_context.config_path)
-                if _party is not None:
-                    party_kwargs = {"party": _party}
-        except Exception:
-            party_kwargs = {}
     # Optional working-directory segment (#30): workspace.current_dir (falling
     # back to cwd — parse_stdin_data flattens both into workspace_current_dir).
     # Zero extra I/O: the data is already in the statusLine stdin. Rides the
@@ -1450,7 +1424,7 @@ def main(json_output: bool = False,
                     balance_text=balance_text,
                     balance_pct=balance_pct,
                     balance_amount=balance_amount,
-                    **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                    **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                     **activity_kwargs,
                 ))
         elif has_official:
@@ -1579,7 +1553,7 @@ def main(json_output: bool = False,
                     max_width=max_width,
                     **projection_kwargs,
                     **forecast_kwargs,
-                    **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                    **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                     **activity_kwargs,
                 ))
         else:
@@ -1637,7 +1611,7 @@ def main(json_output: bool = False,
                         shimmer_phase=shimmer_phase,
                         max_width=max_width,
                         quota_stale=quota_stale,
-                        **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                        **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
                         **activity_kwargs,
                     ))
             else:
@@ -1671,7 +1645,7 @@ def main(json_output: bool = False,
                 critical_threshold=critical_threshold,
                 density=cfg.density, show_weekly=cfg.show_weekly,
                 max_width=max_width,
-                **identity_kwargs, **cwd_kwargs, **party_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
+                **identity_kwargs, **cwd_kwargs, **mode_kwargs, **ip_line_kwargs, **fp_line_kwargs,
             ))
 
 if __name__ == '__main__':

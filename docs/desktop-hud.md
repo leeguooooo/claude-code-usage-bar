@@ -6,7 +6,7 @@
 The desktop app has no `statusLine` hook, so the HUD is a separate always-on-top
 window. It reads the **official** 5h / 7d usage the desktop app itself samples
 every 5 minutes into `plan-usage-history.json` — the same numbers the terminal
-bar shows, not an estimate — plus your active AgentParty channels.
+bar shows, not an estimate.
 
 ```bash
 pip install 'claude-statusbar[hud]'   # adds PyObjC (macOS GUI deps)
@@ -14,9 +14,7 @@ cs hud install                        # launchd: auto-start on login + keep-aliv
 ```
 
 - **Collapsed pill** — `5h 26% · 7d 22%` + a status dot. Click to expand.
-- **Expanded panel** — orange 5h / 7d gradient bars with reset countdowns, and a
-  scrollable list of active AgentParty channels (unread count + latest message).
-  Click a channel row to **lock** it as the one shown in the collapsed pill.
+- **Expanded panel** — orange 5h / 7d gradient bars with reset countdowns.
 - **Drag** it anywhere — the position is remembered. It hides itself when the
   Claude desktop app isn't open.
 
@@ -27,5 +25,5 @@ cs hud install                        # launchd: auto-start on login + keep-aliv
 | `cs hud stop` | Stop the running HUD |
 | `cs hud uninstall` | Remove the launchd agent |
 
-Everything is local: official usage from the desktop app's own cache, AgentParty
-from `~/.agentparty/state/`. No network calls, no credentials read.
+Everything is local: official usage from the desktop app's own cache. No network
+calls, no credentials read.
