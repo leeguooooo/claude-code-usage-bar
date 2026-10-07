@@ -80,10 +80,14 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
           ASSET: ${{ matrix.asset }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release-assets.json
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > release-pages.json
           python - <<'PYCODE'
           import json, os
-          assets = json.load(open('release-assets.json'))['assets']
+          pages = json.load(open('release-pages.json'))
+          release = next((r for page in pages for r in page if r['tag_name'] == os.environ['TAG']), None)
+          if release is None:
+              raise SystemExit('Release missing or draft access unavailable')
+          assets = release['assets']
           names = {a['name'] for a in assets if a.get('state') == 'uploaded' and a.get('size', 0) > 0}
           asset = os.environ['ASSET']
           complete = asset in names and asset + '.sha256' in names

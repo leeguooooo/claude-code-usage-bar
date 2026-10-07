@@ -59,6 +59,19 @@ def test_auth_failure_does_not_masquerade_as_missing_release(monkeypatch):
         release_plan.release_info('owner/repo', 'v1.0.0')
 
 
+def test_draft_lookup_uses_paginated_list_instead_of_tag_endpoint(monkeypatch):
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stdout=json.dumps([
+            [{'tag_name': 'v2.0.0', 'id': 2, 'draft': False}],
+            [{'tag_name': 'v1.0.0', 'id': 1, 'draft': True}]]))
+    monkeypatch.setattr(release_plan.subprocess, 'run', run)
+    assert release_plan.release_info('owner/repo', 'v1.0.0')['id'] == 1
+    assert '--paginate' in calls[0] and '--slurp' in calls[0]
+    assert not any('/releases/tags/' in arg for arg in calls[0])
+
+
 def test_existing_tag_supplies_version_and_notes_on_recovery(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['release_plan.py', '1.0.0'])
     monkeypatch.setenv('GITHUB_OUTPUT', str(tmp_path / 'outputs'))

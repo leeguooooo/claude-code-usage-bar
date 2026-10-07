@@ -34,6 +34,8 @@ jobs:
   plan:
     name: Plan
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # push access is required to list draft releases
     outputs:
       release: ${{ steps.plan.outputs.release }}
       version: ${{ steps.plan.outputs.version }}
@@ -219,5 +221,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.plan.outputs.tag }}
         run: |
-          python scripts/verify_release_assets.py "$TAG"
-          gh release edit "$TAG" --draft=false
+          python scripts/verify_release_assets.py "$TAG" --publish

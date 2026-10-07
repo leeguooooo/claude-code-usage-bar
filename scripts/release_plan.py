@@ -25,13 +25,16 @@ def plan(release, pypi_present):
 
 
 def release_info(repo, tag):
-    result = subprocess.run(['gh', 'api', f'repos/{repo}/releases/tags/{tag}'],
+    # The tag endpoint excludes drafts. List with push access, then use the
+    # release ID for downloads and publication until it becomes public.
+    result = subprocess.run(['gh', 'api', '--paginate', '--slurp',
+                             f'repos/{repo}/releases?per_page=100'],
                             capture_output=True, text=True, check=False)
     if result.returncode:
-        if 'HTTP 404' in result.stderr:
-            return None
         raise RuntimeError('GitHub release lookup failed')
-    return json.loads(result.stdout)
+    pages = json.loads(result.stdout)
+    return next((release for page in pages for release in page
+                 if release.get('tag_name') == tag), None)
 
 
 def pypi_has_version(version):
