@@ -9,6 +9,24 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.46.1 — 2026-10-09
+
+**`cs doctor` shows when you're behind; a failed refresh keeps the per-model limits.**
+
+- `cs doctor` adds an `auto-upgrade` line (on, off, or blocked by another
+  install owning `cs` / a Windows pip or pipx install) and a `latest` line read
+  from the updater's cache: an available version, up to date, or unknown when
+  the last check is over 7 days old. No network call (#69, thanks @bpavlina).
+- A single timeout or keychain hiccup no longer blanks the per-model limits
+  segment. The last good limits stay for up to 10 minutes after the last
+  successful fetch; retry backoff is unchanged (#70, thanks @bpavlina).
+- The macOS installer refuses to fall back to the unsigned tar archive when a
+  3.46+ release is missing its notarized disk image.
+- Troubleshooting docs explain how uv installs stuck on 3.35.2–3.42.x get
+  unstuck (#71).
+
+---
+
 ## v3.46.0 — 2026-10-07
 
 **macOS downloads are Developer ID signed and Apple notarized.**

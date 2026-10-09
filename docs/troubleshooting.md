@@ -11,6 +11,7 @@ cs doctor
 It prints (with red ✗ for anything off):
 
 - Which `cs` binary the OS will resolve, plus its version + Python interpreter
+- Whether a newer release is available (from the updater's cache, no network call) and whether auto-upgrade is on, off, or blocked
 - Whether `~/.claude/settings.json` has *our* statusLine entry (vs missing / vs another tool's)
 - How fresh `~/.cache/claude-statusbar/last_stdin.json` is (so you can tell if Claude Code is actually pushing data)
 - If the daemon is running (fast mode) — its pid and how stale `rendered.ansi` is
@@ -37,6 +38,8 @@ Paste the output verbatim in any bug report — it's almost always enough to dia
 **Cache-age segment shows `cache 0s` and never moves** — `refreshInterval` is unset; Claude Code only re-invokes the statusLine on each user/assistant turn. Set `"refreshInterval": 1` in settings.json. For 1Hz refresh you'll also want `cs --setup --fast` so the per-second invocation stays cheap.
 
 **`cs --setup --fast` then daemon shows wrong rate-limits** — Fixed in v3.2.1. Upgrade with `cs upgrade`.
+
+**Stuck on an old version (uv installs on 3.35.2–3.42.x)** — Those versions misread a `uv tool install` as a duplicate install and skip every auto-upgrade, so they can't fix themselves ([#71](https://github.com/leeguooooo/claude-code-usage-bar/issues/71)). On macOS/Linux run `cs upgrade` once; auto-upgrade works normally afterwards. On Windows with uv below 3.43.7, don't use `cs upgrade` (it can leave `cs` broken, #66): close Claude Code, run `cs daemon stop`, then `uv tool upgrade claude-statusbar`. From 3.46.1, `cs doctor` flags a blocked auto-upgrade and an available update.
 
 **Auto-update is annoying / blocked** — `export CLAUDE_STATUSBAR_NO_UPDATE=1` in your shell rc.
 
