@@ -57,7 +57,7 @@ give a short confirmation (one line, no lecture).
 | Force / disable no-quota (API) mode | `cs config set api_mode <auto\|on\|off>` |
 | Show working directory | `cs config set show_cwd true\|false` + `cs config set cwd_style <basename\|full>` |
 | Relay balance fuel gauge | `cs config set show_balance true\|false` + `cs config set balance_bar true\|false` (no-quota mode only; auto-hidden when the relay has no balance API) |
-| Exit-IP purity segment | `cs config set show_ip_risk true\|false` |
+| Exit-IP purity segment (also warns when claude.ai sees a different IPv4 vs IPv6 exit, WARP, or an unsupported region) | `cs config set show_ip_risk true\|false` |
 | Relay fingerprint-risk watermark | `cs config set show_fp_risk true\|false` |
 | Window-end projection `→NN%` | `cs config set show_projection true\|false` |
 | Worktree marker glyph | `cs config set worktree_glyph 🌲` (default `⑂`; any 1-2 cell symbol — an emoji ignores the theme color, the emoji font decides it) |

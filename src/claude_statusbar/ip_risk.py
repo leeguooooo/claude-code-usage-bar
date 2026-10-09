@@ -122,9 +122,38 @@ def clear_inflight() -> None:
         pass
 
 
+def family_issue(entry: Dict[str, Any]) -> str:
+    """Two-line warning from the per-family claude.ai traces (the exit Claude
+    itself sees over IPv4 and IPv6), or "" when they look fine / are absent.
+    These fire regardless of the risk score: a clean IPv4 says nothing about
+    an IPv6 that bypasses the proxy, or about a WARP / unsupported-region exit.
+    """
+    from .ip_score import region_status
+    fam = entry.get("families") or {}
+    seen = [(name, fam.get(key)) for name, key in (("IPv6", "v6"), ("IPv4", "v4"))
+            if isinstance(fam.get(key), dict)]
+    for name, t in seen:
+        if t.get("warp") not in (None, "off"):
+            return (f"✗ claude.ai sees Cloudflare WARP over {name} — VPN exit\n"
+                    f"   ↳ do NOT log in / re-auth Claude here: turn WARP off first")
+    for name, t in seen:
+        if region_status(t.get("loc")) in ("unsupported", "sanctioned"):
+            return (f"✗ claude.ai sees {name} from {t.get('loc')} — unsupported region\n"
+                    f"   ↳ do NOT log in / re-auth Claude from this network")
+    v4, v6 = fam.get("v4"), fam.get("v6")
+    if (isinstance(v4, dict) and isinstance(v6, dict) and v4.get("loc") and v6.get("loc")
+            and v4["loc"] != v6["loc"]):
+        return (f"✗ ip split: IPv4 {v4['loc']} / IPv6 {v6['loc']} — claude.ai sees IPv6\n"
+                f"   ↳ proxy doesn't cover IPv6: use TUN mode or disable IPv6 before logging in")
+    return ""
+
+
 def risk_level(entry: Dict[str, Any]) -> str:
     """"ok" / "warn" / "crit" per proxycheck bands; a proxy/VPN verdict is at
-    least warn even at a low score (the flag itself is the risk signal)."""
+    least warn even at a low score (the flag itself is the risk signal). A
+    per-family trace problem (family_issue) is always crit."""
+    if family_issue(entry):
+        return "crit"
     try:
         risk = int(entry.get("risk", 0))
     except (TypeError, ValueError):
@@ -141,7 +170,11 @@ def line_text(entry: Dict[str, Any]) -> str:
     enough (≤ SHOW_THRESHOLD). Two lines because the single-line form is too
     long for a terminal statusline and gets truncated. The renderer splits on
     "\\n" and colors each line. English + explicit about the login/ban risk.
+    What claude.ai itself sees (family_issue) wins over the score line.
     """
+    issue = family_issue(entry)
+    if issue:
+        return issue
     try:
         risk = int(entry.get("risk", 0))
     except (TypeError, ValueError):

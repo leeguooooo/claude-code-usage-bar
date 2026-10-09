@@ -10,13 +10,21 @@ Fully local: no call to our own Worker. Two tiers keep third-party load tiny:
     scoring (ip_score). So a fleet of statusbar users never concentrates load
     on any shared quota or on our Worker.
 
+Every spawn also asks claude.ai itself which exit it sees, once over IPv4 and
+once over IPv6 (``family_traces``). ipify is IPv4-only, but claude.ai is
+dual-stack and clients prefer IPv6 — a proxy that only carries IPv4 leaves the
+real IPv6 exposed while the IPv4 reading looks clean.
+
 Never raises; a failure writes an ``ok: false`` entry so the render path backs
 off for FAIL_RETRY_S instead of respawning every render.
 """
 import json
+import socket
+import ssl
 import sys
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 from . import ip_risk, ip_score
 
@@ -35,6 +43,61 @@ def egress_ip() -> str:
     if not ip or len(ip) > 64:
         raise ValueError("no ip")
     return ip
+
+
+_TRACE_HOST = "claude.ai"
+_TRACE_TIMEOUT_S = 4.0
+
+
+def _trace_over(family: int) -> dict:
+    """GET https://claude.ai/cdn-cgi/trace pinned to one address family →
+    {"ip", "loc", "warp"}. Raw socket + TLS because urllib can't force a
+    family; HTTP/1.0 so the body is never chunked."""
+    addr = socket.getaddrinfo(_TRACE_HOST, 443, family, socket.SOCK_STREAM)[0][4]
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    sock.settimeout(_TRACE_TIMEOUT_S)
+    try:
+        sock.connect(addr)
+        ctx = ssl.create_default_context()
+        with ctx.wrap_socket(sock, server_hostname=_TRACE_HOST) as tls:
+            tls.sendall((f"GET /cdn-cgi/trace HTTP/1.0\r\nHost: {_TRACE_HOST}\r\n"
+                         f"User-Agent: {_UA}\r\nConnection: close\r\n\r\n").encode())
+            raw = b""
+            while len(raw) < 16384:
+                chunk = tls.recv(4096)
+                if not chunk:
+                    break
+                raw += chunk
+    finally:
+        sock.close()
+    return parse_trace(raw.decode("utf-8", "replace").partition("\r\n\r\n")[2])
+
+
+def parse_trace(body: str) -> dict:
+    kv = dict(line.split("=", 1) for line in body.splitlines() if "=" in line)
+    if not kv.get("ip"):
+        raise ValueError("no ip in trace")
+    return {"ip": kv["ip"].strip(), "loc": (kv.get("loc") or "").strip().upper() or None,
+            "warp": (kv.get("warp") or "").strip() or None}
+
+
+def family_traces() -> dict:
+    """{"v4": trace|None, "v6": trace|None}; a family that can't connect is
+    simply absent (no IPv6 is normal). Skipped (empty) when an HTTPS proxy is
+    configured in the environment: Claude Code would go through that proxy,
+    which a raw socket doesn't, so the reading wouldn't be Claude's route."""
+    if urllib.request.getproxies().get("https"):
+        return {}
+
+    def one(family):
+        try:
+            return _trace_over(family)
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        v4, v6 = pool.map(one, (socket.AF_INET, socket.AF_INET6))
+    return {"v4": v4, "v6": v6}
 
 
 def evaluate_ip() -> dict:
@@ -118,6 +181,12 @@ def _refresh_locked() -> int:
         return 0
     entry.setdefault("ts", now)
     entry["checked_ts"] = now
+    # Cheap (two tiny requests) and the IPv6 exit can change without the IPv4
+    # one moving, so re-read it on every check, not only on the risk TTL.
+    try:
+        entry["families"] = family_traces()
+    except Exception:
+        entry.pop("families", None)
     try:
         ip_risk.write_cache_atomic(entry)
     finally:

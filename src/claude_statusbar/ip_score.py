@@ -44,9 +44,35 @@ def _is_china_cloud(org, asn, hosting_indication):
     import re
     return bool(re.search(r"[,\s]cn\s*$", str(org or "").strip(), re.I)) and hosting_indication
 
-# Anthropic-blocked (US-sanctioned) and unsupported regions.
+# Anthropic's Supported Regions Policy (anthropic.com/supported-countries,
+# snapshot 2026-10-09, 185 countries) plus territories of listed countries.
+# Anything else is unsupported — use while physically located there is outside
+# the policy. Mirrors regions.js in the ip-check service.
+_SUPPORTED = set("""
+AL DZ AD AO AG AR AM AU AT AZ BS BH BD BB BE BZ BJ BT BO BA BW BR BN BG BF BI
+CV KH CM CA CF TD CL CO KM CG CD CR CI HR CY CZ DK DJ DM DO EC EG SV GQ ER EE
+SZ ET FJ FI FR GA GM GE DE GH GR GD GT GN GW GY HT HN HU IS IN ID IQ IE IL IT
+JM JP JO KZ KE KI KW KG LA LV LB LS LR LY LI LT LU MG MW MY MV ML MT MH MR MU
+MX FM MD MC MN ME MA MZ NA NR NP NL NZ NI NE NG MK NO OM PK PW PS PA PG PY PE
+PH PL PT QA RO RW KN LC VC WS SM ST SA SN RS SC SL SG SK SI SO SB ZA KR SS ES
+LK SD SR SE CH TW TJ TZ TH TL TG TO TT TN TR TM TV UG UA AE GB US UY UZ VU VA
+VN ZM ZW
+PR GU VI AS MP UM GI BM KY VG AI MS TC FK SH IO GG JE IM PN GS GF GP MQ RE YT
+PM BL MF WF PF NC TF AW CW SX BQ GL FO SJ BV AX CX CC NF HM CK NU TK
+""".split())
+# Unsupported AND under comprehensive US sanctions — the strongest wording.
 _SANCTIONED = {"KP", "IR", "CU", "SY", "RU", "BY"}
-_UNSUPPORTED = {"CN", "HK"}
+
+
+def region_status(country: Optional[str]) -> str:
+    """"supported" / "unsupported" / "sanctioned" / "unknown" (no or
+    placeholder code — not judged)."""
+    cc = (country or "").upper()
+    if len(cc) != 2 or not cc.isalpha() or cc in ("XX", "EU", "AP"):
+        return "unknown"
+    if cc in _SANCTIONED:
+        return "sanctioned"
+    return "supported" if cc in _SUPPORTED else "unsupported"
 # Egress types that are high ban-risk for ANY Claude use (anonymizers). Plain
 # datacenter is NOT here — API/Claude-Code from a cloud server is normal.
 _BAN_TYPES = {"vpn", "proxy", "residential-proxy", "tor"}
@@ -108,16 +134,14 @@ def classify(sig: Dict[str, Any]) -> Dict[str, Any]:
 def verdict(risk: int, typ: str, country: Optional[str]) -> Dict[str, Any]:
     """Claude-account decision. Region first (the documented trigger), then
     anonymizer egress, then plain datacenter (a softer caution)."""
-    cc = (country or "").upper()
+    region = region_status(country)
     # 70 = the classify() crit-band cutoff. Was 67, which disagreed with the
     # band (risk 67-69 would read as ban-risk here but only 中度 there); keep
     # them aligned, matching the ip-check service fix.
     ip_is_ban = risk >= 70 or typ in _BAN_TYPES
 
-    if cc in _SANCTIONED:
+    if region in ("sanctioned", "unsupported"):
         return {"verdict": "ban-risk", "region": True}
-    if cc in _UNSUPPORTED:
-        return {"verdict": "ban-risk" if ip_is_ban else "caution", "region": True}
     if typ == "residential" and risk < 15:
         return {"verdict": "safe", "region": False}
     if ip_is_ban:
@@ -129,16 +153,16 @@ def verdict(risk: int, typ: str, country: Optional[str]) -> Dict[str, Any]:
 
 def score(risk: int, typ: str, country: Optional[str]) -> int:
     """Claude Safety Score, 0-100, higher = safer."""
-    cc = (country or "").upper()
+    region = region_status(country)
     s = 100 - int(risk or 0)
     if typ in _BAN_TYPES:
         s = min(s, 40)
     elif typ == "hosting":
         s = min(s, 60)
-    if cc in _SANCTIONED:
+    if region == "sanctioned":
         s = min(s, 5)
-    elif cc in _UNSUPPORTED:
-        s = min(s, 40)
+    elif region == "unsupported":
+        s = min(s, 30)
     return max(0, min(100, s))
 
 

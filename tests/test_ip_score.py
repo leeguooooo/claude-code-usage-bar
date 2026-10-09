@@ -46,9 +46,21 @@ def test_abuser_tiers():
 
 
 def test_china_residential_not_safe():
+    # Unsupported region per Anthropic's policy → ban-risk even on a clean IP
+    # (mirrors the ip-check service).
     e = ip_score.evaluate({"is_datacenter": False}, "CN")
-    assert e["verdict"] == "caution" and e["region"] is True
-    assert e["score"] <= 40
+    assert e["verdict"] == "ban-risk" and e["region"] is True
+    assert e["score"] <= 30
+
+
+def test_regions_follow_official_supported_list():
+    for cc in ("HK", "MO", "VE", "AF"):
+        assert ip_score.region_status(cc) == "unsupported", cc
+    for cc in ("JP", "TW", "SG", "US", "PR", "RE"):
+        assert ip_score.region_status(cc) == "supported", cc
+    assert ip_score.region_status("IR") == "sanctioned"
+    assert ip_score.region_status(None) == "unknown"
+    assert ip_score.evaluate({"is_datacenter": False}, "JP")["verdict"] == "safe"
 
 
 def test_sanctioned_is_ban_risk():

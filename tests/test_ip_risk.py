@@ -2,10 +2,22 @@
 # detached _ip_risk_refresh prober (proxycheck.io) rewrites it every 30 min.
 # The line only appears above SHOW_THRESHOLD (40) — a clean IP earns silence.
 import json
+import socket
 import time
+
+import pytest
 
 import claude_statusbar.ip_risk as ip_risk
 import claude_statusbar._ip_risk_refresh as refresh
+
+
+@pytest.fixture(autouse=True)
+def _no_trace_network(monkeypatch):
+    """The prober also traces claude.ai per address family; keep every test
+    offline unless it installs its own _trace_over."""
+    def _offline(family):
+        raise OSError("offline in tests")
+    monkeypatch.setattr(refresh, "_trace_over", _offline)
 
 
 def _iso(tmp_path, monkeypatch):
@@ -268,3 +280,79 @@ def test_ensure_fresh_noop_when_recent(tmp_path, monkeypatch):
     monkeypatch.setattr(ip_risk, "mark_inflight", lambda: spawned.append(1))
     ip_risk.ensure_fresh()
     assert not spawned
+
+
+# --- per-family claude.ai traces (IPv4 vs IPv6) ---
+
+def _fam(v4=None, v6=None):
+    return {"ok": True, "risk": 0, "proxy": "no", "families": {"v4": v4, "v6": v6}}
+
+
+def test_parse_trace_reads_ip_loc_warp():
+    t = refresh.parse_trace("fl=1\nh=claude.ai\nip=2400:2410::1\nts=1\nloc=jp\nwarp=off\n")
+    assert t == {"ip": "2400:2410::1", "loc": "JP", "warp": "off"}
+
+
+def test_matching_families_stay_silent():
+    e = _fam({"ip": "220.26.40.233", "loc": "JP", "warp": "off"},
+             {"ip": "2400:2410::1", "loc": "JP", "warp": "off"})
+    assert ip_risk.line_text(e) == ""
+    assert ip_risk.risk_level(e) == "ok"
+
+
+def test_ipv4_only_or_no_traces_stay_silent():
+    assert ip_risk.line_text(_fam({"ip": "1.2.3.4", "loc": "US", "warp": "off"}, None)) == ""
+    assert ip_risk.line_text({"ok": True, "risk": 0}) == ""
+
+
+def test_split_families_warn_even_when_ipv4_is_clean():
+    # The case this exists for: proxy carries IPv4 (US), real IPv6 leaks (JP).
+    e = _fam({"ip": "5.6.7.8", "loc": "US", "warp": "off"},
+             {"ip": "2400:2410::1", "loc": "JP", "warp": "off"})
+    lines = ip_risk.line_text(e).split("\n")
+    assert lines[0].startswith("✗ ip split: IPv4 US / IPv6 JP")
+    assert "↳" in lines[1] and "IPv6" in lines[1]
+    assert ip_risk.risk_level(e) == "crit"
+
+
+def test_unsupported_region_seen_by_claude_warns():
+    e = _fam({"ip": "223.119.1.1", "loc": "HK", "warp": "off"}, None)
+    assert "unsupported region" in ip_risk.line_text(e)
+    assert "HK" in ip_risk.line_text(e)
+
+
+def test_warp_exit_warns():
+    e = _fam({"ip": "104.28.1.1", "loc": "US", "warp": "on"}, None)
+    assert "WARP" in ip_risk.line_text(e)
+
+
+def test_family_issue_wins_over_score_line():
+    e = _fam({"ip": "5.6.7.8", "loc": "US", "warp": "off"},
+             {"ip": "2400:2410::1", "loc": "JP", "warp": "off"})
+    e["risk"] = 55
+    assert ip_risk.line_text(e).startswith("✗ ip split")
+
+
+def test_refresh_stores_family_traces(tmp_path, monkeypatch):
+    _iso(tmp_path, monkeypatch)
+    _mock_get(monkeypatch, "220.26.40.233", {
+        "ip": "220.26.40.233", "is_datacenter": False,
+        "location": {"country_code": "JP"}})
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setattr(refresh.urllib.request, "getproxies", lambda: {})
+
+    def _trace(family):
+        if family == socket.AF_INET6:
+            raise OSError("no route")          # no IPv6 is normal
+        return {"ip": "220.26.40.233", "loc": "JP", "warp": "off"}
+    monkeypatch.setattr(refresh, "_trace_over", _trace)
+    refresh.main()
+    fam = ip_risk.read_cache()["families"]
+    assert fam["v4"]["loc"] == "JP" and fam["v6"] is None
+
+
+def test_family_traces_skipped_behind_env_https_proxy(monkeypatch):
+    monkeypatch.setattr(refresh.urllib.request, "getproxies",
+                        lambda: {"https": "http://127.0.0.1:7890"})
+    assert refresh.family_traces() == {}
