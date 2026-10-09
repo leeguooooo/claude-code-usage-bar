@@ -123,10 +123,11 @@ def clear_inflight() -> None:
 
 
 def family_issue(entry: Dict[str, Any]) -> str:
-    """Two-line warning from the per-family claude.ai traces (the exit Claude
-    itself sees over IPv4 and IPv6), or "" when they look fine / are absent.
+    """Two-line warning from the per-family exit probe (IPv4 and IPv6 read
+    separately from our own origin), or "" when they look fine / are absent.
     These fire regardless of the risk score: a clean IPv4 says nothing about
-    an IPv6 that bypasses the proxy, or about a WARP / unsupported-region exit.
+    an IPv6 that bypasses the proxy, which claude.ai would prefer. Measured on
+    our host, not claude.ai — a per-domain proxy rule can still differ.
     """
     from .ip_score import region_status
     fam = entry.get("families") or {}
@@ -134,17 +135,24 @@ def family_issue(entry: Dict[str, Any]) -> str:
             if isinstance(fam.get(key), dict)]
     for name, t in seen:
         if t.get("warp") not in (None, "off"):
-            return (f"✗ claude.ai sees Cloudflare WARP over {name} — VPN exit\n"
+            return (f"✗ {name} exit is Cloudflare WARP — VPN exit\n"
                     f"   ↳ do NOT log in / re-auth Claude here: turn WARP off first")
     for name, t in seen:
         if region_status(t.get("loc")) in ("unsupported", "sanctioned"):
-            return (f"✗ claude.ai sees {name} from {t.get('loc')} — unsupported region\n"
+            return (f"✗ {name} exit in {t.get('loc')} — unsupported region for Claude\n"
                     f"   ↳ do NOT log in / re-auth Claude from this network")
     v4, v6 = fam.get("v4"), fam.get("v6")
     if (isinstance(v4, dict) and isinstance(v6, dict) and v4.get("loc") and v6.get("loc")
             and v4["loc"] != v6["loc"]):
-        return (f"✗ ip split: IPv4 {v4['loc']} / IPv6 {v6['loc']} — claude.ai sees IPv6\n"
+        return (f"✗ ip split: IPv4 {v4['loc']} / IPv6 {v6['loc']} — claude.ai prefers IPv6\n"
                 f"   ↳ proxy doesn't cover IPv6: use TUN mode or disable IPv6 before logging in")
+    for name, t in seen:
+        # Type verdict from /_asn (VPN / proxy / Tor / WARP / region); absent
+        # when that lookup failed, leaving only the checks above.
+        if t.get("verdict") == "ban-risk":
+            kind = f" ({t['type']})" if t.get("type") else ""
+            return (f"✗ {name} exit {t.get('ip')}{kind} — account-ban risk\n"
+                    f"   ↳ do NOT log in / re-auth Claude here: switch network first")
     return ""
 
 
@@ -170,7 +178,7 @@ def line_text(entry: Dict[str, Any]) -> str:
     enough (≤ SHOW_THRESHOLD). Two lines because the single-line form is too
     long for a terminal statusline and gets truncated. The renderer splits on
     "\\n" and colors each line. English + explicit about the login/ban risk.
-    What claude.ai itself sees (family_issue) wins over the score line.
+    The per-family exit probe (family_issue) wins over the score line.
     """
     issue = family_issue(entry)
     if issue:

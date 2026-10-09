@@ -10,10 +10,14 @@ Fully local: no call to our own Worker. Two tiers keep third-party load tiny:
     scoring (ip_score). So a fleet of statusbar users never concentrates load
     on any shared quota or on our Worker.
 
-Every spawn also asks claude.ai itself which exit it sees, once over IPv4 and
-once over IPv6 (``family_traces``). ipify is IPv4-only, but claude.ai is
-dual-stack and clients prefer IPv6 — a proxy that only carries IPv4 leaves the
-real IPv6 exposed while the IPv4 reading looks clean.
+Every spawn also reads the exit IP once over IPv4 and once over IPv6
+(``family_traces``) from our own Cloudflare origin, then classifies each IP
+there. ipify is IPv4-only, but claude.ai is dual-stack and clients prefer IPv6
+— a proxy that only carries IPv4 leaves the real IPv6 exposed while the IPv4
+reading looks clean. The prober never contacts an Anthropic host: a script
+hitting claude.ai every minute from the user's IP would itself look automated.
+A rule-based (per-domain) proxy can still route claude.ai differently from
+this probe; only the per-family picture is measured here.
 
 Never raises; a failure writes an ``ok: false`` entry so the render path backs
 off for FAIL_RETRY_S instead of respawning every render.
@@ -45,12 +49,14 @@ def egress_ip() -> str:
     return ip
 
 
-_TRACE_HOST = "claude.ai"
+# Our own Worker's Cloudflare hostname: dual-stack (A + AAAA) like claude.ai,
+# and Cloudflare serves /cdn-cgi/trace on it (ip= / loc= / warp=).
+_TRACE_HOST = "ip-check-origin.leeguoo.com"
 _TRACE_TIMEOUT_S = 4.0
 
 
 def _trace_over(family: int) -> dict:
-    """GET https://claude.ai/cdn-cgi/trace pinned to one address family →
+    """GET https://ip-check-origin.leeguoo.com/cdn-cgi/trace pinned to one address family →
     {"ip", "loc", "warp"}. Raw socket + TLS because urllib can't force a
     family; HTTP/1.0 so the body is never chunked."""
     addr = socket.getaddrinfo(_TRACE_HOST, 443, family, socket.SOCK_STREAM)[0][4]
@@ -81,6 +87,19 @@ def parse_trace(body: str) -> dict:
             "warp": (kv.get("warp") or "").strip() or None}
 
 
+def classify_ip(ip: str) -> dict:
+    """Best-effort type/region verdict for one IP from the ip-check service's
+    light endpoint (no quota). {} on any failure — the loc/warp checks stand."""
+    try:
+        raw = json.loads(_get(f"https://{_TRACE_HOST}/_asn?v=2&ip="
+                              + urllib.request.quote(ip, safe="")))
+    except Exception:
+        return {}
+    claude = raw.get("claude") if isinstance(raw.get("claude"), dict) else {}
+    return {k: v for k, v in (("type", raw.get("type")), ("country", raw.get("country")),
+                              ("verdict", claude.get("verdict"))) if v}
+
+
 def family_traces() -> dict:
     """{"v4": trace|None, "v6": trace|None}; a family that can't connect is
     simply absent (no IPv6 is normal). Skipped (empty) when an HTTPS proxy is
@@ -91,9 +110,11 @@ def family_traces() -> dict:
 
     def one(family):
         try:
-            return _trace_over(family)
+            t = _trace_over(family)
         except Exception:
             return None
+        t.update(classify_ip(t["ip"]))
+        return t
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         v4, v6 = pool.map(one, (socket.AF_INET, socket.AF_INET6))

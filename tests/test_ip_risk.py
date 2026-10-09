@@ -356,3 +356,48 @@ def test_family_traces_skipped_behind_env_https_proxy(monkeypatch):
     monkeypatch.setattr(refresh.urllib.request, "getproxies",
                         lambda: {"https": "http://127.0.0.1:7890"})
     assert refresh.family_traces() == {}
+
+
+def test_ban_risk_family_type_warns():
+    # IPv6 exit is a VPN in a supported, matching country: only the /_asn
+    # type verdict can catch it.
+    e = _fam({"ip": "5.6.7.8", "loc": "JP", "warp": "off", "verdict": "safe"},
+             {"ip": "2a02::1", "loc": "JP", "warp": "off", "verdict": "ban-risk", "type": "vpn"})
+    line = ip_risk.line_text(e)
+    assert line.startswith("✗ IPv6 exit 2a02::1 (vpn)")
+    assert ip_risk.risk_level(e) == "crit"
+
+
+def test_split_wording_does_not_claim_to_measure_claude():
+    e = _fam({"ip": "5.6.7.8", "loc": "US", "warp": "off"},
+             {"ip": "2400:2410::1", "loc": "JP", "warp": "off"})
+    assert "claude.ai prefers IPv6" in ip_risk.line_text(e)
+    assert "claude.ai sees" not in ip_risk.line_text(e)
+
+
+def test_classify_ip_reads_asn_endpoint(monkeypatch):
+    seen = []
+
+    def _g(url):
+        seen.append(url)
+        return json.dumps({"type": "vpn/hosting", "country": "US",
+                           "claude": {"verdict": "ban-risk"}})
+    monkeypatch.setattr(refresh, "_get", _g)
+    assert refresh.classify_ip("2400:2410::1") == {
+        "type": "vpn/hosting", "country": "US", "verdict": "ban-risk"}
+    assert seen[0].startswith("https://ip-check-origin.leeguoo.com/_asn?v=2&ip=2400%3A2410")
+
+
+def test_classify_ip_failure_falls_back_to_loc_checks(monkeypatch):
+    def _boom(url):
+        raise OSError("down")
+    monkeypatch.setattr(refresh, "_get", _boom)
+    assert refresh.classify_ip("1.2.3.4") == {}
+
+
+def test_prober_never_contacts_anthropic_hosts():
+    import inspect
+    src = inspect.getsource(refresh)
+    assert refresh._TRACE_HOST == "ip-check-origin.leeguoo.com"
+    for host in ("claude.ai/", '"claude.ai"', "anthropic.com"):
+        assert host not in src, host
