@@ -177,3 +177,79 @@ def test_shell_check_uses_patchable_windows_probe(
     out = capsys.readouterr().out
     assert "backslash path" in out
     assert "run: cs --setup" in out
+
+
+
+@pytest.fixture
+def _updates(monkeypatch, tmp_path):
+    """Pin every input of the update-channel lines. config.CONFIG_PATH is bound
+    at import, so the Path.home patch above can't redirect it; patch the loader."""
+    import time
+    from claude_statusbar import config, updater
+    monkeypatch.delenv("CLAUDE_STATUSBAR_NO_UPDATE", raising=False)
+    monkeypatch.setattr(config, "load_config", lambda: config.StatusbarConfig())
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: False)
+    monkeypatch.setattr(updater, "_windows_in_place", lambda: False)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.41.0")
+    cache = tmp_path / "latest_version.json"
+    monkeypatch.setattr(updater, "LATEST_VERSION_CACHE", cache)
+
+    def write(version, age_s=0):
+        cache.write_text(json.dumps(
+            {"version": version, "checked_at": time.time() - age_s}), encoding="utf-8")
+    return write
+
+
+def test_doctor_flags_newer_version_available(capsys, _isolated, _updates):
+    _updates("3.44.0")
+    doctor.run()
+    out = capsys.readouterr().out
+    assert "3.44.0 available — run: cs upgrade" in out
+    assert any(l.split()[1:] == ["auto-upgrade", "on"] for l in out.splitlines())
+
+
+def test_doctor_says_up_to_date(capsys, _isolated, _updates):
+    _updates("3.41.0")
+    doctor.run()
+    assert "3.41.0 (up to date)" in capsys.readouterr().out
+
+
+def test_doctor_distrusts_stale_latest_cache(capsys, _isolated, _updates):
+    """A blocked updater stops refreshing the cache; a month-old "3.41.0"
+    must not be reported as up to date."""
+    _updates("3.41.0", age_s=31 * 86400)
+    doctor.run()
+    out = capsys.readouterr().out
+    assert "up to date" not in out
+    assert "unknown — last checked 31d ago" in out
+
+
+def test_doctor_silent_without_latest_cache(capsys, _isolated, _updates):
+    doctor.run()
+    assert "latest" not in capsys.readouterr().out
+
+
+def test_doctor_flags_blocked_auto_upgrade(capsys, _isolated, _updates, monkeypatch):
+    """An install stuck behind for months showed a green ✓ everywhere because
+    is_shadow_install() silently vetoed every auto-upgrade."""
+    from claude_statusbar import updater
+    monkeypatch.setattr(updater, "is_shadow_install", lambda: True)
+    doctor.run()
+    assert "blocked — `cs` on PATH belongs to another install" in capsys.readouterr().out
+
+
+def test_doctor_flags_windows_in_place(capsys, _isolated, _updates, monkeypatch):
+    from claude_statusbar import updater
+    monkeypatch.setattr(updater, "_windows_in_place", lambda: True)
+    doctor.run()
+    assert "blocked — Windows pip/pipx" in capsys.readouterr().out
+
+
+def test_doctor_reports_auto_upgrade_off(capsys, _isolated, _updates, monkeypatch):
+    from claude_statusbar import config
+    monkeypatch.setattr(config, "load_config", lambda: config.StatusbarConfig(auto_upgrade=False))
+    doctor.run()
+    assert "off (config auto_upgrade=false)" in capsys.readouterr().out
+    monkeypatch.setenv("CLAUDE_STATUSBAR_NO_UPDATE", "1")
+    doctor.run()
+    assert "off (CLAUDE_STATUSBAR_NO_UPDATE)" in capsys.readouterr().out
