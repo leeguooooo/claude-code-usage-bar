@@ -203,9 +203,12 @@ def parse_stdin_data() -> Dict[str, Any]:
         if isinstance(prompt_cache, dict):
             expires_at = prompt_cache.get('expires_at')
             if (isinstance(expires_at, (int, float))
-                    and not isinstance(expires_at, bool)
-                    and math.isfinite(expires_at)):
-                result['prompt_cache_expires_at'] = float(expires_at)
+                    and not isinstance(expires_at, bool)):
+                try:
+                    if math.isfinite(expires_at):
+                        result['prompt_cache_expires_at'] = float(expires_at)
+                except OverflowError:
+                    pass  # an int too large for a float: keep the transcript countdown
 
         # Session cost
         cost = data.get('cost', {})

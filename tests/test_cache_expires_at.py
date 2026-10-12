@@ -29,7 +29,8 @@ def test_parse_keeps_prompt_cache_expires_at(monkeypatch):
 def test_parse_ignores_missing_or_bad_expires_at(monkeypatch):
     for payload in ({}, {"prompt_cache": None}, {"prompt_cache": {}},
                     {"prompt_cache": {"expires_at": "soon"}},
-                    {"prompt_cache": {"expires_at": True}}):
+                    {"prompt_cache": {"expires_at": True}},
+                    {"prompt_cache": {"expires_at": 10**309}}):
         assert "prompt_cache_expires_at" not in _parse(monkeypatch, payload)
 
 
