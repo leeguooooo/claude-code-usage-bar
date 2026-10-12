@@ -153,7 +153,15 @@ def format_cache_countdown(age_seconds: Optional[float],
     ttl = ttl_override if ttl_override is not None else (
         detected_ttl if detected_ttl is not None else _FALLBACK_TTL_S)
     age = 0.0 if age_seconds < 0 else age_seconds  # clamp future timestamps
-    remaining = ttl - age
+    return format_cache_remaining(ttl - age)
+
+
+def format_cache_remaining(remaining: float) -> str:
+    """Format seconds left before the prompt cache expires; "COLD" once gone.
+
+    Used directly when Claude Code reports the expiry itself (stdin
+    ``prompt_cache.expires_at``), and by ``format_cache_countdown``.
+    """
     if remaining <= 0:
         return "COLD"
     remaining_int = int(remaining) if remaining == int(remaining) else int(remaining) + 1

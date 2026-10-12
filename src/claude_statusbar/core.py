@@ -195,6 +195,18 @@ def parse_stdin_data() -> Dict[str, Any]:
             if 'current_usage' in cw:
                 result['context_current_usage'] = cw.get('current_usage')
 
+        # Prompt-cache expiry as Claude Code tracks it. Unlike the transcript's
+        # last assistant turn, it also counts requests that never reach the
+        # transcript (e.g. a plugin forking the conversation to keep the cache
+        # warm), so the countdown prefers it when present.
+        prompt_cache = data.get('prompt_cache', {})
+        if isinstance(prompt_cache, dict):
+            expires_at = prompt_cache.get('expires_at')
+            if (isinstance(expires_at, (int, float))
+                    and not isinstance(expires_at, bool)
+                    and math.isfinite(expires_at)):
+                result['prompt_cache_expires_at'] = float(expires_at)
+
         # Session cost
         cost = data.get('cost', {})
         if cost:
@@ -1209,7 +1221,12 @@ def main(json_output: bool = False,
     # the standalone reader (cache-only render, no transcript, or scan failed).
     cache_age_text = ""
     if cfg.show_cache_age:
-        if activity is not None:
+        _expires_at = stdin_data.get("prompt_cache_expires_at")
+        if _expires_at is not None:
+            import time as _t
+            from .activity import format_cache_remaining
+            cache_age_text = format_cache_remaining(_expires_at - _t.time())
+        elif activity is not None:
             from .activity import format_cache_countdown
             cache_age_text = format_cache_countdown(
                 activity.cache_age_seconds, activity.cache_ttl)
