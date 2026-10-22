@@ -102,7 +102,13 @@ def latest_release_tag() -> Optional[str]:
         )
         with urllib.request.urlopen(req, timeout=5) as response:
             tag = str(json.loads(response.read().decode())["tag_name"])
-        return tag.lstrip("v") or None
+        version = tag.lstrip("v") or None
+        if version:
+            # The ↑ hint and `cs doctor` read this cache; binary installs
+            # resolve through here, so skipping it left them on whatever PyPI
+            # said last (doctor: "latest 3.46.1" on 3.49.1).
+            _cache_latest_version(version)
+        return version
     except (urllib.error.URLError, json.JSONDecodeError, KeyError, TimeoutError):
         return None
 

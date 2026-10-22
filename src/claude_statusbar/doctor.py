@@ -266,7 +266,9 @@ def run() -> int:
         elif compare_versions(current, latest):
             _line("latest", _yellow(f"{latest} available — run: cs upgrade"), ok=None)
         else:
-            _line("latest", f"{latest} (up to date)")
+            # A cache older than the install names a version below ours.
+            shown = current if compare_versions(latest, current) else latest
+            _line("latest", f"{shown} (up to date)")
     except Exception:
         pass  # no cache yet or unreadable: say nothing rather than guess
     _line("auto-upgrade", auto[0], ok=auto[1])

@@ -58,3 +58,32 @@ def _isolate_upgrade_daemon(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "_restart_daemon_only",
                         lambda: (False, "restart disabled in tests"))
     monkeypatch.setattr(updater, "UPGRADE_STATUS", tmp_path / "upgrade_status.json")
+    # get_latest_version / latest_release_tag cache what they resolve; tests
+    # that fake those responses must not rewrite the real ↑-hint cache.
+    monkeypatch.setattr(updater, "LATEST_VERSION_CACHE", tmp_path / "latest_version.json")
+
+
+@pytest.fixture(autouse=True)
+def service_calls(monkeypatch):
+    """No test may start, stop or reload the developer's real daemon service.
+
+    `cs --setup` hands the daemon to launchd (`launchctl kickstart -k`, which
+    kills and restarts the running daemon) or spawns one directly; both used to
+    run for real from test_setup.py. Every launchctl / systemctl --user call
+    and every daemon start is recorded here instead. Tests that exercise the
+    service layer replace these with their own fakes.
+    """
+    from claude_statusbar import daemon, service
+    calls = []
+
+    def fake(tool):
+        def run(*args):
+            calls.append((tool, *args))
+            return 1, "", f"{tool} blocked in tests"
+        return run
+
+    monkeypatch.setattr(service, "_launchctl", fake("launchctl"))
+    monkeypatch.setattr(service, "_systemctl_user", fake("systemctl"))
+    monkeypatch.setattr(daemon, "cmd_start",
+                        lambda *a, **k: calls.append(("cmd_start", k)) or 0)
+    return calls

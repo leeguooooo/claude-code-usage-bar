@@ -214,6 +214,13 @@ def test_doctor_says_up_to_date(capsys, _isolated, _updates):
     assert "3.41.0 (up to date)" in capsys.readouterr().out
 
 
+def test_doctor_never_shows_a_latest_older_than_the_install(capsys, _isolated, _updates):
+    _updates("3.40.0")   # written before this install's own release
+    doctor.run()
+    out = capsys.readouterr().out
+    assert "3.41.0 (up to date)" in out and "3.40.0" not in out
+
+
 def test_doctor_distrusts_stale_latest_cache(capsys, _isolated, _updates):
     """A blocked updater stops refreshing the cache; a month-old "3.41.0"
     must not be reported as up to date."""
