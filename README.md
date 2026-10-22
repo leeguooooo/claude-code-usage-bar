@@ -162,6 +162,16 @@ Every icon, color threshold, and toggle is documented in the
 **[segment reference](docs/segments.md)**. Nine themes and three styles are in
 **[styles & themes](docs/styles-and-themes.md)**.
 
+## Network observations
+
+Enable optional IP checks with `cs config set show_ip_risk true`. The bar
+reports cached network observations, not account-suspension predictions.
+Unavailable checks stay unknown; IPv4/IPv6 country differences do not prove
+a leak. `cs doctor` explains coverage and links to [IP Check](https://ip-check.leeguoo.com/#local-diagnostics)
+and [Thermo for macOS](https://app.leeguoo.com/thermo) for explicit deeper checks.
+No Thermo scan runs on the render path. Check the installed Thermo version
+for Claude diagnostic availability.
+
 ## Documentation
 
 | Guide | What's inside |

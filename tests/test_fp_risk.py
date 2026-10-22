@@ -1,6 +1,4 @@
-# Relay fingerprint-risk warning line (show_fp_risk): local-only inference —
-# relay base URL + a marked system timezone. Never touches the network or the
-# outgoing request; it only surfaces what the user's own env already implies.
+# Custom-endpoint notices describe configuration, not payloads or account state.
 import pytest
 
 import claude_statusbar.fp_risk as fp_risk
@@ -10,7 +8,7 @@ def test_no_relay_is_silent(monkeypatch):
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: "Asia/Shanghai")
     text, level = fp_risk.fp_risk_line({"ANTHROPIC_BASE_URL": ""})
     assert text == ""
-    # official host, even in a marked tz, is unaffected by the watermark
+    # Official settings do not trigger a custom-endpoint notice.
     text, _ = fp_risk.fp_risk_line(
         {"ANTHROPIC_BASE_URL": "https://api.anthropic.com"})
     assert text == ""
@@ -39,38 +37,38 @@ def test_remote_and_loopback_lookalikes_still_warn(monkeypatch, base_url):
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: "America/New_York")
     text, level = fp_risk.fp_risk_line({"ANTHROPIC_BASE_URL": base_url})
     assert level == "warn"
-    assert "third-party relay" in text
+    assert "custom API endpoint" in text
 
 
-def test_relay_plus_marked_tz_is_crit(monkeypatch):
+def test_relay_plus_cn_timezone_is_configuration_notice(monkeypatch):
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: "Asia/Shanghai")
     text, level = fp_risk.fp_risk_line(
         {"ANTHROPIC_BASE_URL": "https://relay.example.com"})
-    assert level == "crit"
-    assert "watermark" in text and "CN timezone" in text
+    assert level == "warn"
+    assert "watermark" not in text and "timezone" not in text
     assert len(text.split("\n")) == 2
-    # names the concrete fix (local-only advice, no network call)
-    assert "Asia/Taipei" in text
+    # Advice points to explicit inspection, not a timezone change.
+    assert "Asia/Taipei" not in text
+    assert "cs doctor" in text
 
 
-def test_relay_urumqi_also_crit(monkeypatch):
+def test_relay_urumqi_is_not_critical(monkeypatch):
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: "Asia/Urumqi")
     text, level = fp_risk.fp_risk_line({"ANTHROPIC_BASE_URL": "relay.example.com"})
-    assert level == "crit"
+    assert level == "warn"
 
 
 def test_relay_non_marked_tz_warns(monkeypatch):
-    # A relay in ANY timezone is fingerprintable (domain/keyword dimension) →
-    # at least a warn, not silent.
+    # A remote custom endpoint gets the same notice in every timezone.
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: "America/New_York")
     text, level = fp_risk.fp_risk_line(
         {"ANTHROPIC_BASE_URL": "https://relay.example.com"})
     assert level == "warn"
-    assert "relay" in text and "watermark" in text
+    assert "custom API endpoint" in text and "watermark" not in text
 
 
 def test_unresolved_tz_still_warns_on_relay(monkeypatch):
-    # tz unknown but still a relay → the non-timezone dimensions apply → warn.
+    # No timezone inference is required for a configuration notice.
     monkeypatch.setattr(fp_risk, "system_timezone", lambda: None)
     text, level = fp_risk.fp_risk_line(
         {"ANTHROPIC_BASE_URL": "https://relay.example.com"})

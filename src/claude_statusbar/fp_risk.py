@@ -1,14 +1,7 @@
-"""Relay fingerprint-risk warning line (``show_fp_risk``).
+"""Local custom-endpoint notice, not a watermark or account-ban detector.
 
-Claude Code embeds a per-request identity mark in the system prompt's
-"Today's date is …" sentence when ``ANTHROPIC_BASE_URL`` points off the
-official host — one dimension of that mark is the system timezone (the date
-separator flips to a slash for ``Asia/Shanghai`` / ``Asia/Urumqi``). That
-mark rides in the outgoing request, which the status bar never sees or
-touches, so this module does NOT detect or alter the mark. It only reads the
-same local signals the user already controls — relay base URL + system
-timezone — and surfaces "this setup is fingerprintable, ban risk" so the
-user can make an informed call (the robust fix is the official endpoint).
+Configuration alone cannot establish which fields an installed Claude version
+sends. No timezone-based severity, payload inspection or network request.
 """
 import os
 from ipaddress import ip_address
@@ -16,9 +9,6 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 _OFFICIAL_API_HOST = "api.anthropic.com"
-# Timezones whose date separator the watermark flips (per the mechanism
-# writeup) — the one dimension that's list-free and locally verifiable.
-_MARKED_TIMEZONES = {"Asia/Shanghai", "Asia/Urumqi"}
 
 
 def _relay_host(env: Dict[str, str]) -> Optional[str]:
@@ -65,37 +55,16 @@ def system_timezone() -> Optional[str]:
 
 
 def fp_risk_line(env: Optional[Dict[str, str]] = None) -> Tuple[str, str]:
-    """(text, level) for the dedicated warning line; ("", "ok") = hidden.
+    """Notice the configured remote endpoint without inferring client behavior.
 
-    Two tiers, both local-only (never touches the network or the outgoing
-    request):
-
-    * crit — relay + a marked timezone (Asia/Shanghai, Asia/Urumqi). The
-      watermark's timezone dimension DEFINITELY flips here, so the request is
-      certainly marked.
-    * warn — any third-party relay in another timezone. The watermark also has
-      domain/keyword dimensions that fire on the relay's host regardless of
-      timezone, so a relay user is fingerprintable even outside a marked
-      timezone. We don't reproduce those lists (that's their anti-abuse
-      control), but the honest signal is: on a relay ⇒ likely watermarked.
+    Loopback and absent settings stay silent, but that silence does not verify
+    the upstream of a local gateway or imply account safety.
     """
     if env is None:
         env = os.environ
-    host = _relay_host(env)
-    if host is None:
+    if _relay_host(env) is None:
         return "", "ok"
-    tz = system_timezone()
-    if tz in _MARKED_TIMEZONES:
-        # Name the concrete, lowest-cost fix: the watermark's timezone
-        # dimension reads the system tz, and Asia/Taipei is UTC+8 (same clock
-        # as Beijing) but NOT on the marked list — so switching it drops this
-        # dimension. Official endpoint drops the whole watermark.
-        return (
-            "✗ relay + CN timezone — request is watermarked (traceable)\n"
-            "   ↳ set system timezone to Asia/Taipei (not Shanghai) + use the "
-            "official endpoint to stop it"
-        ), "crit"
     return (
-        "⚠ third-party relay — request may carry an identity watermark\n"
-        "   ↳ some account-ban risk; the official endpoint avoids it"
+        "⚠ custom API endpoint — request metadata not inspected\n"
+        "   ↳ review endpoint and telemetry settings: cs doctor"
     ), "warn"

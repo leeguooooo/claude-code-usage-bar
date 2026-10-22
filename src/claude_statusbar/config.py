@@ -68,10 +68,8 @@ class StatusbarConfig:
     # Egress-IP risk chip on the identity line (proxycheck.io, 30-min cadence,
     # detached prober — see ip_risk.py). Opt-in: it talks to a third party.
     show_ip_risk: bool = False
-    # Relay fingerprint-risk warning line: relay base URL + a marked system
-    # timezone → Claude Code's request is fingerprintable (see fp_risk.py).
-    # Local-only, no network, silent unless there's real risk → default on so
-    # affected relay users are warned without having to opt in.
+    # Local-only custom-endpoint notice, not a watermark/account detector.
+    # Default on; no request inspection, network calls or timezone inference.
     show_fp_risk: bool = True
     show_duration: bool = False
     show_lines: bool = True

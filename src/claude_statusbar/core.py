@@ -1301,8 +1301,7 @@ def main(json_output: bool = False,
         except Exception:
             pass
 
-    # Relay fingerprint-risk warning line (local-only: relay base URL + a
-    # marked system timezone). Its own dedicated line, distinct from ip_risk.
+    # Local custom-endpoint notice. No watermark, timezone or account inference.
     fp_line_kwargs = {}
     if cfg.show_fp_risk:
         try:

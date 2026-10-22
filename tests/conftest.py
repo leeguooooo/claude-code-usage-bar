@@ -34,3 +34,10 @@ def _isolate_ocs(tmp_path, monkeypatch):
         monkeypatch.setattr(ocs, "find_ocs", lambda: None)
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ip_risk_cache(tmp_path, monkeypatch):
+    """Doctor/render tests must not consult a developer's real IP history."""
+    from claude_statusbar import ip_risk
+    monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path / "ip-risk-cache")

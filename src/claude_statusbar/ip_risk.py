@@ -1,29 +1,19 @@
-"""Egress-IP risk segment (``show_ip_risk``).
+"""Opt-in network observations from background probes.
 
-Answers "how clean is the IP my traffic exits from right now?" — users on
-relays/VPNs care because a dirty egress IP raises account-risk. Data source
-is proxycheck.io's free tier (risk score 0-100 + proxy/VPN flag, no key
-needed); the reference site the user compares against (ippure.com) hides its
-API behind browser fingerprinting, so it can't back a CLI.
-
-Same architecture as the relay-balance segment: the render path ONLY reads a
-cache file; when the cache is stale a detached ``_ip_risk_refresh`` process
-re-probes (two ~8s HTTP calls) and rewrites the cache. Nothing on the render
-path ever touches the network. Probe cadence is IP_RISK_TTL_S (30 min) — the
-user explicitly does not want per-render checking.
+Render reads cached evidence only. Cheap exit checks run at most once per
+minute; IP enrichment is cached for 30 minutes. A probe measures its own
+route, not necessarily Claude's, and never establishes account status.
 """
 import json
+import math
 import os
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-# proxycheck.io re-probe cadence for a successful reading (rate-limited API:
-# free tier ~100/day, so this stays coarse).
+# Risk enrichment cadence; cheap exit checks are separate.
 IP_RISK_TTL_S = 30 * 60.0
-# Egress-IP re-verify cadence. We now hit our own service (ip-check.leeguoo.com,
-# self quota bucket), so a network change is caught within ~1 min instead of
-# waiting minutes. The daemon also runs this on its own heartbeat (see
+# Egress-IP re-verify cadence (ipify plus opt-in family probes). The daemon also runs this on its own heartbeat (see
 # daemon.py), so a VPN toggle reflects even while you're idle and Claude Code
 # isn't re-rendering the statusline.
 IP_CHECK_TTL_S = 60.0
@@ -76,9 +66,9 @@ def is_fresh(entry: Optional[Dict[str, Any]], now: Optional[float] = None) -> bo
         now = time.time()
     try:
         age = now - float(entry.get("ts", 0))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return False
-    return age < (IP_RISK_TTL_S if entry.get("ok") else FAIL_RETRY_S)
+    return math.isfinite(age) and -5 <= age < (IP_RISK_TTL_S if entry.get("ok") else FAIL_RETRY_S)
 
 
 def should_refresh(entry: Optional[Dict[str, Any]], now: Optional[float] = None) -> bool:
@@ -93,8 +83,9 @@ def should_refresh(entry: Optional[Dict[str, Any]], now: Optional[float] = None)
         return is_fresh(entry, now) is False   # failed → FAIL_RETRY_S backoff
     checked = entry.get("checked_ts", entry.get("ts", 0))
     try:
-        return (now - float(checked)) >= IP_CHECK_TTL_S
-    except (TypeError, ValueError):
+        age = now - float(checked)
+        return not math.isfinite(age) or age < -5 or age >= IP_CHECK_TTL_S
+    except (TypeError, ValueError, OverflowError):
         return True
 
 
@@ -122,98 +113,127 @@ def clear_inflight() -> None:
         pass
 
 
-def family_issue(entry: Dict[str, Any]) -> str:
-    """Two-line warning from the per-family exit probe (IPv4 and IPv6 read
-    separately from our own origin), or "" when they look fine / are absent.
-    These fire regardless of the risk score: a clean IPv4 says nothing about
-    an IPv6 that bypasses the proxy, which claude.ai would prefer. Measured on
-    our host, not claude.ai — a per-domain proxy rule can still differ.
-    """
+def _family_finding(entry: Dict[str, Any]) -> Tuple[str, str]:
+    """Probe observations only; neither differing geo nor a clean probe proves
+    the route of an actual Claude request."""
     from .ip_score import region_status
-    fam = entry.get("families") or {}
+    # Primary enrichment remains useful when direct family probes are skipped.
+    if region_status(entry.get("country")) in ("unsupported", "sanctioned"):
+        return (f"✗ IP probe exit in {entry.get('country')} — unsupported region for Claude\n"
+                "   ↳ actual Claude route unverified; details: cs doctor"), "crit"
+    fam = entry.get("families")
+    if not isinstance(fam, dict):
+        return "", "ok"
     seen = [(name, fam.get(key)) for name, key in (("IPv6", "v6"), ("IPv4", "v4"))
             if isinstance(fam.get(key), dict)]
     for name, t in seen:
         if t.get("warp") not in (None, "off"):
-            return (f"✗ {name} exit is Cloudflare WARP — VPN exit\n"
-                    f"   ↳ do NOT log in / re-auth Claude here: turn WARP off first")
+            return (f"✗ {name} probe exit is Cloudflare WARP — VPN exit\n"
+                    "   ↳ review network before signing in; details: cs doctor"), "crit"
     for name, t in seen:
         if region_status(t.get("loc")) in ("unsupported", "sanctioned"):
-            return (f"✗ {name} exit in {t.get('loc')} — unsupported region for Claude\n"
-                    f"   ↳ do NOT log in / re-auth Claude from this network")
+            return (f"✗ {name} probe exit in {t.get('loc')} — unsupported region for Claude\n"
+                    "   ↳ actual Claude route unverified; details: cs doctor"), "crit"
+    for name, t in seen:
+        if t.get("verdict") == "ban-risk":
+            kind = f" ({t['type']})" if t.get("type") else ""
+            return (f"✗ {name} exit {t.get('ip')}{kind} — network risk signal\n"
+                    "   ↳ review network before signing in; details: cs doctor"), "crit"
     v4, v6 = fam.get("v4"), fam.get("v6")
     if (isinstance(v4, dict) and isinstance(v6, dict) and v4.get("loc") and v6.get("loc")
             and v4["loc"] != v6["loc"]):
-        return (f"✗ ip split: IPv4 {v4['loc']} / IPv6 {v6['loc']} — claude.ai prefers IPv6\n"
-                f"   ↳ proxy doesn't cover IPv6: use TUN mode or disable IPv6 before logging in")
-    for name, t in seen:
-        # Type verdict from /_asn (VPN / proxy / Tor / WARP / region); absent
-        # when that lookup failed, leaving only the checks above.
-        if t.get("verdict") == "ban-risk":
-            kind = f" ({t['type']})" if t.get("type") else ""
-            return (f"✗ {name} exit {t.get('ip')}{kind} — account-ban risk\n"
-                    f"   ↳ do NOT log in / re-auth Claude here: switch network first")
-    return ""
+        return (f"⚠ ip exits differ: IPv4 {v4['loc']} / IPv6 {v6['loc']}\n"
+                "   ↳ geolocation differs; Claude route unverified (cs doctor)"), "warn"
+    return "", "ok"
+
+
+def family_issue(entry: Dict[str, Any]) -> str:
+    return _family_finding(entry)[0]
+
+
+def _score(entry: Dict[str, Any]) -> int:
+    try:
+        return int(entry.get("risk", 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def risk_level(entry: Dict[str, Any]) -> str:
-    """"ok" / "warn" / "crit" per proxycheck bands; a proxy/VPN verdict is at
-    least warn even at a low score (the flag itself is the risk signal). A
-    per-family trace problem (family_issue) is always crit."""
-    if family_issue(entry):
+    family_level = _family_finding(entry)[1]
+    risk = _score(entry)
+    if family_level == "crit" or risk >= CRIT_RISK:
         return "crit"
-    try:
-        risk = int(entry.get("risk", 0))
-    except (TypeError, ValueError):
-        risk = 0
-    if risk >= CRIT_RISK:
-        return "crit"
-    if risk >= WARN_RISK or str(entry.get("proxy", "")).lower() == "yes":
+    if family_level == "warn" or risk >= WARN_RISK or str(entry.get("proxy", "")).lower() == "yes":
         return "warn"
     return "ok"
 
 
 def line_text(entry: Dict[str, Any]) -> str:
-    """Warning as TWO lines (summary + action), or "" when the IP is clean
-    enough (≤ SHOW_THRESHOLD). Two lines because the single-line form is too
-    long for a terminal statusline and gets truncated. The renderer splits on
-    "\\n" and colors each line. English + explicit about the login/ban risk.
-    The per-family exit probe (family_issue) wins over the score line.
-    """
-    issue = family_issue(entry)
-    if issue:
+    """Two-line observation/action. No account prediction or routing assertion."""
+    issue, family_level = _family_finding(entry)
+    risk = _score(entry)
+    if issue and (family_level == "crit" or risk < CRIT_RISK):
         return issue
-    try:
-        risk = int(entry.get("risk", 0))
-    except (TypeError, ValueError):
-        risk = 0
     if risk <= SHOW_THRESHOLD:
         return ""
     kind = str(entry.get("type", "") or "").strip()
     kind_part = f" ({kind})" if kind else ""
-    if risk >= CRIT_RISK:
-        # Name the specific dangerous action: logging in / re-authenticating
-        # Claude from a flagged datacenter/proxy IP is what triggers the ban.
-        return (f"✗ ip risk {risk}/100{kind_part} — account-ban risk\n"
-                f"   ↳ do NOT log in / re-auth Claude here: "
-                f"account WILL be banned — switch network first")
-    return (f"⚠ ip risk {risk}/100{kind_part} — account-ban risk\n"
-            f"   ↳ avoid logging in / re-authenticating Claude on this IP")
+    symbol = "✗" if risk >= CRIT_RISK else "⚠"
+    return (f"{symbol} ip risk {risk}/100{kind_part} — network signal\n"
+            "   ↳ review network before signing in; details: cs doctor")
+
+
+def _checked_recently(entry: Dict[str, Any], now: float) -> bool:
+    try:
+        timestamp = float(entry.get("checked_ts", entry.get("ts", 0)))
+        age = now - timestamp
+        return math.isfinite(timestamp) and -5 <= age < IP_CHECK_TTL_S * 2
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def cache_state(entry=None, now=None) -> str:
+    """Machine-readable coverage state, without exposing cache values."""
+    if not isinstance(entry, dict):
+        return "unknown"
+    if not entry.get("ok"):
+        return "failed"
+    try:
+        risk = entry["risk"]
+        if isinstance(risk, bool) or not math.isfinite(float(risk)) or not 0 <= float(risk) <= 100:
+            return "unknown"
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return "unknown"
+    return "current" if _checked_recently(entry, time.time() if now is None else now) else "stale"
+
+
+def cached_status(entry=None, now=None) -> Tuple[str, str]:
+    """Pure rendering shared with doctor; never probes or starts a scanner."""
+    if now is None:
+        now = time.time()
+    unknown = ("⚠ ip check unavailable — network status unknown\n"
+               "   ↳ no account status inferred; details: cs doctor", "warn")
+    state = cache_state(entry, now)
+    if state == "unknown":
+        return unknown
+    if state == "current":
+        return line_text(entry), risk_level(entry)
+    previous = entry if entry.get("ok") else entry.get("last_good")
+    if isinstance(previous, dict):
+        text = line_text(previous)
+        if text:
+            first = text.split("\n", 1)[0]
+            state = "refresh failed" if not entry.get("ok") else "check stale"
+            return (first + f" (last known; {state})\n"
+                    "   ↳ current status unknown; details: cs doctor"), risk_level(previous)
+    return unknown
 
 
 def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:
-    """(text, level) for the dedicated warning line; ("", "ok") = hidden.
-
-    Fresh ok cache → render it. Stale → keep rendering the last good reading
-    (risk doesn't flap minute-to-minute) while a detached refresh runs.
-    Clean IP, failed probe, or no cache → hidden line, zero noise.
-    """
     entry = read_cache()
     if spawn:
         ensure_fresh(entry)
-    if isinstance(entry, dict) and entry.get("ok"):
-        return line_text(entry), risk_level(entry)
-    return "", "ok"
+    return cached_status(entry)
 
 
 def ensure_fresh(entry=None) -> None:
