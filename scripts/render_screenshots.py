@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Render every style × theme combination to SVG for the README.
+"""Render the three looks (aurora ■, aurora ━, classic) to SVG for the docs.
 
-Output: docs/images/<style>-<theme>.svg
+Output: docs/images/aurora-graphite.svg, aurora-thin-graphite.svg,
+classic-graphite.svg
 
 Each SVG is a self-contained snapshot — no external fonts. Renders the
 exact ANSI output you'd see in your terminal but with crisp vector text.
@@ -15,7 +16,7 @@ from html import escape
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from claude_statusbar.styles import RENDERERS, render
+from claude_statusbar.styles import render
 from claude_statusbar.themes import BUILTIN_THEMES
 
 OUT = ROOT / "docs" / "images"
@@ -127,21 +128,22 @@ def render_svg(text, *, char_w=8.4, char_h=18, padding_x=12, padding_y=10,
     return "\n".join(parts)
 
 
+# The three looks: (file stem, style, bar_glyph, title).
+LOOKS = [
+    ("aurora-graphite", "aurora", "block", "cs  (aurora · bar_glyph block, default)"),
+    ("aurora-thin-graphite", "aurora", "thin", "cs config set bar_glyph thin"),
+    ("classic-graphite", "classic", "block", "cs config set style classic"),
+]
+
+
 def main():
-    written = 0
-    for style_name in RENDERERS:
-        for theme in BUILTIN_THEMES:
-            line = render(style_name, theme=theme, **DATA)
-            title = f"cs --style {style_name} --theme {theme.name}"
-            # Choose canvas bg per theme (light themes need a light canvas).
-            light = theme.name in ("linen", "sakura")
-            canvas = (245, 240, 232) if light else (28, 30, 36)
-            svg = render_svg(line, bg_canvas=canvas, title=title)
-            out = OUT / f"{style_name}-{theme.name}.svg"
-            out.write_text(svg, encoding="utf-8")
-            written += 1
-            print(f"  {out.relative_to(ROOT)}")
-    print(f"\nGenerated {written} SVG snapshots in {OUT.relative_to(ROOT)}")
+    theme = BUILTIN_THEMES[0]
+    for stem, style_name, glyph, title in LOOKS:
+        line = render(style_name, theme=theme, bar_glyph=glyph, **DATA)
+        out = OUT / f"{stem}.svg"
+        out.write_text(render_svg(line, title=title), encoding="utf-8")
+        print(f"  {out.relative_to(ROOT)}")
+    print(f"\nGenerated {len(LOOKS)} SVG snapshots in {OUT.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":

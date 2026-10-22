@@ -1,4 +1,4 @@
-"""Tests for `cs preview` — style × theme matrix renderer."""
+"""Tests for `cs preview` — the three looks side by side."""
 
 import io
 from contextlib import redirect_stdout
@@ -13,44 +13,27 @@ def _run(theme_filter=None, style_filter=None):
     return rc, buf.getvalue()
 
 
-def test_preview_default_renders_all_styles_and_themes():
+def test_preview_default_renders_the_three_looks():
     rc, out = _run()
     assert rc == 0
-    # All 3 style headings appear
-    for label in ("CLASSIC", "CAPSULE", "HAIRLINE"):
-        assert label in out, f"missing style heading {label!r} in preview output"
-    # All 7 theme rows appear (under capsule + hairline at minimum)
-    for theme in ("graphite", "twilight", "linen", "nord", "dracula", "sakura", "mono"):
-        assert theme in out, f"missing theme row {theme!r}"
-
-
-def test_preview_theme_filter_limits_output():
-    """`cs preview --theme nord` must show only nord rows under each style."""
-    rc, out = _run(theme_filter="nord")
-    assert rc == 0
-    # nord must appear; the other 6 themes must NOT appear as left-bracket labels
-    for absent in ("twilight", "linen", "dracula", "sakura", "mono"):
-        assert f"[{absent}" not in out, f"theme filter leaked {absent!r}"
-    assert "[nord" in out
+    for label in ("AURORA（方块）", "AURORA（细线）", "CLASSIC"):
+        assert label in out, f"missing heading {label!r} in preview output"
+    assert "■" in out and "━" in out
+    for removed in ("CAPSULE", "HAIRLINE"):
+        assert removed not in out
 
 
 def test_preview_style_filter_limits_output():
-    rc, out = _run(style_filter="hairline")
+    rc, out = _run(style_filter="classic")
     assert rc == 0
-    assert "HAIRLINE" in out
-    # Other style headings must not appear
-    for absent in ("CLASSIC", "CAPSULE"):
-        assert absent not in out, f"style filter leaked {absent!r}"
+    assert "CLASSIC" in out
+    assert "AURORA" not in out
 
 
-def test_preview_combined_filter_renders_one_combo():
-    rc, out = _run(style_filter="capsule", theme_filter="dracula")
+def test_preview_graphite_filter_still_accepted():
+    rc, out = _run(theme_filter="graphite")
     assert rc == 0
-    assert "CAPSULE" in out
-    assert "[dracula" in out
-    # Only this combo — neither HAIRLINE nor other themes
-    assert "HAIRLINE" not in out
-    assert "[graphite" not in out
+    assert "AURORA" in out
 
 
 def test_preview_unknown_theme_returns_error():
@@ -76,7 +59,7 @@ def test_preview_includes_cache_and_cost_segments_in_output(monkeypatch):
     is exactly the fixture that guarantees both segments, which is what this test is
     about."""
     monkeypatch.setattr(preview, "_real_data", lambda: None)
-    rc, out = _run(style_filter="capsule", theme_filter="graphite")
+    rc, out = _run(style_filter="classic", theme_filter="graphite")
     assert "cache " in out, "preview must render cache segment"
     assert "$" in out, "preview must render cost segment"
 
@@ -107,22 +90,18 @@ def _run_cli(argv_tail):
 
 
 def test_preview_accepts_theme_equals_form():
-    """`cs preview --theme=nord` must filter same as `--theme nord`. The
-    equals form is a standard shell idiom; silent fall-through to all-21
-    rows surprises users."""
-    rc, out, _ = _run_cli(["preview", "--no-color", "--theme=nord"])
+    """`cs preview --theme=graphite` must parse same as `--theme graphite`."""
+    rc, out, _ = _run_cli(["preview", "--no-color", "--theme=graphite"])
     assert rc == 0
-    # Other themes must NOT appear as left-bracket labels.
-    for absent in ("twilight", "linen", "dracula", "sakura", "mono"):
-        assert f"[{absent}" not in out, f"--theme= filter leaked {absent!r}"
-    assert "[nord" in out
+    rc, out, _ = _run_cli(["preview", "--no-color", "--theme=nord"])
+    assert rc == 2  # removed theme names are rejected, not silently ignored
 
 
 def test_preview_accepts_style_equals_form():
-    rc, out, _ = _run_cli(["preview", "--no-color", "--style=hairline"])
+    rc, out, _ = _run_cli(["preview", "--no-color", "--style=classic"])
     assert rc == 0
-    assert "HAIRLINE" in out
-    assert "CLASSIC" not in out and "CAPSULE" not in out
+    assert "CLASSIC" in out
+    assert "AURORA" not in out
 
 
 def test_preview_rejects_flag_without_value():
@@ -140,22 +119,3 @@ def test_preview_rejects_flag_followed_by_another_flag():
     assert rc == 2
     assert "requires a value" in err
 
-
-def test_preview_classic_varies_by_theme(capsys, monkeypatch):
-    """After per-segment color management lands, classic must respect
-    the active theme — different themes produce different ANSI."""
-    from claude_statusbar import preview as preview_mod
-
-    # Force demo data so the test doesn't depend on a live cache file.
-    monkeypatch.setattr(preview_mod, "_real_data", lambda: None)
-
-    preview_mod.run(use_color=True, theme_filter="graphite", style_filter="classic")
-    out_g = capsys.readouterr().out
-
-    preview_mod.run(use_color=True, theme_filter="linen", style_filter="classic")
-    out_l = capsys.readouterr().out
-
-    # Both renders produce non-empty output containing the model.
-    assert "Opus" in out_g and "Opus" in out_l
-    # The two themes must produce different ANSI (the regression).
-    assert out_g != out_l

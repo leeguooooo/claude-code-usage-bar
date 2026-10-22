@@ -44,9 +44,9 @@ specifically and add an entry to the banned list if appropriate.
   prints daemon-rendered ANSI. Must stay leaf-import; tests enforce this.
 - `core.py` — orchestrates stdin parsing, payload computation, render dispatch.
 - `progress.py` — pure rendering for the classic style.
-- `styles.py` — `render_classic / render_capsule / render_hairline`. Every
+- `styles.py` — `render_aurora / render_classic`. Every
   style takes a `Theme`, severity colors come from `theme.s_*`.
-- `themes.py` — `Theme` dataclass + 9 built-in palettes + `parse_hex_color` /
+- `themes.py` — `Theme` dataclass + the graphite palette + `parse_hex_color` /
   `apply_color_overrides` helpers.
 - `config.py` — read/write `~/.claude/claude-statusbar.json`. Validation
   happens here.
@@ -120,6 +120,24 @@ and give it the version.
 Still manual: syncing the marketplace entry in `leeguooooo/plugins`.
 `./publish.sh` remains for a hand-rolled PyPI upload, but the workflow is the
 normal path.
+
+## Building the release bundle
+
+For source builds, wrap the PyInstaller bundle before packaging:
+
+```bash
+pyinstaller packaging/cs.spec --noconfirm
+mv dist/cs/cs dist/cs/cs-python
+go build -trimpath -ldflags='-s -w' -o dist/cs/cs packaging/native/main.go
+python scripts/benchmark_native.py dist/cs/cs
+python scripts/benchmark_daemon.py dist/cs/cs
+```
+
+Both benchmarks use temporary fixtures, not live sessions or credentials.
+The first checks the cache-hit CPU budget; the second exercises 16 concurrent
+sessions, warm-cache routing, worker count, Git deduplication and freshness.
+The daemon also writes aggregate timing and worker counters to
+`~/.cache/claude-statusbar/scheduler.json` (no payloads or tokens).
 
 ## Reporting bugs
 

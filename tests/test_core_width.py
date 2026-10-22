@@ -78,10 +78,10 @@ def _run(tmp_path, monkeypatch, capsys, session_env, terminal_width=None):
     {"COLUMNS": "36"},
     {"COLUMNS": "36", "ANTHROPIC_BASE_URL": "http://127.0.0.1:17870"},
 ])
-def test_session_columns_drives_auto_compact_and_hard_cap(
+def test_session_columns_drives_the_hard_cap(
         tmp_path, monkeypatch, capsys, session_env):
     seen, out = _run(tmp_path, monkeypatch, capsys, session_env)
-    assert seen == {"style": "hairline", "max_width": 36}
+    assert seen == {"style": "classic", "max_width": 36}
     assert all(visible_width(line) <= 36 for line in out.splitlines())
 
 
@@ -90,7 +90,7 @@ def test_invalid_columns_uses_terminal_fallback(
         tmp_path, monkeypatch, capsys, bad):
     seen, out = _run(
         tmp_path, monkeypatch, capsys, {"COLUMNS": bad}, terminal_width=50)
-    assert seen == {"style": "hairline", "max_width": 50}
+    assert seen == {"style": "classic", "max_width": 50}
     assert all(visible_width(line) <= 50 for line in out.splitlines())
 
 

@@ -123,13 +123,13 @@ def test_classic_low_current_high_projection_uses_hot_color():
     assert ok in line2
 
 
-def test_all_three_styles_accept_projection_kwargs():
+def test_both_styles_accept_projection_kwargs():
     common = dict(
         msgs_pct=24, weekly_pct=24, reset_5h="4h54m", reset_7d="4d18h",
         model="Opus 4.8", theme=THEME, projection_5h="→30%",
         projection_7d="→96%", ctx_pct=51,
     )
-    for style in ("classic", "capsule", "hairline"):
+    for style in ("classic", "aurora"):
         out = render(style, **common)
         hot = f"38;2;{THEME.s_hot[0]};{THEME.s_hot[1]};{THEME.s_hot[2]}m"
         assert hot in out  # the →96% 7d window is red in every style

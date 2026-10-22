@@ -27,13 +27,13 @@ def test_load_returns_defaults_for_garbage(tmp_path: Path):
 
 def test_save_then_load_roundtrip(tmp_path: Path):
     p = tmp_path / "cfg.json"
-    cfg = cfg_mod.StatusbarConfig(style="capsule", theme="twilight",
+    cfg = cfg_mod.StatusbarConfig(style="classic", bar_glyph="thin",
                                    density="cozy", show_weekly=False)
     cfg_mod.save_config(cfg, p)
 
     raw = json.loads(p.read_text(encoding="utf-8"))
-    assert raw["style"] == "capsule"
-    assert raw["theme"] == "twilight"
+    assert raw["style"] == "classic"
+    assert raw["bar_glyph"] == "thin"
     assert raw["density"] == "cozy"
     assert raw["show_weekly"] is False
 
@@ -43,14 +43,14 @@ def test_save_then_load_roundtrip(tmp_path: Path):
 
 def test_set_value_persists(tmp_path: Path):
     p = tmp_path / "cfg.json"
-    cfg_mod.set_value("style", "hairline", p)
+    cfg_mod.set_value("style", "classic", p)
     cfg_mod.set_value("density", "compact", p)
     cfg_mod.set_value("show_weekly", "false", p)
     cfg_mod.set_value("warning_threshold", "25.5", p)
     cfg_mod.set_value("auto_compact_width", "100", p)
 
     cfg = cfg_mod.load_config(p)
-    assert cfg.style == "hairline"
+    assert cfg.style == "classic"
     assert cfg.density == "compact"
     assert cfg.show_weekly is False
     assert cfg.warning_threshold == 25.5
@@ -97,22 +97,22 @@ def test_set_value_rejects_invalid_theme(tmp_path: Path):
         cfg_mod.set_value("theme", "midnight", tmp_path / "cfg.json")
 
 
-@pytest.mark.parametrize("style", ["classic", "capsule", "hairline"])
+@pytest.mark.parametrize("style", ["aurora", "classic"])
 def test_set_value_accepts_valid_style(tmp_path: Path, style: str):
     cfg_mod.set_value("style", style, tmp_path / "cfg.json")
     assert cfg_mod.load_config(tmp_path / "cfg.json").style == style
 
 
-@pytest.mark.parametrize("theme", ["graphite", "twilight", "linen", "nord", "dracula", "sakura", "mono", "catppuccin-mocha", "tokyo-night"])
+@pytest.mark.parametrize("theme", ["graphite"])
 def test_set_value_accepts_valid_theme(tmp_path: Path, theme: str):
     cfg_mod.set_value("theme", theme, tmp_path / "cfg.json")
     assert cfg_mod.load_config(tmp_path / "cfg.json").theme == theme
 
 
 def test_resolve_style_priority(tmp_path: Path):
-    cfg = cfg_mod.StatusbarConfig(style="capsule")
+    cfg = cfg_mod.StatusbarConfig(style="aurora")
     # CLI wins
-    assert cfg_mod.resolve_style("hairline", cfg) == "hairline"
+    assert cfg_mod.resolve_style("classic", cfg) == "classic"
     # Else env var
     import os
     os.environ["CLAUDE_STATUSBAR_STYLE"] = "classic"
@@ -121,7 +121,7 @@ def test_resolve_style_priority(tmp_path: Path):
     finally:
         del os.environ["CLAUDE_STATUSBAR_STYLE"]
     # Else config
-    assert cfg_mod.resolve_style(None, cfg) == "capsule"
+    assert cfg_mod.resolve_style(None, cfg) == "aurora"
 
 
 def test_to_bool_handles_strings_and_bools():
@@ -136,14 +136,14 @@ def test_save_config_is_atomic(tmp_path: Path):
     succeed (regression: config.save_config used to call write_text directly,
     so Ctrl+C mid-write could corrupt the JSON file)."""
     p = tmp_path / "cfg.json"
-    cfg_mod.save_config(cfg_mod.StatusbarConfig(style="capsule"), p)
-    cfg_mod.save_config(cfg_mod.StatusbarConfig(style="hairline"), p)
+    cfg_mod.save_config(cfg_mod.StatusbarConfig(style="classic"), p)
+    cfg_mod.save_config(cfg_mod.StatusbarConfig(density="cozy"), p)
 
     leftover = list(tmp_path.glob(".cfg.json.*.tmp"))
     assert leftover == [], f"temp files leaked: {leftover}"
 
     loaded = cfg_mod.load_config(p)
-    assert loaded.style == "hairline"
+    assert loaded.density == "cozy"
 
 
 def test_set_warning_above_default_critical_rejected(tmp_path: Path):
@@ -194,7 +194,7 @@ def test_show_cache_age_default_true(tmp_path: Path):
 
 def test_show_cache_age_defaults_true_when_key_missing(tmp_path: Path):
     p = tmp_path / "cfg.json"
-    p.write_text(json.dumps({"style": "capsule"}), encoding="utf-8")
+    p.write_text(json.dumps({"style": "classic"}), encoding="utf-8")
     assert cfg_mod.load_config(p).show_cache_age is True
 
 
@@ -223,10 +223,10 @@ def test_cache_ttl_seconds_persists(tmp_path: Path):
 def test_save_stores_only_what_differs_from_defaults(tmp_path: Path):
     # The whole point: an untouched key must NOT be frozen into the file, or a
     # later change to its default can never reach this user.
-    cfg = cfg_mod.StatusbarConfig(style="capsule")
+    cfg = cfg_mod.StatusbarConfig(style="classic")
     cfg_mod.save_config(cfg, tmp_path / "c.json")
     raw = json.loads((tmp_path / "c.json").read_text())
-    assert raw == {"style": "capsule", "ui_version": cfg_mod.UI_VERSION}
+    assert raw == {"style": "classic", "ui_version": cfg_mod.UI_VERSION}
 
 
 def test_a_flipped_default_reaches_users_who_never_set_it(tmp_path: Path):
@@ -234,14 +234,14 @@ def test_a_flipped_default_reaches_users_who_never_set_it(tmp_path: Path):
     # default-on hours later, and every user who had written a config in
     # between kept the old value forever because save_config dumped all keys.
     p = tmp_path / "c.json"
-    cfg_mod.save_config(cfg_mod.StatusbarConfig(theme="nord"), p)
+    cfg_mod.save_config(cfg_mod.StatusbarConfig(density="cozy"), p)
     assert "show_project_branch" not in json.loads(p.read_text())
 
     # The key is absent, so whatever the current default is, that's what a
     # later release hands this user.
     loaded = cfg_mod.load_config(p)
     assert loaded.show_project_branch is cfg_mod.StatusbarConfig().show_project_branch
-    assert loaded.theme == "nord"
+    assert loaded.density == "cozy"
 
 
 def test_deliberate_non_default_choice_survives(tmp_path: Path):
@@ -255,14 +255,14 @@ def test_deliberate_non_default_choice_survives(tmp_path: Path):
 def test_unset_returns_a_key_to_the_default(tmp_path: Path):
     p = tmp_path / "c.json"
     cfg_mod.set_value("show_project_branch", "false", p)
-    cfg_mod.set_value("theme", "nord", p)
+    cfg_mod.set_value("density", "cozy", p)
 
     cfg = cfg_mod.unset_value("show_project_branch", p)
 
     assert cfg.show_project_branch is cfg_mod.StatusbarConfig().show_project_branch
     raw = json.loads(p.read_text())
     assert "show_project_branch" not in raw   # gone, not stored as the default
-    assert raw == {"theme": "nord", "ui_version": cfg_mod.UI_VERSION}  # other choices untouched
+    assert raw == {"density": "cozy", "ui_version": cfg_mod.UI_VERSION}  # other choices untouched
 
 
 def test_unset_rejects_unknown_keys(tmp_path: Path):
@@ -272,8 +272,8 @@ def test_unset_rejects_unknown_keys(tmp_path: Path):
 
 def test_explicit_keys_reports_only_stored_choices(tmp_path: Path):
     p = tmp_path / "c.json"
-    cfg_mod.set_value("theme", "nord", p)
-    assert cfg_mod.explicit_keys(p) == {"theme"}
+    cfg_mod.set_value("density", "cozy", p)
+    assert cfg_mod.explicit_keys(p) == {"density"}
     assert cfg_mod.explicit_keys(tmp_path / "missing.json") == set()
 
 
@@ -338,13 +338,39 @@ def test_lang_validation(tmp_path):
 def test_ui_migration_moves_explicit_style_to_aurora_once(tmp_path, monkeypatch):
     p = tmp_path / "live.json"
     monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
-    p.write_text(json.dumps({"style": "classic", "theme": "nord"}))
+    p.write_text(json.dumps({"style": "classic", "density": "cozy"}))
     cfg = cfg_mod.load_config()
-    assert cfg.style == "aurora" and cfg.theme == "nord"
-    assert json.loads(p.read_text()) == {"theme": "nord", "ui_version": cfg_mod.UI_VERSION}
+    assert cfg.style == "aurora" and cfg.density == "cozy"
+    assert json.loads(p.read_text()) == {"density": "cozy", "ui_version": cfg_mod.UI_VERSION}
     # A choice made after the migration sticks.
     cfg_mod.set_value("style", "classic")
     assert cfg_mod.load_config().style == "classic"
+
+
+@pytest.mark.parametrize("style", ["capsule", "hairline"])
+def test_removed_styles_and_themes_migrate_to_defaults(tmp_path, monkeypatch, style):
+    p = tmp_path / "live.json"
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
+    p.write_text(json.dumps({"ui_version": 2, "style": style, "theme": "nord",
+                             "auto_compact_width": 80, "density": "cozy"}))
+    cfg = cfg_mod.load_config()
+    assert (cfg.style, cfg.theme, cfg.auto_compact_width) == ("aurora", "graphite", 0)
+    assert json.loads(p.read_text()) == {
+        "ui_version": cfg_mod.UI_VERSION, "density": "cozy"}
+
+
+def test_classic_survives_the_style_cut(tmp_path, monkeypatch):
+    p = tmp_path / "live.json"
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
+    p.write_text(json.dumps({"ui_version": 2, "style": "classic"}))
+    assert cfg_mod.load_config().style == "classic"
+
+
+def test_set_value_rejects_removed_style_and_theme(tmp_path):
+    with pytest.raises(ValueError):
+        cfg_mod.set_value("style", "capsule", tmp_path / "c.json")
+    with pytest.raises(ValueError):
+        cfg_mod.set_value("theme", "nord", tmp_path / "c.json")
 
 
 def test_ui_migration_skips_non_live_paths(tmp_path):
@@ -359,7 +385,7 @@ def test_mode_line_upgrade_hides_once_and_preserves_other_choices(
         tmp_path, monkeypatch, saved_mode):
     p = tmp_path / "live.json"
     monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
-    raw = {"ui_version": 1, "style": "classic", "theme": "nord"}
+    raw = {"ui_version": 1, "style": "classic", "density": "cozy"}
     if saved_mode is not None:
         raw["show_mode"] = saved_mode
     p.write_text(json.dumps(raw))
@@ -370,14 +396,14 @@ def test_mode_line_upgrade_hides_once_and_preserves_other_choices(
 
     cfg = cfg_mod.load_config()
     assert cfg.show_mode is False
-    assert (cfg.style, cfg.theme) == ("classic", "nord")
+    assert (cfg.style, cfg.density) == ("classic", "cozy")
     assert json.loads(p.read_text()) == {
-        "ui_version": cfg_mod.UI_VERSION, "style": "classic", "theme": "nord"}
+        "ui_version": cfg_mod.UI_VERSION, "style": "classic", "density": "cozy"}
     assert not meta.exists()
 
     cfg_mod.set_value("show_mode", "true")
     assert cfg_mod.load_config().show_mode is True
-    cfg_mod.set_value("theme", "twilight")
+    cfg_mod.set_value("density", "compact")
     assert cfg_mod.load_config().show_mode is True
 
 

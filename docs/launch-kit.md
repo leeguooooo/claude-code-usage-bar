@@ -21,14 +21,14 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 > Because you don't *want* to look. You want to glance. The information is there in your peripheral vision while you're typing — no Cmd+Tab, no second window stealing focus.
 
 **Tweet 3**
-> 3 styles × 9 themes. Per-segment severity colors (green / yellow / red by metric). Catppuccin, Dracula, Nord, Tokyo Night, Sakura, Mono — pick what doesn't fight your terminal theme.
+> Three looks: gradient block bars, a thin line, or the classic battery bar. Per-segment severity colors (green / yellow / red by metric).
 >
-> [attach: 2-3 theme screenshots from docs/images/]
+> [attach: the three look screenshots from docs/images/]
 
 **Tweet 4**
 > Daemon "fast mode" for `refreshInterval=1` — ~5× lower CPU than re-running Python on every tick.
 >
-> Auto-updates from PyPI. Self-diagnostic with `cs doctor`. Natural-language config via the bundled Claude Code skill: *"switch theme to nord"* → done.
+> Auto-updates from PyPI. Self-diagnostic with `cs doctor`. Natural-language config via the bundled Claude Code skill: *"make the bars thinner"* → done.
 
 **Tweet 5 (call to action)**
 > Free, MIT, Python ≥ 3.9. PyPI: https://pypi.org/project/claude-statusbar/
@@ -55,10 +55,10 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 > 因为你不想"看"——你想"瞥"。状态栏永远在你余光里，dashboard 要 Cmd+Tab。这是两种心智，不是产品差距。
 
 **3**
-> 3 种 style × 9 套主题。每个字段独立按严重度上色（绿 / 黄 / 红）。Catppuccin、Dracula、Nord、Tokyo Night、Sakura、Mono——挑一个不打架你终端配色的。
+> 三种外观：渐变方块条、细线、经典电池条。每个字段独立按严重度上色（绿 / 黄 / 红）。
 
 **4**
-> daemon fast-mode：`refreshInterval=1` 时 CPU 比纯 Python 重新跑低约 5 倍。自动从 PyPI 更新。`cs doctor` 自检。自带 Claude Code skill 支持自然语言改配置——*"主题换 nord"* → 自动调对的命令。
+> daemon fast-mode：`refreshInterval=1` 时 CPU 比纯 Python 重新跑低约 5 倍。自动从 PyPI 更新。`cs doctor` 自检。自带 Claude Code skill 支持自然语言改配置——*"进度条细一点"* → 自动调对的命令。
 
 **5**
 > 免费、MIT、Python ≥ 3.9。
@@ -96,11 +96,11 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 > ```
 > Restart Claude Code. Done.
 >
-> 3 styles × 9 themes (Catppuccin, Dracula, Nord, Tokyo Night, etc.). Daemon fast-mode for low CPU at high refresh rates. Open source, MIT.
+> Three looks (block bars, thin line, classic). Daemon fast-mode for low CPU at high refresh rates. Open source, MIT.
 >
 > Repo: https://github.com/leeguooooo/claude-code-usage-bar
 >
-> Happy to take feature requests / theme suggestions.
+> Happy to take feature requests.
 
 ---
 
@@ -128,7 +128,7 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 > One-line Claude Code statusLine for 5h/7d rate limits
 
 **Description (260 chars)**
-> Real-time Claude Code rate-limit display in the chat itself — not another window. Shows 5h/7d usage, reset countdowns, model, context window, prompt-cache age. 3 styles × 9 themes. Daemon fast-mode. MIT. `pip install claude-statusbar`.
+> Real-time Claude Code rate-limit display in the chat itself — not another window. Shows 5h/7d usage, reset countdowns, model, context window, prompt-cache age. Three looks. Daemon fast-mode. MIT. `pip install claude-statusbar`.
 
 **First comment**
 > Built this because I was Cmd+Tab'ing to a separate Claude usage TUI 50 times a day. The Claude Code `statusLine` hook lets you render anything you want at the bottom of every prompt — so I made the lightest, fastest renderer I could and packaged it on PyPI.
@@ -198,7 +198,6 @@ Copy-paste materials for promoting `claude-statusbar`. Strategy: don't compete h
 >
 > Repo: https://github.com/leeguooooo/claude-code-usage-bar
 >
-> If you have a theme you'd like, open an issue — adding themes is the simplest contribution path and they're useful to other people.
 
 ---
 

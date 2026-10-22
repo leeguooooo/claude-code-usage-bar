@@ -9,6 +9,25 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.50.0 — 2026-10-22
+
+**Three looks instead of 4 styles × 9 themes.**
+
+- What's left: aurora with `■` block bars (default), aurora with a thin `━`
+  line (`cs config set bar_glyph thin`), and classic
+  (`cs config set style classic`), all on the graphite palette. `cs preview`
+  shows the three side by side.
+- Removed the `capsule` and `hairline` styles, the eight non-graphite themes,
+  `/statusbar-theme`, and `auto_compact_width` (it switched to hairline; the
+  key is still accepted and ignored). Configs naming any of them fall back to
+  aurora / graphite on the next render; `classic` is kept.
+- Severity colors are still tunable with `color_ok` / `color_warn` /
+  `color_hot` / `color_worktree`.
+- README trimmed: the bar is now at the top, internals moved to
+  `docs/daemon.md` and `CONTRIBUTING.md`; the hero GIF shows the three looks.
+
+---
+
 ## v3.49.6 — 2026-10-22
 
 **Thicker aurora bars, and no more "ip check unavailable" noise.**

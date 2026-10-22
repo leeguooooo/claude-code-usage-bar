@@ -197,7 +197,7 @@ def test_install_skills_creates_dir_and_copies(isolated, tmp_path):
     assert skill_md.is_file(), f"expected SKILL.md at {skill_md}"
     body = skill_md.read_text(encoding="utf-8")
     assert "name: claude-statusbar" in body
-    assert "cs config set theme" in body  # smoke-check decision-tree content
+    assert "cs config set bar_glyph" in body  # smoke-check decision-tree content
 
 
 def test_install_skills_idempotent_when_unchanged(isolated):

@@ -206,22 +206,6 @@ def test_identity_line_no_stats_when_absent():
     assert "⏱" not in s
 
 
-def test_dispatcher_applies_to_capsule_too():
-    from claude_statusbar import styles
-    out = styles.render(
-        "capsule",
-        msgs_pct=10, weekly_pct=20, model="Opus 4.7",
-        reset_5h="4h", reset_7d="6d",
-        use_color=False, theme=THEME,
-        show_project_branch=True,
-        identity=IdentityInfo(project_name="demo", in_git=True,
-                              branch="main", detached=False,
-                              worktree_name=None, toplevel="/x"),
-        identity_dirty=False,
-    )
-    assert "demo" in out and "main" in out
-
-
 def _info():
     return IdentityInfo(project_name="proj", in_git=True, branch="main",
                         detached=False, worktree_name=None, toplevel="/x")
@@ -362,7 +346,7 @@ def test_main_checkout_label_follows_ui_language_across_styles():
     info = IdentityInfo(project_name="proj", in_git=True, branch="feature-x",
                         detached=False, worktree_name=None, toplevel="/x",
                         worktree_count=3)
-    for style in ("classic", "capsule", "hairline", "aurora"):
+    for style in ("classic", "aurora"):
         for lang, label in (("zh", "主工作区"), ("en", "main checkout")):
             for color in (False, True):
                 out = render(style, theme=THEME, use_color=color,

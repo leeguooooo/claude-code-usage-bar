@@ -19,232 +19,96 @@ freshness — inline in Claude Code's status line, or a floating HUD on the desk
 
 </div>
 
-> [!IMPORTANT]
-> **macOS standalone users should upgrade to v3.32.5 now.** Older onefile
-> releases could leave a new ~11 MB PyInstaller `_MEI*` runtime directory on
-> every one-second refresh that was killed during startup. Re-running the
-> installer switches to an onedir bundle and safely removes inactive leftovers:
-> `curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash`
+![default status bar](docs/images/aurora-graphite.svg)
 
 Claude Code tells you almost nothing about where you stand against your rate limits.
-`claude-statusbar` puts the numbers that matter on one quiet line at the bottom of your
-terminal — so you never switch context to a separate window to answer *"how much have I
-got left, and when does it reset?"*
+`cs` puts the numbers that matter on one quiet line at the bottom of your terminal:
+how much you have left, and when it resets.
 
-## Features
+| Line | Segments |
+|---|---|
+| **Usage** | 5h / 7d rate-limit bars, reset countdowns, end-of-window projections (`→NN%`), model & context window, prompt-cache countdown, optional session cost or relay balance |
+| **Project** | git worktree marker (`⑂ name (3)` / `⑂ main checkout (3)`), project name, branch, session `+/−` lines, duration, version |
 
-- **Official 5h / 7d usage** — the same rate-limit numbers Claude Code enforces, with reset countdowns and end-of-window projections (`→NN%`), not a local guess.
-- **Model & context window** — current model and how full the context is (`Opus 4.8 · 350k/1M`).
-- **Prompt-cache countdown** — see how long your cache stays warm (`cache 4m23s`) so you know when the next turn pays full price.
-- **Cost & balance** — optional per-session cost, or live relay/API balance in no-quota setups.
-- **Two surfaces** — inline `statusLine` in the terminal, or an always-on-top floating HUD for the Claude desktop app (macOS).
-- **4 styles × 9 themes** — switch the whole look with one command: battery-bar, capsule, hairline, or aurora.
-- **Fast mode** — release bundles use a native cache reader and two persistent render workers. Git and network collection run on separate, bounded background queues.
-- **More when you want it** — git branch & diff stats, session activity, IELTS writing-coach progress — each opt-in.
-- **Zero-dependency install** — a single prebuilt binary (no Python needed) or a `pip` package. Auto-updates.
+- **Official numbers** — the same 5h / 7d limits Claude Code enforces, not a local guess.
+- **Prompt-cache countdown** — `❄ 4m23s` tells you when the next turn pays full price.
+- **Two surfaces** — the terminal `statusLine`, or a floating HUD for the Claude desktop app (macOS).
+- **Fast** — native cache reader plus a background daemon; well under 1% CPU at one refresh per second.
+- **Opt-in extras** — cost, relay balance, git ahead/behind, activity, IP checks, [IELTS writing-coach](https://github.com/leeguooooo/prompt-language-coach) progress.
 
 ## Install
-
-### Refresh and caching
-
-Display ticks stay at one second; data collection follows its own schedule:
-
-| Data | Refresh policy |
-| --- | --- |
-| Countdown and elapsed time | Recomputed from timestamps on each render |
-| Context, model and session cost | Latest statusLine input |
-| Transcript activity | Reuse unchanged snapshots; read only appended tail bytes, with a bounded rebuild after replacement or truncation |
-| Git dirty / ahead / behind | Shared per worktree, 30-second cache, one refresh at a time |
-| Configuration and language progress | Reload when file metadata changes |
-| Balance and optional model caps | Shared per account, background refresh; failures are cached |
-
-The native reader is included in macOS arm64 and Linux x86_64 release archives.
-Pip/uv installations continue to use the Python client. Existing `cs render`
-commands keep working; binary upgrades take effect on the next invocation.
-
-Optional model-specific weekly limits can be enabled with
-`cs config set show_per_model true`. This explicitly enables read-only OAuth
-credential access (`~/.claude/.credentials.json`, or the macOS login Keychain)
-and background requests to Anthropic's undocumented usage endpoint. No token
-is logged or stored in a cache. Requests are account-scoped, cached for five
-minutes, and disabled by default; unsupported responses hide the segment.
-Relay/no-quota sessions never request these limits. The segment appears on
-its own line below the main usage row, using the same battery and projection.
-
-For source builds, wrap the PyInstaller bundle before packaging:
-
-```bash
-pyinstaller packaging/cs.spec --noconfirm
-mv dist/cs/cs dist/cs/cs-python
-go build -trimpath -ldflags='-s -w' -o dist/cs/cs packaging/native/main.go
-python scripts/benchmark_native.py dist/cs/cs
-python scripts/benchmark_daemon.py dist/cs/cs
-```
-
-Both benchmarks use temporary fixtures, not live sessions or credentials.
-The first checks the cache-hit CPU budget; the second exercises 16 concurrent
-sessions, warm-cache routing, worker count, Git deduplication and freshness.
-The daemon also writes aggregate timing and worker counters to
-`~/.cache/claude-statusbar/scheduler.json` (no payloads or tokens).
-
-### Claude Code (terminal)
-
-**One line — no Python, no pip.** Downloads a prebuilt standalone binary for your platform
-(macOS Apple Silicon, Linux x86_64) and wires up the status line:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash
 ```
 
-<sub>Security-conscious? Download and read it first — the header lists exactly what it touches.
-On platforms without a prebuilt binary it falls back to pip.</sub>
+A prebuilt binary for macOS Apple Silicon and Linux x86_64 — no Python needed. On macOS it
+also registers the desktop HUD when the Claude app is installed. Other platforms fall back to pip.
 
-**Windows** (PowerShell — installs [uv](https://docs.astral.sh/uv/) via winget if needed; no Python or admin required):
+**Windows** (PowerShell, no admin):
 
 ```powershell
 irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 | iex
 ```
 
-**On macOS this one line does everything** — it wires the terminal statusLine *and*, if the
-Claude desktop app is installed, registers the floating desktop HUD to auto-start on login. The
-macOS binary bundles the HUD, so there's no separate `pip install '[hud]'` and no extra config.
-
-Prefer pip / uv, or want the desktop HUD extra? Install the Python package:
+**pip / uv:**
 
 ```bash
 pip install claude-statusbar     # or: uv tool install / pipx install
 cs --setup                       # wires the statusLine hook + installs the skill
 ```
 
-Restart Claude Code and the bar appears at the bottom. Other paths (skill-only, plugin
-marketplace) are in the **[install guide](docs/install.md)**.
+Restart Claude Code and the bar appears. `cs` upgrades itself every 6 hours; if you're stuck on
+an old version, run `cs upgrade` or re-run the one-liner
+([why](docs/troubleshooting.md#stuck-on-an-old-version)). More paths in the **[install guide](docs/install.md)**.
 
-**Not on the latest version?** `cs` upgrades itself in the background (checked every 6 hours).
-Some older releases had a broken updater and can't fix themselves — run this once and
-auto-upgrade takes over again:
+## Customize
+
+Three looks — aurora with block bars (default), aurora with a thin line, and classic:
+
+![aurora, thin line](docs/images/aurora-thin-graphite.svg)
+![classic](docs/images/classic-graphite.svg)
 
 ```bash
-cs --version    # what you have now
-cs upgrade      # binary, pip, pipx or uv: picks the right channel
+cs config set bar_glyph thin     # thin ━ line instead of ■ blocks (default)
+cs config set style classic      # the original battery-bar look
+cs preview                       # all three looks, with your real numbers
+cs config show                   # every key, and which ones you changed
 ```
 
-If `cs upgrade` is missing or fails, re-run the install one-liner above.
-[Which versions are affected and why](docs/troubleshooting.md#stuck-on-an-old-version).
-
-> **Deep dive:** [Is that `cache 4m23s` line actually accurate? — how the prompt-cache countdown is computed](https://blog.leeguoo.com/en/posts/claude-statusbar-cache-countdown/)
-
-### Claude desktop app (macOS) — `cs hud`
+## Desktop app (macOS) — `cs hud`
 
 The desktop app has no status line, so `cs hud` adds an always-on-top floating panel with the
-same **official** 5h / 7d usage (sampled by the desktop app itself, not an estimate) and reset
-countdowns.
-
-**If you used the `curl … install.sh | bash` one-liner above, the HUD is already installed** —
-the macOS binary bundles it and the installer auto-registers it when the desktop app is present.
-The commands below are only for a manual/pip setup:
-
-```bash
-pip install 'claude-statusbar[hud]'   # adds PyObjC (macOS GUI deps)
-cs hud install                        # launchd: auto-start on login + keep-alive
-```
+same official usage. The one-liner installs it; for pip use `pip install 'claude-statusbar[hud]' && cs hud install`.
 
 <div align="center">
 <img width="209" alt="collapsed HUD pill" src="https://github.com/user-attachments/assets/4bcf4c8d-e919-416a-8356-daa4d5c1a966" />
 <img width="620" alt="expanded HUD panel" src="https://github.com/user-attachments/assets/fcdea929-5e85-4f1a-982e-ba431d8a80d1" />
 </div>
 
-Collapsed pill → click to expand → drag anywhere; it hides when the desktop app isn't open.
-Full details in the **[Desktop HUD guide](docs/desktop-hud.md)**.
-
-## What it shows
-
-The default bar — `aurora` style, `graphite` theme:
-
-![default status bar](docs/images/aurora-graphite.svg)
-
-Prefer the original battery-bar look? `cs config set style classic`.
-
-At a full refresh it can render up to three lines, each segment optional:
-
-| Line | Segments |
-|---|---|
-| **Usage** | 5h / 7d rate-limit bars, reset countdowns, end-of-window projections (`→NN%`), model & context window, prompt-cache countdown, optional session cost or relay balance |
-| **Project** | git worktree marker (`⑂ name (3)` / `⑂ main checkout (3)` with the repo's worktree total, its own hue, leads the line), project name, git branch, session `+/−` lines, duration, version |
-| **Mode** | session effort / thinking / fast / style |
-
-Every icon, color threshold, and toggle is documented in the
-**[segment reference](docs/segments.md)**. Nine themes and three styles are in
-**[styles & themes](docs/styles-and-themes.md)**.
-
-## Network observations
-
-Enable optional IP checks with `cs config set show_ip_risk true`. The bar
-reports cached network observations, not account-suspension predictions.
-Unavailable checks stay unknown; IPv4/IPv6 country differences do not prove
-a leak. `cs doctor` explains coverage and links to [IP Check](https://ip-check.leeguoo.com/#local-diagnostics)
-and [Thermo for macOS](https://app.leeguoo.com/thermo) for explicit deeper checks.
-No Thermo scan runs on the render path. Check the installed Thermo version
-for Claude diagnostic availability.
-
 ## Documentation
 
 | Guide | What's inside |
 |-------|---------------|
-| [Install](docs/install.md) | Binary, PyPI, one-shot installer, skill-only, plugin, Codex bridge |
-| [What it shows](docs/segments.md) | Full per-segment reference table |
-| [Styles & themes](docs/styles-and-themes.md) | 3 styles × 9 themes, previews, slash commands |
-| [Configuration](docs/configuration.md) | Config file, all `show_*` keys, env vars, JSON output, CLI cheatsheet |
-| [Desktop HUD (`cs hud`)](docs/desktop-hud.md) | macOS floating panel for the Claude desktop app |
-| [Fast mode (daemon)](docs/daemon.md) | Sub-1% CPU daemon, launchd / systemd auto-start |
-| [No-quota mode](docs/no-quota-mode.md) | Relay / Bedrock / Vertex layout, context battery, balance |
-| [Cache countdown](docs/cache-countdown.md) | Data source + how `cache 4m23s` is computed |
-| [Troubleshooting](docs/troubleshooting.md) | `cs doctor`, common problems, upgrading |
+| [Install](docs/install.md) | Binary, PyPI, skill-only, plugin, Codex bridge |
+| [What it shows](docs/segments.md) | Every segment, icon and color threshold |
+| [Looks](docs/styles-and-themes.md) | The three looks, slash commands |
+| [Configuration](docs/configuration.md) | All keys, env vars, JSON output |
+| [Desktop HUD](docs/desktop-hud.md) | The macOS floating panel |
+| [Fast mode (daemon)](docs/daemon.md) | Daemon, auto-start, refresh and caching |
+| [No-quota mode](docs/no-quota-mode.md) | Relay / Bedrock / Vertex layout and balance |
+| [Cache countdown](docs/cache-countdown.md) | How `❄ 4m23s` is computed |
+| [Troubleshooting](docs/troubleshooting.md) | `cs doctor`, IP checks, upgrading |
 
-## Comparison
-
-There are a few good Claude Code usage monitors. They solve overlapping but distinct
-problems — pick the one that matches *where* you want the information.
-
-| Tool | Lives in | Optimized for |
-|---|---|---|
-| **claude-statusbar (`cs`)** | Claude Code's `statusLine` (one line at the bottom) | Glanceable while you work; zero context-switching |
-| [ccusage](https://github.com/ryoppippi/ccusage) | Standalone TUI in a separate terminal window | Long-form usage analytics, cost breakdowns over weeks |
-| [Claude Code Usage Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) | Standalone TUI with predictive burn-rate | Real-time burn-rate forecast for paid plans |
-
-`cs` is intentionally one line of color and one decision per second. If you want a dashboard
-with charts, daily/weekly aggregates, and burn-rate prediction, run a TUI in a side pane. The
-two coexist nicely.
-
-## Integrations
-
-**[prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)** — install the
-plugin to track IELTS band progress. The bar then shows your writing level and trend
-automatically (no config; appears when `~/.claude/language-progress.json` exists):
-
-```
-... | Opus 4.8(350k/1M) | EN:6.0↑ JA:5.0→
-```
-
-`↑` improved · `↓` dropped · `→` no change since last session.
+Want charts and weekly cost breakdowns instead of one line? Run
+[ccusage](https://github.com/ryoppippi/ccusage) or
+[Claude Code Usage Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) in a
+side pane — they coexist with `cs`.
 
 ## Contributing
 
-PRs welcome. The full contributor guide — local setup, test commands, architecture map, coding
-conventions, release flow — is in **[CONTRIBUTING.md](CONTRIBUTING.md)**. Security issues:
-**[SECURITY.md](SECURITY.md)**.
-
-```bash
-git clone https://github.com/leeguooooo/claude-code-usage-bar
-cd claude-code-usage-bar
-uv sync
-PYTHONPATH=src uv run pytest tests/   # 900+ tests, ~3s
-```
-
-The render path is hot (up to 60×/min at `refreshInterval: 1`) — `tests/test_import_perf.py`
-pins which modules can't be imported on the fast path. Read CONTRIBUTING.md before adding
-dependencies.
-
-Every version's changes: **[CHANGELOG.md](CHANGELOG.md)** · [GitHub Releases](https://github.com/leeguooooo/claude-code-usage-bar/releases).
+PRs welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** (setup, tests, architecture, release flow)
+and **[SECURITY.md](SECURITY.md)**. Changes per version: **[CHANGELOG.md](CHANGELOG.md)**.
 
 ## Acknowledgments
 
@@ -254,17 +118,6 @@ Every version's changes: **[CHANGELOG.md](CHANGELOG.md)** · [GitHub Releases](h
 <a href="https://github.com/leeguooooo/claude-code-usage-bar/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=leeguooooo/claude-code-usage-bar" alt="Contributors" />
 </a>
-
-## Star history
-
-<a href="https://star-history.com/#leeguooooo/claude-code-usage-bar&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/star-history-dark.svg">
-    <img alt="Star history" src="docs/images/star-history.svg">
-  </picture>
-</a>
-
-<sub>Static snapshot taken at v3.3.x; <a href="https://star-history.com/#leeguooooo/claude-code-usage-bar&Date">click for the live chart</a>.</sub>
 
 ---
 

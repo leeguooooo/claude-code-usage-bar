@@ -1,8 +1,8 @@
 """Color themes for the status line.
 
 A Theme is a pure palette — it has no opinion about layout. Layout lives in
-styles.py. Any Style can render with any Theme; new themes are added by
-appending to BUILTIN_THEMES.
+styles.py. Only graphite ships now (3.50.0 cut the other eight); a stale theme
+name in a config falls back to it. Per-color tweaks go through color_* keys.
 """
 
 import dataclasses
@@ -27,7 +27,8 @@ class Theme:
     s_warn: RGB
     s_hot: RGB
 
-    # Capsule fills — one distinct hue per metric type
+    # Fills — pill_ink is classic's battery overlay text; the rest are kept so
+    # older Theme literals keep constructing.
     pill_5h: RGB
     pill_7d: RGB
     pill_model: RGB
@@ -52,100 +53,6 @@ BUILTIN_THEMES = [
         pill_model=(60, 47, 65), pill_lang=(52, 65, 47), pill_cost=(48, 56, 50),
         pill_ink=(238, 235, 224),
         wt=(168, 152, 226),
-    ),
-    Theme(
-        name="twilight",
-        description="紫调暮光 — 柔和的紫/玫瑰色调，偏文艺",
-        ink=(232, 225, 240), mute=(140, 130, 160), edge=(85, 75, 105),
-        s_ok=(160, 210, 180), s_warn=(232, 160, 90), s_hot=(228, 100, 140),
-        pill_5h=(58, 52, 90), pill_7d=(72, 46, 82),
-        pill_model=(86, 52, 72), pill_lang=(50, 72, 90), pill_cost=(52, 68, 80),
-        pill_ink=(245, 238, 250),
-        wt=(140, 206, 224),
-    ),
-    Theme(
-        name="linen",
-        description="米色亚麻 — 浅色终端 / 阳光主题专用",
-        ink=(60, 55, 50), mute=(130, 120, 110), edge=(190, 180, 165),
-        s_ok=(80, 140, 120), s_warn=(190, 130, 60), s_hot=(190, 80, 80),
-        pill_5h=(214, 200, 178), pill_7d=(222, 210, 196),
-        pill_model=(208, 196, 200), pill_lang=(202, 210, 194), pill_cost=(198, 200, 192),
-        pill_ink=(45, 40, 38),
-        wt=(118, 88, 176),
-    ),
-    Theme(
-        name="nord",
-        description="Nord — 北欧极地蓝调，经典开发者配色",
-        ink=(216, 222, 233), mute=(129, 161, 193), edge=(76, 86, 106),
-        s_ok=(163, 190, 140), s_warn=(235, 203, 139), s_hot=(191, 97, 106),
-        pill_5h=(46, 52, 64), pill_7d=(59, 66, 82),
-        pill_model=(67, 76, 94), pill_lang=(46, 52, 64), pill_cost=(52, 58, 64),
-        pill_ink=(229, 233, 240),
-        wt=(180, 142, 173),
-    ),
-    Theme(
-        name="dracula",
-        description="Dracula — 紫黑高对比，吸血鬼风",
-        ink=(248, 248, 242), mute=(98, 114, 164), edge=(68, 71, 90),
-        s_ok=(80, 250, 123), s_warn=(241, 250, 140), s_hot=(255, 85, 85),
-        pill_5h=(40, 42, 54), pill_7d=(68, 71, 90),
-        pill_model=(80, 50, 100), pill_lang=(50, 80, 60), pill_cost=(52, 70, 62),
-        pill_ink=(248, 248, 242),
-        wt=(189, 147, 249),
-    ),
-    Theme(
-        name="sakura",
-        description="樱花 — 粉米暖调，可爱治愈系",
-        ink=(75, 50, 60), mute=(160, 110, 130), edge=(220, 180, 195),
-        s_ok=(120, 170, 130), s_warn=(220, 150, 90), s_hot=(210, 90, 110),
-        pill_5h=(245, 215, 220), pill_7d=(238, 200, 215),
-        pill_model=(225, 210, 230), pill_lang=(220, 230, 215), pill_cost=(218, 222, 212),
-        pill_ink=(75, 50, 60),
-        wt=(146, 100, 176),
-    ),
-    Theme(
-        name="mono",
-        description="纯灰阶 — 极简黑白，专注阅读",
-        ink=(228, 228, 228), mute=(140, 140, 140), edge=(70, 70, 70),
-        s_ok=(180, 180, 180), s_warn=(220, 220, 220), s_hot=(250, 250, 250),
-        pill_5h=(45, 45, 45), pill_7d=(60, 60, 60),
-        pill_model=(75, 75, 75), pill_lang=(50, 50, 50), pill_cost=(60, 60, 60),
-        pill_ink=(235, 235, 235),
-        wt=(190, 190, 190),
-    ),
-    Theme(
-        name="catppuccin-mocha",
-        description="Catppuccin Mocha — 柔和 pastel，长时间阅读不疲劳",
-        ink=(205, 214, 244),       # Text
-        mute=(127, 132, 156),      # Overlay1
-        edge=(69, 71, 90),         # Surface1
-        s_ok=(166, 227, 161),      # Green — 清晰柔和的绿
-        s_warn=(250, 179, 135),    # Peach — 暖橙黄，比 Yellow 更明确"警告"
-        s_hot=(243, 139, 168),     # Red — 玫瑰红，不刺眼
-        pill_5h=(49, 50, 68),      # Surface0 偏冷
-        pill_7d=(57, 50, 80),      # Surface0 + Mauve
-        pill_model=(73, 49, 70),   # Surface0 + Pink
-        pill_lang=(58, 70, 60),    # Surface0 + Green
-        pill_cost=(70, 58, 48),    # Surface0 + Peach
-        pill_ink=(205, 214, 244),  # Text
-        wt=(203, 166, 247),
-    ),
-    Theme(
-        name="tokyo-night",
-        description="Tokyo Night — 深邃霓虹蓝调，对比鲜明却不喧闹",
-        ink=(192, 202, 245),       # fg
-        mute=(86, 95, 137),        # comment
-        edge=(65, 72, 104),        # bg_dark
-        s_ok=(158, 206, 106),      # green
-        s_warn=(224, 175, 104),    # yellow
-        s_hot=(247, 118, 142),     # red
-        pill_5h=(48, 50, 80),
-        pill_7d=(56, 44, 72),
-        pill_model=(72, 56, 88),
-        pill_lang=(46, 60, 50),
-        pill_cost=(58, 50, 44),
-        pill_ink=(192, 202, 245),
-        wt=(187, 154, 247),
     ),
 ]
 

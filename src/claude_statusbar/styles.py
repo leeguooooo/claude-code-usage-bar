@@ -71,7 +71,6 @@ def _update_hint(path=None) -> str:
         return ""
 
 def _fg(rgb): return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
-def _bg(rgb): return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
 
 # strip ANSI when use_color is False
 import re as _re
@@ -112,214 +111,6 @@ def _cache_severity(theme: Theme, cache_text: str) -> tuple:
     if "m" in cache_text or "h" in cache_text:
         return theme.s_ok
     return theme.s_warn
-
-
-# ---------------------------------------------------------------------------
-# Style: capsule
-# ---------------------------------------------------------------------------
-def render_capsule(
-    *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", cost_text="", cache_age_text="", bypass=False,
-    use_color=True, theme: Optional[Theme]=None,
-    warning_threshold=30.0, critical_threshold=70.0,
-    density: str = "regular",
-    bar_glyph: str = "block",
-    show_weekly: bool = True,
-    ctx_pct: Optional[float] = None,
-    projection_5h: str = "",
-    projection_7d: str = "",
-    no_quota: bool = False,
-    balance_text: str = "",
-    **_ignored,
-) -> str:
-    from .progress import window_severity_rgb
-    theme = theme or get_theme("graphite")
-    INK    = _fg(theme.pill_ink)
-    EDGE   = _fg(theme.edge)
-
-    pad = DENSITY_PAD.get(density, " ")
-
-    def pill(bg_rgb, body):
-        return f"{_bg(bg_rgb)}{INK}{pad}{body}{pad}{RESET}"
-
-    def sev_dot(p, chip=""):
-        # 5h/7d follow the projection; ctx_pct (no chip) stays current-usage.
-        rgb = window_severity_rgb(p, chip, theme,
-                                  warning_threshold, critical_threshold)
-        if rgb is None:
-            return ""
-        return f" {_fg(rgb)}●{RESET}"
-
-    def pct_text(p):
-        return "--%" if p is None else f"{int(round(p))}%"
-
-    spacer = f"{EDGE} ╱{RESET} "
-
-    parts = []
-
-    if no_quota:
-        # No official quota: a single CTX pill replaces the 5H/7D pills,
-        # colored on context thresholds (claude-hud's 70/85), not the comfort band.
-        from .progress import (CONTEXT_WARNING_THRESHOLD as _CW,
-                               CONTEXT_CRITICAL_THRESHOLD as _CC)
-        ctx_rgb = _severity_color(theme, ctx_pct, _CW, _CC)
-        ctx_dot = f" {_fg(ctx_rgb)}●{RESET}" if ctx_pct is not None else ""
-        ctx_body = (
-            f"{BOLD}⛁ CTX{RESET}{INK}{_bg(theme.pill_5h)} {pct_text(ctx_pct)}"
-            f"{ctx_dot}{INK}{_bg(theme.pill_5h)}"
-        )
-        parts.append(pill(theme.pill_5h, ctx_body))
-    else:
-        five_body = (
-            f"{BOLD}◷ 5H{RESET}{INK}{_bg(theme.pill_5h)} {pct_text(msgs_pct)} "
-            f"· {reset_5h}{sev_dot(msgs_pct, projection_5h)}{INK}{_bg(theme.pill_5h)}"
-        )
-        parts.append(pill(theme.pill_5h, five_body))
-
-        if show_weekly:
-            week_body = (
-                f"{BOLD}☷ 7D{RESET}{INK}{_bg(theme.pill_7d)} {pct_text(weekly_pct)} "
-                f"· {reset_7d or '--'}{sev_dot(weekly_pct, projection_7d)}{INK}{_bg(theme.pill_7d)}"
-            )
-            parts.append(pill(theme.pill_7d, week_body))
-
-    # In no_quota mode the CTX pill already carries the context severity, so the
-    # model pill stays neutral (no second ctx dot). In quota mode the model dot
-    # reflects context fill and must use the context band (70/85), not the 5h/7d
-    # comfort band — otherwise ~35% context shows a yellow dot here while the
-    # no-quota CTX pill reads green for the identical 35%.
-    if no_quota:
-        model_sev = ""
-    else:
-        from .progress import (window_severity_rgb as _wsr,
-                               CONTEXT_WARNING_THRESHOLD as _CW,
-                               CONTEXT_CRITICAL_THRESHOLD as _CC)
-        _ctx_rgb = _wsr(ctx_pct, "", theme, _CW, _CC)
-        model_sev = f" {_fg(_ctx_rgb)}●{RESET}" if _ctx_rgb is not None else ""
-    model_body = f"{BOLD}◆{RESET}{INK}{_bg(theme.pill_model)} {model}{model_sev}{INK}{_bg(theme.pill_model)}"
-    parts.append(pill(theme.pill_model, model_body))
-
-    if balance_text:
-        parts.append(pill(theme.pill_cost, balance_text))
-    if cost_text:
-        parts.append(pill(theme.pill_cost, f"$ {cost_text}"))
-
-    if lang_body:
-        parts.append(pill(theme.pill_lang, f"📚 {lang_body}"))
-
-    if cache_age_text:
-        bg = _cache_severity(theme, cache_age_text)
-        parts.append(pill(bg, f"cache {cache_age_text}"))
-
-    line = spacer.join(parts)
-
-    if bypass:
-        line += f"  {_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}"
-
-    if not use_color:
-        return _strip(line)
-    return line
-
-
-# ---------------------------------------------------------------------------
-# Style: hairline
-# ---------------------------------------------------------------------------
-def render_hairline(
-    *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
-    lang_body="", cost_text="", cache_age_text="", bypass=False,
-    use_color=True, theme: Optional[Theme]=None,
-    warning_threshold=30.0, critical_threshold=70.0,
-    density: str = "regular",
-    show_weekly: bool = True,
-    ctx_pct: Optional[float] = None,
-    projection_5h: str = "",
-    projection_7d: str = "",
-    no_quota: bool = False,
-    balance_text: str = "",
-    **_ignored,
-) -> str:
-    from .progress import window_severity_rgb
-    theme = theme or get_theme("graphite")
-    INK  = _fg(theme.ink)
-    MUTE = _fg(theme.mute)
-    EDGE = _fg(theme.edge)
-
-    def mini3(p, chip="", warn=None, crit=None):
-        if p is None:
-            return f"{MUTE}···{RESET}"
-        cells = []
-        for i in range(3):
-            slot = (i + 1) * (100 / 3)
-            if   p >= slot:                   cells.append("█")
-            elif p >= slot - (100 / 3) * 0.66: cells.append("▆")
-            elif p >= slot - (100 / 3):       cells.append("▃")
-            else:                             cells.append("▁")
-        # Cells still reflect current usage; only the color follows projection.
-        rgb = window_severity_rgb(p, chip, theme,
-                                  warn if warn is not None else warning_threshold,
-                                  crit if crit is not None else critical_threshold)
-        col = rgb if rgb is not None else theme.mute
-        return f"{_fg(col)}{''.join(cells)}{RESET}"
-
-    def pct_text(p):
-        return "--%" if p is None else f"{int(round(p)):>2}%"
-
-    sep_pad = DENSITY_PAD.get(density, " ")
-    sep = f"{sep_pad}{EDGE}┊{RESET}{sep_pad}"
-    parts = []
-
-    if no_quota:
-        # No official quota: a single ctx mini-bar replaces the 5h/7d segments,
-        # colored on context thresholds (claude-hud's 70/85).
-        from .progress import (CONTEXT_WARNING_THRESHOLD as _CW,
-                               CONTEXT_CRITICAL_THRESHOLD as _CC)
-        parts.append(
-            f"{MUTE}› ctx{RESET} {mini3(ctx_pct, warn=_CW, crit=_CC)} "
-            f"{INK}{pct_text(ctx_pct)}{RESET}"
-        )
-    else:
-        parts.append(
-            f"{MUTE}› 5h{RESET} {mini3(msgs_pct, projection_5h)} {INK}{pct_text(msgs_pct)}{RESET} "
-            f"{MUTE}↺ {reset_5h}{RESET}"
-        )
-        if show_weekly:
-            parts.append(
-                f"{MUTE}› 7d{RESET} {mini3(weekly_pct, projection_7d)} {INK}{pct_text(weekly_pct)}{RESET} "
-                f"{MUTE}↺ {reset_7d or '--'}{RESET}"
-            )
-    # Model line — colored by ctx_pct severity, neutral ink when absent. In
-    # no_quota mode the ctx mini-bar already carries severity, so stay neutral.
-    if ctx_pct is None or no_quota:
-        model_color = INK
-    else:
-        # Context fill uses the context band (70/85), not the 5h/7d comfort
-        # band — consistent with the no_quota ctx mini-bar above and the other
-        # styles. ~35% context must read calm, not warning.
-        from .progress import (CONTEXT_WARNING_THRESHOLD as _CW,
-                               CONTEXT_CRITICAL_THRESHOLD as _CC)
-        col = _severity_color(theme, ctx_pct, _CW, _CC)
-        model_color = _fg(col)
-    parts.append(f"{MUTE}›{RESET} {model_color}{model}{RESET}")
-
-    if balance_text:
-        parts.append(f"{_fg(theme.s_ok)}{balance_text}{RESET}")
-    if cost_text:
-        parts.append(f"{MUTE}$ {INK}{cost_text}{RESET}")
-
-    if lang_body:
-        parts.append(f"{MUTE}{lang_body}{RESET}")
-
-    if cache_age_text:
-        col = _fg(_cache_severity(theme, cache_age_text))
-        parts.append(f"{col}cache {cache_age_text}{RESET}")
-
-    if bypass:
-        parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
-
-    line = sep.join(parts)
-    if not use_color:
-        return _strip(line)
-    return line
 
 
 # ---------------------------------------------------------------------------
@@ -1039,10 +830,8 @@ def render_mode_line(*, effort: str = "", thinking=None, fast=None,
 
 
 RENDERERS = {
-    "classic":  render_classic,
-    "capsule":  render_capsule,
-    "hairline": render_hairline,
     "aurora":   render_aurora,
+    "classic":  render_classic,
 }
 
 
@@ -1051,7 +840,8 @@ def is_known_style(style: str) -> bool:
 
 
 def render(style: str, **kwargs) -> str:
-    """Render with the named style. Unknown style names fall back to classic.
+    """Render with the named style. Unknown style names (including the
+    capsule / hairline styles removed in 3.50.0) fall back to aurora.
 
     Unknown kwargs are absorbed by each renderer's **_ignored, so callers can
     freely pass style-specific args (density, countdown_emoji, ...) to whichever
@@ -1101,7 +891,7 @@ def render(style: str, **kwargs) -> str:
     theme = kwargs.get("theme") or get_theme("graphite")
     use_color = kwargs.get("use_color", True)
 
-    fn = RENDERERS.get(style, render_classic)
+    fn = RENDERERS.get(style, render_aurora)
     render_kwargs = dict(kwargs)
     out = fn(**render_kwargs)
     if per_model_limits:

@@ -78,19 +78,21 @@ def test_ctx_pct_zero_renders_calm():
     assert s_ok in line.split("|")[2]
 
 
-def test_theme_switch_changes_classic_palette():
-    """Same input rendered under graphite vs linen produces different ANSI.
-    This is the regression test that proves classic actually respects themes."""
+def test_color_override_changes_classic_palette():
+    """Same input rendered with graphite vs a color_ok override produces
+    different ANSI. Proves classic actually follows the resolved theme."""
+    from claude_statusbar.themes import apply_color_overrides
     args = dict(
         msgs_pct=10, tkns_pct=None, reset_time="2h00m",
         weekly_pct=10, reset_time_7d="3d00h",
         model="Opus 4.7", ctx_pct=None, use_color=True,
     )
-    line_g = format_status_line(theme=get_theme("graphite"), **args)
-    line_l = format_status_line(theme=get_theme("linen"), **args)
-    assert line_g != line_l
-    assert _ansi_for(get_theme("graphite").s_ok) in line_g
-    assert _ansi_for(get_theme("linen").s_ok) in line_l
+    tinted = apply_color_overrides(GRAPHITE, ok=(1, 2, 3))
+    line_g = format_status_line(theme=GRAPHITE, **args)
+    line_t = format_status_line(theme=tinted, **args)
+    assert line_g != line_t
+    assert _ansi_for(GRAPHITE.s_ok) in line_g
+    assert _ansi_for((1, 2, 3)) in line_t
 
 
 def test_use_color_false_strips_ansi():
@@ -147,87 +149,3 @@ def test_paren_muting_targets_the_last_bracket_not_the_first():
     # the whole line should be muted (the trailing context bracket).
     assert f"{s_ok}Opus(beta) 4.7" in line, "version paren must stay severity-colored"
     assert line.count(f"{mute}(") == 1, "exactly one '(' should carry mute"
-
-
-# ---------------------------------------------------------------------------
-# Capsule style tests
-# ---------------------------------------------------------------------------
-
-from claude_statusbar.styles import render_capsule
-
-
-def test_capsule_model_pill_has_severity_dot_when_ctx_critical():
-    out = render_capsule(
-        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
-        model="Opus 4.7(900k/1M)", ctx_pct=85,
-        use_color=True, theme=GRAPHITE,
-    )
-    s_hot = _ansi_for(GRAPHITE.s_hot)
-    # Severity dot is `●` colored s_hot, present inside the model pill area.
-    assert "●" in out
-    assert s_hot in out
-
-
-def test_capsule_model_pill_no_dot_when_ctx_none():
-    out = render_capsule(
-        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
-        model="Opus 4.7", ctx_pct=None,
-        use_color=True, theme=GRAPHITE,
-    )
-    # Without context info, no severity dot inside the model pill.
-    # 5h/7d still have their own dots, so we look for absence in the
-    # plain-text sequence between "Opus" and the next ╱ separator.
-    plain = re.sub(r"\033\[[0-9;]*m", "", out)
-    model_idx = plain.find("Opus")
-    # Walk forward from model_idx to the next ╱ separator
-    next_sep = plain.find("╱", model_idx) if "╱" in plain[model_idx:] else len(plain)
-    model_segment = plain[model_idx:next_sep]
-    assert "●" not in model_segment
-
-
-def test_capsule_cost_pill_uses_pill_cost_not_pill_lang():
-    """The cost pill must use theme.pill_cost, not theme.pill_lang."""
-    out = render_capsule(
-        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
-        model="Opus 4.7", ctx_pct=None, cost_text="3.14",
-        use_color=True, theme=GRAPHITE,
-    )
-    pill_cost_bg = f"\033[48;2;{GRAPHITE.pill_cost[0]};{GRAPHITE.pill_cost[1]};{GRAPHITE.pill_cost[2]}m"
-    pill_lang_bg = f"\033[48;2;{GRAPHITE.pill_lang[0]};{GRAPHITE.pill_lang[1]};{GRAPHITE.pill_lang[2]}m"
-    assert pill_cost_bg in out
-    # When there's no lang_body, pill_lang must NOT appear at all
-    assert pill_lang_bg not in out
-
-
-# ---------------------------------------------------------------------------
-# Hairline style tests
-# ---------------------------------------------------------------------------
-
-from claude_statusbar.styles import render_hairline
-
-
-def test_hairline_model_uses_ctx_severity_when_critical():
-    out = render_hairline(
-        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
-        model="Opus 4.7", ctx_pct=85,
-        use_color=True, theme=GRAPHITE,
-    )
-    s_hot = _ansi_for(GRAPHITE.s_hot)
-    # Find the chunk containing "Opus" — it must be wrapped in s_hot
-    plain = re.sub(r"\033\[[0-9;]*m", "", out)
-    assert "Opus" in plain
-    # The colored model text must use s_hot
-    assert f"{s_hot}Opus" in out or s_hot in out.split("Opus")[0][-30:]
-
-
-def test_hairline_model_uses_ink_when_no_ctx():
-    out = render_hairline(
-        msgs_pct=10, weekly_pct=10, reset_5h="2h", reset_7d="3d",
-        model="Opus 4.7", ctx_pct=None,
-        use_color=True, theme=GRAPHITE,
-    )
-    ink = _ansi_for(GRAPHITE.ink)
-    # Model text uses neutral theme.ink
-    assert ink in out
-    # No severity ANSI bleeds into the model area
-    assert _ansi_for(GRAPHITE.s_hot) not in out.split("Opus")[0][-30:]

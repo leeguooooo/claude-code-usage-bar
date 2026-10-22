@@ -70,7 +70,7 @@ def test_override_only_s_ok():
 
 
 def test_override_all_three_severities():
-    base = get_theme("nord")
+    base = get_theme("graphite")
     out = apply_color_overrides(
         base, ok=(1, 1, 1), warn=(2, 2, 2), hot=(3, 3, 3)
     )

@@ -1,25 +1,30 @@
 ---
-description: Switch the status-bar style (classic / capsule / hairline / aurora)
-argument-hint: <classic|capsule|hairline|aurora>
+description: Switch the status-bar look (aurora blocks / aurora thin / classic)
+argument-hint: <block|thin|classic>
 allowed-tools: ["Bash"]
 ---
 
-# Status Bar — set style
+# Status Bar — set look
 
 Argument: `$ARGUMENTS`
 
+There are three looks:
+
+| Look | Commands |
+|---|---|
+| `block` — aurora with ■ bars (default) | `cs config set style aurora && cs config set bar_glyph block` |
+| `thin` — aurora with a thin ━ line | `cs config set style aurora && cs config set bar_glyph thin` |
+| `classic` — the original battery bar | `cs config set style classic` |
+
 Steps:
 
-1. If `$ARGUMENTS` is empty, run `cs styles` to list options and ask the user to pick.
-2. Otherwise, run:
+1. If `$ARGUMENTS` is empty, run `cs preview` to show all three and ask the user to pick.
+2. Otherwise run the commands for that look from the table above.
+3. Render a one-line preview from cached real data so the user sees the result:
    ```bash
-   cs config set style $ARGUMENTS
+   cat ~/.cache/claude-statusbar/last_stdin.json | cs
    ```
-3. After the change, render a one-line preview using cached real data so the user sees the result immediately:
-   ```bash
-   cat ~/.cache/claude-statusbar/last_stdin.json | cs --style $ARGUMENTS
-   ```
-   If the cache file does not exist, skip this step — it just means no Claude Code session has populated it yet.
-4. Tell the user the change is now persistent for all future Claude Code sessions.
+   If the cache file does not exist, skip this step — no Claude Code session has populated it yet.
+4. Tell the user the change is persistent for all future Claude Code sessions.
 
-If `$ARGUMENTS` is not one of `classic`, `capsule`, `hairline`, `aurora`, surface the error from `cs` directly and suggest `cs styles` for valid options.
+If `$ARGUMENTS` is not `block`, `thin` or `classic`, list the three looks and ask which one they meant.

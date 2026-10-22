@@ -81,9 +81,9 @@ To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
 
 ## Network and custom-endpoint notices
 
-`show_ip_risk` stays opt-in. A fresh low-risk result is silent; unavailable,
-failed or stale observations display **unknown**, with an explicit last-known
-label when retaining an old warning. A difference between IPv4/IPv6 exit
+`show_ip_risk` stays opt-in. A fresh low-risk result is silent, and so is a
+check that couldn't run (`cs doctor` still reports it). A failed or stale
+refresh keeps an old warning with an explicit last-known label. A difference between IPv4/IPv6 exit
 countries does not establish a leak or Claude's actual route. Scores and local
 configuration do not predict account suspension. Custom-endpoint notices do
 not inspect request metadata or infer a watermark from your timezone.

@@ -110,12 +110,10 @@ def _demo_data() -> dict:
 
 def run(use_color: bool = True, theme_filter: Optional[str] = None,
         style_filter: Optional[str] = None) -> int:
-    """Render style × theme matrix.
+    """Render the three looks (aurora ■, aurora ━, classic) side by side.
 
-    `theme_filter` / `style_filter` (optional) limit output to one row.
-    Useful when the user is comparing a specific combo: `cs preview --theme nord`
-    shows nord across all 3 styles; `cs preview --style hairline --theme dracula`
-    shows just that one combo.
+    `style_filter` limits output to one style (`cs preview --style classic`);
+    `theme_filter` is kept for compatibility and only accepts graphite now.
     """
     real = _real_data()
     data = real or _demo_data()
@@ -139,23 +137,19 @@ def run(use_color: bool = True, theme_filter: Optional[str] = None,
     print(f"  {OK}● 数据源{R}：{src_label}")
     print(f"  {DIM}5h={data['msgs_pct']}% · 7d={data['weekly_pct']}% · {data['model']}{R}")
 
-    style_titles = {
-        "classic":  "01 · CLASSIC（原版）",
-        "capsule":  "02 · CAPSULE（胶囊）",
-        "hairline": "03 · HAIRLINE（极简线条）",
-        "aurora":   "04 · AURORA（极光细线）",
-    }
-    # All three styles are theme-aware now (per-segment color management).
-    # Keeping THEME_AGNOSTIC as an empty set so the per-theme loop picks up
-    # every style; future theme-agnostic styles can be added here.
-    THEME_AGNOSTIC: set[str] = set()
-
+    # The three looks: aurora with ■ blocks, aurora with a thin ━ line, and
+    # the original classic battery bar. One theme (graphite) since 3.50.0.
+    looks = [
+        ("aurora", "block", "01 · AURORA（方块）", "cs config set bar_glyph block"),
+        ("aurora", "thin", "02 · AURORA（细线）", "cs config set bar_glyph thin"),
+        ("classic", "block", "03 · CLASSIC（原版）", "cs config set style classic"),
+    ]
     style_names = list(RENDERERS)
     if style_filter:
         if style_filter not in style_names:
             print(f"  {DIM}unknown style {style_filter!r}; valid: {', '.join(style_names)}{R}")
             return 2
-        style_names = [style_filter]
+        looks = [lk for lk in looks if lk[0] == style_filter]
 
     themes = list(BUILTIN_THEMES)
     if theme_filter:
@@ -165,30 +159,13 @@ def run(use_color: bool = True, theme_filter: Optional[str] = None,
             print(f"  {DIM}unknown theme {theme_filter!r}; valid: {valid}{R}")
             return 2
 
-    for style_name in style_names:
-        title = style_titles.get(style_name, style_name)
+    for style_name, glyph, title, how in looks:
         print()
-        print(f"  {GOLD}{title}{R}")
+        print(f"  {GOLD}{title}{R}  {DIM}{how}{R}")
         print(f"  {DIM}{'─' * 78}{R}")
-        if style_name in THEME_AGNOSTIC:
-            line = render(
-                style_name, theme=BUILTIN_THEMES[0],
-                msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],
-                reset_5h=data["reset_5h"], reset_7d=data["reset_7d"],
-                model=data["model"],
-                lang_body="",
-                cost_text=data.get("cost_text", ""),
-                cache_age_text=data.get("cache_age_text", ""),
-                bypass=False,
-                use_color=use_color,
-                warning_threshold=30.0, critical_threshold=70.0,
-                activity=data.get("activity"), activity_opts=act_opts,
-            )
-            print(f"  {DIM}[theme-agnostic]{R} {line}")
-            continue
         for theme in themes:
             line = render(
-                style_name, theme=theme,
+                style_name, theme=theme, bar_glyph=glyph,
                 msgs_pct=data["msgs_pct"], weekly_pct=data["weekly_pct"],
                 reset_5h=data["reset_5h"], reset_7d=data["reset_7d"],
                 model=data["model"],
@@ -200,9 +177,7 @@ def run(use_color: bool = True, theme_filter: Optional[str] = None,
                 warning_threshold=30.0, critical_threshold=70.0,
                 activity=data.get("activity"), activity_opts=act_opts,
             )
-            print(f"  {DIM}[{theme.name:<9}]{R} {line}")
+            print(f"  {line}")
     print()
 
-    print(f"  {DIM}切换：cs config set style <name> · cs config set theme <name>{R}")
-    print()
     return 0

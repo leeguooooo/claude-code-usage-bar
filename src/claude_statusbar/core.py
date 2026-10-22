@@ -1134,9 +1134,10 @@ def main(json_output: bool = False,
     chosen_style = _cfg.resolve_style(style_override, cfg)
     from .styles import is_known_style as _is_known_style, render as _render_style
     if not _is_known_style(chosen_style):
-        # Unknown style → silently fall back to the safe default rather than
-        # explode in the statusLine where the user can't see the error.
-        chosen_style = "classic"
+        # Unknown style (or capsule / hairline, removed in 3.50.0) → silently
+        # fall back to the default rather than explode in the statusLine where
+        # the user can't see the error.
+        chosen_style = "aurora"
     from .themes import get_theme, apply_color_overrides, parse_hex_color
     from .progress import get_countdown_emoji
     chosen_theme = get_theme(_cfg.resolve_theme(theme_override, cfg))
@@ -1166,10 +1167,6 @@ def main(json_output: bool = False,
     from ._display import clip_lines as _clip_lines
     from ._display import terminal_width as _terminal_width
     max_width = _terminal_width(_effective_env)
-    # Auto-compact and final clipping share one per-session width source.
-    if (cfg.auto_compact_width > 0 and chosen_style != "hairline"
-            and max_width is not None and max_width < cfg.auto_compact_width):
-        chosen_style = "hairline"
     _api_mode = _cfg.resolve_api_mode(cfg, env=_effective_env)
     no_quota = is_no_quota_mode(_effective_env, override=_api_mode)
     # Heuristic fallback only when the env signal missed (and not force-disabled):

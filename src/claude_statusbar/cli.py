@@ -52,7 +52,6 @@ def _run_config_subcommand(rest):
             print(f"{key:<20}= {value}{mark}")
 
         line("style"); line("theme"); line("density"); line("bar_glyph")
-        line("auto_compact_width", cfg.auto_compact_width or "(disabled)")
         for key in ("show_weekly", "show_language", "show_cost", "show_balance",
                     "balance_bar", "show_cache_age", "show_project_branch",
                     "show_ocs", "show_ahead_behind", "show_todos",
@@ -138,10 +137,8 @@ def _run_themes_subcommand():
 def _run_styles_subcommand():
     from .styles import list_styles
     descriptions = {
+        "aurora":   "默认 — 绿→黄→红渐变条；bar_glyph block(■) / thin(━)",
         "classic":  "原始样式（带 [bar] 与 | 分隔）",
-        "capsule":  "胶囊样式 — 带底色的药丸，地铁标识感",
-        "hairline": "极简线条 — 3 格小条 + 虚线分隔",
-        "aurora":   "极光细线 — 绿→黄→红渐变细条 + 竖线分隔",
     }
     print("Available styles:")
     for name in list_styles():
@@ -431,7 +428,7 @@ def main():
                 print("Could not install skill:")
                 for s in s_failed:
                     print(f"  {s}")
-            print("Try /statusbar in Claude Code, or just say `switch theme to nord`.")
+            print("Try /statusbar in Claude Code, or just say `switch to the thin bars`.")
             return 0
         if sub == "install-skill":
             from .setup import install_skills, SKILLS_DIR
@@ -447,7 +444,7 @@ def main():
                 print("Could not install:")
                 for s in failed:
                     print(f"  {s}")
-            print("Try saying `switch theme to nord` in Claude Code.")
+            print("Try saying `switch to the thin bars` in Claude Code.")
             return 0
 
     parser = argparse.ArgumentParser(
@@ -456,14 +453,12 @@ def main():
         epilog="""
 Examples:
   cs                            # Show current status (uses configured style+theme)
-  cs --style capsule            # Override style for one render
-  cs --theme twilight           # Override theme
+  cs --style classic            # Override style for one render
   cs config show                # Show current config
-  cs config set style hairline  # Persist style
-  cs config set theme linen     # Persist theme
-  cs themes                     # List available themes
+  cs config set style classic   # Persist style (aurora | classic)
+  cs config set bar_glyph thin  # Aurora bars: block (■) | thin (━)
   cs styles                     # List available styles
-  cs preview                    # Render every style × theme together
+  cs preview                    # Render the three looks together
   cs install-commands           # Install /statusbar slash commands
   cs upgrade                    # Upgrade this cs installation
   cs --json-output              # Machine-readable JSON

@@ -24,16 +24,13 @@ SAMPLE = dict(
 )
 
 
-def test_three_builtin_styles():
-    assert set(list_styles()) == {"classic", "capsule", "hairline", "aurora"}
+def test_builtin_styles():
+    assert list_styles() == ["aurora", "classic"]
 
 
 def test_builtin_themes():
     names = {t.name for t in list_themes()}
-    assert names == {
-        "graphite", "twilight", "linen", "nord", "dracula", "sakura", "mono",
-        "catppuccin-mocha", "tokyo-night",
-    }
+    assert names == {"graphite"}
 
 
 _ANSI_RE = __import__("re").compile(r"\033\[[0-9;]*m")
@@ -49,7 +46,6 @@ def test_every_combination_renders(style, theme):
     assert out, f"{style}/{theme} produced empty output"
     plain = _ANSI_RE.sub("", out)
     assert "42" in plain
-    # Hairline + capsule both honor show_weekly toggle; classic always shows it
     assert "18" in plain
 
 
@@ -92,10 +88,10 @@ def test_context_suffix_is_complete_or_omitted(style):
 def test_context_denominator_drops_before_the_whole_count():
     """A width that fits "(45.0k)" but not "(45.0k/1.0M)" keeps the count."""
     sample = dict(SAMPLE, lang_body="")  # nothing optional left to sacrifice
-    full = render("capsule", theme=get_theme("graphite"), use_color=False,
+    full = render("classic", theme=get_theme("graphite"), use_color=False,
                   **sample)
     width = visible_width(full.split("\n", 1)[0]) - 4  # loses "/1.0M", not more
-    out = render("capsule", theme=get_theme("graphite"), use_color=False,
+    out = render("classic", theme=get_theme("graphite"), use_color=False,
                  max_width=width, **sample)
     assert "(45.0k)" in out
     assert "45.0k/1.0M" not in out
@@ -117,7 +113,7 @@ def test_optional_degradation_order_is_stable(monkeypatch):
     assert out == "0123456789"
 
 
-def test_unknown_style_falls_back_to_classic():
+def test_unknown_style_falls_back_to_aurora():
     """Typo in style name should not raise — Claude Code statusLine has no
     way to surface the error, so we silently render with the safe default."""
     out = render("not-a-real-style", theme=get_theme("graphite"),
@@ -131,18 +127,9 @@ def test_unknown_kwargs_are_swallowed():
     render("classic", theme=get_theme("graphite"), use_color=False,
            density="cozy", show_weekly=False,
            **SAMPLE)
-    render("capsule", theme=get_theme("graphite"), use_color=False,
+    render("aurora", theme=get_theme("graphite"), use_color=False,
            countdown_emoji="🌙",
            **SAMPLE)
-
-
-def test_capsule_show_weekly_toggle():
-    out_with = render("capsule", theme=get_theme("graphite"),
-                       use_color=False, show_weekly=True, **SAMPLE)
-    out_without = render("capsule", theme=get_theme("graphite"),
-                          use_color=False, show_weekly=False, **SAMPLE)
-    assert "7D" in out_with
-    assert "7D" not in out_without
 
 
 def test_density_pad_constants():
@@ -153,17 +140,17 @@ def test_density_pad_constants():
 
 def test_is_known_style():
     assert is_known_style("classic")
-    assert is_known_style("capsule")
-    assert not is_known_style("capsulee")
+    assert is_known_style("aurora")
+    assert not is_known_style("capsule")  # removed in 3.50.0
     assert not is_known_style("")
 
 
-def test_capsule_does_not_eat_emoji_prefix():
+def test_aurora_does_not_eat_emoji_prefix():
     """Regression: prior implementation used lstrip('📚 ') which would also
     strip a literal space at the start of language data. The fix routes raw
     body strings into the renderer."""
     body = " 📚EN:6.0"  # leading space + emoji that would have triggered the bug
-    out = render("capsule", theme=get_theme("graphite"),
+    out = render("aurora", theme=get_theme("graphite"),
                   use_color=False,
                   msgs_pct=42, weekly_pct=18,
                   reset_5h="2h", reset_7d="3d",

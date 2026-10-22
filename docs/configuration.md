@@ -6,10 +6,9 @@ Persisted to `~/.claude/claude-statusbar.json`:
 
 ```json
 {
-  "style": "capsule",
-  "theme": "twilight",
+  "style": "aurora",
+  "bar_glyph": "block",
   "density": "regular",
-  "auto_compact_width": 100,
   "show_weekly": true,
   "show_language": true,
   "show_cost": false,
@@ -29,11 +28,10 @@ Persisted to `~/.claude/claude-statusbar.json`:
 
 | Key | Values | What it does |
 |-----|--------|--------------|
-| `style` | `classic` / `capsule` / `hairline` / `aurora` | Layout |
-| `theme` | 9 themes (see [Styles & themes](styles-and-themes.md)) | Colors |
-| `density` | `compact` / `regular` / `cozy` | Segment padding (capsule, hairline, aurora) |
+| `style` | `aurora` / `classic` | Layout (see [Looks](styles-and-themes.md)) |
+| `theme` | `graphite` | Palette — the only one since 3.50.0; tune colors with `color_*` |
+| `density` | `compact` / `regular` / `cozy` | Segment padding (aurora) |
 | `bar_glyph` | `block` (default) / `thin` | Aurora bar cells: `■` blocks or the thin `━` line |
-| `auto_compact_width` | int | Force `hairline` below this terminal width; `0` = off |
 | `show_cost` | bool, `false` | Append `$ X.XX` session cost (API-equivalent value for subscribers) |
 | `show_balance` / `balance_bar` | bool, `true` | No-quota relay balance as a fuel-gauge bar — auto-hidden if the relay doesn't support it |
 | `show_cache_age` | bool, `true` | `cache 4m23s` prompt-cache countdown (TTL auto-detected 5m/1h) |
@@ -72,8 +70,7 @@ merely following the default, so a stored choice can't masquerade as one.
 
 | Variable | Effect |
 |----------|--------|
-| `CLAUDE_STATUSBAR_STYLE=capsule` | Render with this style (overrides config file) |
-| `CLAUDE_STATUSBAR_THEME=twilight` | Render with this theme (overrides config file) |
+| `CLAUDE_STATUSBAR_STYLE=classic` | Render with this style (overrides config file) |
 | `CLAUDE_STATUSBAR_NO_UPDATE=1` | Disable automatic update checks |
 | `CLAUDE_STATUSBAR_WARNING_THRESHOLD=40` | Switch from green to yellow at 40% |
 | `CLAUDE_STATUSBAR_CRITICAL_THRESHOLD=85` | Switch from yellow to red at 85% |
@@ -93,13 +90,12 @@ cs --json-output
 
 ```bash
 cs                              # render the status line (default command)
-cs --style capsule              # render with a one-off style
-cs --theme twilight             # render with a one-off theme
+cs --style classic              # render with a one-off style
 
 # Configuration
 cs config show                  # show all persistent config
-cs config set style hairline    # persist style → ~/.claude/claude-statusbar.json
-cs config set theme linen       # persist theme
+cs config set style classic     # persist style → ~/.claude/claude-statusbar.json
+cs config set bar_glyph thin    # aurora: thin ━ line instead of ■ blocks
 cs config set show_cost true    # session $ cost segment
 cs config set show_cache_age false  # hide prompt-cache age segment
 cs config set show_tools true   # activity line: active tool + completed rollup
@@ -119,10 +115,8 @@ cs config reset                 # wipe config back to defaults
 
 # Discovery
 cs styles                       # list available styles
-cs themes                       # list available themes
-cs preview                      # render every style × theme with YOUR real data
-cs preview --theme nord         # filter to one theme
-cs preview --style hairline --theme dracula   # one specific combo
+cs preview                      # the three looks with YOUR real data
+cs preview --style classic      # just one style
 
 # Daemon mode (default since v3.6.0; v3.2 introduced it as opt-in)
 cs --setup                      # default: writes `cs render` + starts daemon

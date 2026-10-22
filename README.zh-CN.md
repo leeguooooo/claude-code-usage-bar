@@ -19,161 +19,91 @@
 
 </div>
 
-> [!IMPORTANT]
-> **macOS 独立二进制用户请立即升级到 v3.32.5。**旧版 onefile 每秒启动一次刷新进程；
-> 进程若在启动阶段被终止，可能遗留一份约 11 MB 的 PyInstaller `_MEI*` 运行目录。重新执行安装命令会切换到 onedir，
-> 并安全清理没有进程占用的旧目录：
-> `curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash`
+![默认状态栏](docs/images/aurora-graphite.svg)
 
-Claude Code 几乎不告诉你离限额还有多远。`claude-statusbar` 把真正要紧的数字压进终端底部
-一行。你不用再切到另一个窗口，去问「我还剩多少额度、什么时候重置」。
+Claude Code 几乎不告诉你离限额还有多远。`cs` 把要紧的数字压进终端底部一行：还剩多少、什么时候重置。
 
-## 功能
+| 行 | 内容 |
+|---|---|
+| **用量** | 5h / 7d 限额进度条、重置倒计时、窗口末尾预测（`→NN%`）、模型与上下文窗口、prompt 缓存倒计时、可选的会话花费或中转余额 |
+| **项目** | git worktree 标记（`⑂ 名字 (3)` / `⑂ 主工作区 (3)`）、仓库名、分支、本次会话 `+/−` 行数、时长、版本 |
 
-- **官方 5h / 7d 用量**：就是 Claude Code 实际执行的那套限额数字，带重置倒计时和窗口末尾预测（`→NN%`），不是本地拍脑袋估的。
-- **模型与上下文窗口**：当前模型，以及上下文塞了多满（`Opus 4.8 · 350k/1M`）。
-- **prompt 缓存倒计时**：看清缓存还能热多久（`cache 4m23s`），也就知道下一轮什么时候要按原价重算。
-- **花费与余额**：可选显示单会话花费；掉额度的中转/API 场景下还能显示实时余额。
-- **两处都能显示**：终端 `statusLine` 里内联，或者给桌面端 Claude 应用挂一个置顶悬浮 HUD（macOS）。
-- **3 种样式 × 9 套主题**：一条命令换整套外观，电量条、胶囊、细线随你挑。
-- **生来就快**：可选的常驻进程即便按每秒刷新，CPU 占用也远低于 1%。
-- **想要才加**：git 分支与增删行、会话活跃度、雅思写作陪练进度，每一项都可单独开关。
-- **零依赖安装**：一个预编译二进制（不需要 Python），或一个 `pip` 包。自动更新。
+- **官方数字**：就是 Claude Code 实际执行的 5h / 7d 限额，不是本地估算。
+- **prompt 缓存倒计时**：`❄ 4m23s` 告诉你下一轮什么时候要按原价算。
+- **两处都能看**：终端 `statusLine`，或桌面端 Claude 的悬浮 HUD（macOS）。
+- **快**：原生缓存读取加后台常驻进程，每秒刷新 CPU 也远低于 1%。
+- **想要再开**：花费、中转余额、git 领先/落后、会话活动、IP 检查、[雅思写作陪练](https://github.com/leeguooooo/prompt-language-coach)进度。
 
 ## 安装
-
-### Claude Code（终端）
-
-**一行搞定，不需要 Python、不需要 pip。** 它会按你的平台（macOS Apple Silicon、Linux x86_64）
-下载预编译好的二进制，并把状态栏接好：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash
 ```
 
-<sub>谨慎的话，先下下来读一遍，脚本开头写清了它会碰哪些东西。没有预编译二进制的平台会自动回退到 pip。</sub>
+macOS Apple Silicon 和 Linux x86_64 直接下载预编译二进制，不需要 Python。macOS 上装了桌面端的话，
+顺带把桌面 HUD 也装好。其他平台自动回退到 pip。
 
-**Windows**（PowerShell，没有 [uv](https://docs.astral.sh/uv/) 会用 winget 自动装上；不需要 Python，也不需要管理员权限）：
+**Windows**（PowerShell，不需要管理员权限）：
 
 ```powershell
 irm https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.ps1 | iex
 ```
 
-习惯 pip / uv，或者要装桌面 HUD？那就装 Python 包：
+**pip / uv：**
 
 ```bash
 pip install claude-statusbar     # 或：uv tool install / pipx install
 cs --setup                       # 接好 statusLine 钩子，并装上 skill
 ```
 
-重启 Claude Code，状态栏就出现在底部了。其余安装方式（只装 skill、插件市场）都在 **[安装指南](docs/install.md)** 里。
+重启 Claude Code 就能看到。`cs` 每 6 小时自动升级一次；卡在老版本的话跑 `cs upgrade`，或重新执行上面的安装命令
+（[原因](docs/troubleshooting.md#stuck-on-an-old-version)）。其他安装方式见 **[安装指南](docs/install.md)**。
 
-**版本没跟上？** `cs` 会在后台自动升级（每 6 小时检查一次）。但有几个老版本的升级逻辑本身是坏的，
-自己升不上来，手动跑一次就好，之后自动升级会恢复正常：
+## 自定义
 
-```bash
-cs --version    # 看当前版本
-cs upgrade      # 二进制 / pip / pipx / uv 都适用，会自动选对渠道
-```
+三种外观：aurora 方块（默认，见上图）、aurora 细线、classic 原版：
 
-没有 `cs upgrade` 或者它报错，就重新跑一遍上面的安装命令。
-[哪些版本受影响、为什么](docs/troubleshooting.md#stuck-on-an-old-version)。
-
-> **延伸阅读：**[`cache 4m23s` 这行到底准不准？prompt 缓存倒计时是怎么算出来的](https://blog.leeguoo.com/posts/claude-statusbar-cache-countdown/)
-
-### Claude 桌面端（macOS）· `cs hud`
-
-桌面端应用没有状态栏，所以 `cs hud` 给它挂一个置顶悬浮面板，显示同一套**官方** 5h / 7d 用量
-（由桌面端应用自己采样，不是估算）和重置倒计时。
+![aurora 细线](docs/images/aurora-thin-graphite.svg)
+![classic](docs/images/classic-graphite.svg)
 
 ```bash
-pip install 'claude-statusbar[hud]'   # 装 PyObjC（macOS 的 GUI 依赖）
-cs hud install                        # launchd：登录自启 + 保活
+cs config set bar_glyph thin     # ━ 细线，默认是 ■ 方块
+cs config set style classic      # 原来的电池条样式
+cs preview                       # 三种外观放一起看，用你的真实数据
+cs config show                   # 所有配置项，以及你改过哪些
 ```
+
+## 桌面端（macOS）· `cs hud`
+
+桌面端没有状态栏，`cs hud` 给它挂一个置顶悬浮面板，显示同一套官方用量。一键安装已经包含它；
+pip 用户执行 `pip install 'claude-statusbar[hud]' && cs hud install`。
 
 <div align="center">
 <img width="209" alt="收起的 HUD 药丸" src="https://github.com/user-attachments/assets/4bcf4c8d-e919-416a-8356-daa4d5c1a966" />
 <img width="620" alt="展开的 HUD 面板" src="https://github.com/user-attachments/assets/fcdea929-5e85-4f1a-982e-ba431d8a80d1" />
 </div>
 
-收起时是个小药丸，点一下展开，随手拖到任意位置；桌面端没开时它自动隐藏。细节看
-**[桌面 HUD 指南](docs/desktop-hud.md)**。
-
-## 显示什么
-
-默认样式的状态栏，`aurora` 样式、`graphite` 主题：
-
-![默认状态栏](docs/images/aurora-graphite.svg)
-
-想要原来的电池条样式：`cs config set style classic`。
-
-完整刷新时最多三行，每一段都可以单独关掉：
-
-| 行 | 内容 |
-|---|---|
-| **用量** | 5h / 7d 限额进度条、重置倒计时、窗口末尾预测（`→NN%`）、模型与上下文窗口、prompt 缓存倒计时、可选的单会话花费或中转余额 |
-| **项目** | git worktree 标记（`⑂ 名字 (总数)` / 主工作区 `⑂ 主工作区 (总数)`，独立配色、排在最前）、仓库名、git 分支、本次会话的 `+/−` 行数、时长、版本 |
-| **模式** | 会话的 effort / thinking / fast / style |
-
-每个图标、每档配色阈值、每个开关都写在 **[逐段参考](docs/segments.md)** 里；九套主题、三种样式在
-**[样式与主题](docs/styles-and-themes.md)**。
-
 ## 文档
 
 | 指南 | 讲什么 |
 |-------|---------------|
-| [安装](docs/install.md) | 二进制、PyPI、一键脚本、只装 skill、插件、Codex 桥接 |
-| [显示什么](docs/segments.md) | 完整的逐段参考表 |
-| [样式与主题](docs/styles-and-themes.md) | 3 样式 × 9 主题、预览、slash 命令 |
-| [配置](docs/configuration.md) | 配置文件、全部 `show_*` 键、环境变量、JSON 输出、CLI 速查 |
-| [桌面 HUD（`cs hud`）](docs/desktop-hud.md) | 给桌面端 Claude 应用用的 macOS 悬浮面板 |
-| [快速模式（常驻）](docs/daemon.md) | CPU 占用低于 1% 的常驻进程，launchd / systemd 自启 |
-| [无额度模式](docs/no-quota-mode.md) | 中转 / Bedrock / Vertex 布局、上下文电量条、余额 |
-| [缓存倒计时](docs/cache-countdown.md) | 数据来源 + `cache 4m23s` 的算法 |
-| [排障](docs/troubleshooting.md) | `cs doctor`、常见问题、升级 |
+| [安装](docs/install.md) | 二进制、PyPI、只装 skill、插件、Codex 桥接 |
+| [显示什么](docs/segments.md) | 每一段、每个图标、每档配色阈值 |
+| [外观](docs/styles-and-themes.md) | 三种外观、slash 命令 |
+| [配置](docs/configuration.md) | 全部配置项、环境变量、JSON 输出 |
+| [桌面 HUD](docs/desktop-hud.md) | macOS 悬浮面板 |
+| [快速模式（常驻）](docs/daemon.md) | 常驻进程、开机自启、刷新与缓存策略 |
+| [无额度模式](docs/no-quota-mode.md) | 中转 / Bedrock / Vertex 布局与余额 |
+| [缓存倒计时](docs/cache-countdown.md) | `❄ 4m23s` 是怎么算的 |
+| [排障](docs/troubleshooting.md) | `cs doctor`、IP 检查、升级 |
 
-## 对比
-
-好用的 Claude Code 用量监控有好几个。它们解决的问题彼此重叠又各有侧重。看你想在**哪里**看到
-这些信息，就挑对应的那个。
-
-| 工具 | 长在哪 | 擅长什么 |
-|---|---|---|
-| **claude-statusbar（`cs`）** | Claude Code 的 `statusLine`（底部一行） | 干活时扫一眼就够，零切换成本 |
-| [ccusage](https://github.com/ryoppippi/ccusage) | 单独终端窗口里的 TUI | 长周期用量分析、按周的花费拆解 |
-| [Claude Code Usage Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) | 带燃烧速率预测的独立 TUI | 付费套餐的实时燃烧速率预测 |
-
-`cs` 就是刻意做成一行颜色、每秒一个判断。想要带图表、按天按周汇总、燃烧速率预测的仪表盘，那就
-在侧边窗格开个 TUI，两者并存得很好。
-
-## 集成
-
-装上 **[prompt-language-coach](https://github.com/leeguooooo/prompt-language-coach)** 插件就能
-跟踪雅思分数变化。之后状态栏会自动带出你的写作水平和趋势（不用配置，`~/.claude/language-progress.json`
-存在时自动出现）：
-
-```
-... | Opus 4.8(350k/1M) | EN:6.0↑ JA:5.0→
-```
-
-`↑` 比上次会话进步 · `↓` 退步 · `→` 持平。
+想要图表和按周的花费拆解？在侧边窗格开 [ccusage](https://github.com/ryoppippi/ccusage) 或
+[Claude Code Usage Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)，和 `cs` 并存没问题。
 
 ## 参与贡献
 
-欢迎 PR。**[CONTRIBUTING.md](CONTRIBUTING.md)** 有完整的贡献指南：本地环境、测试命令、架构地图、
-代码约定、发版流程。安全问题看 **[SECURITY.md](SECURITY.md)**。
-
-```bash
-git clone https://github.com/leeguooooo/claude-code-usage-bar
-cd claude-code-usage-bar
-uv sync
-PYTHONPATH=src uv run pytest tests/   # 900+ 个测试，约 3 秒
-```
-
-渲染路径是热路径（`refreshInterval: 1` 时每分钟最多跑 60 次）。`tests/test_import_perf.py`
-钉死了哪些模块不能在这条快路径上导入。加依赖之前先读 CONTRIBUTING.md。
-
-每个版本的改动：**[CHANGELOG.md](CHANGELOG.md)** · [GitHub Releases](https://github.com/leeguooooo/claude-code-usage-bar/releases)。
+欢迎 PR，先看 **[CONTRIBUTING.md](CONTRIBUTING.md)**（环境、测试、架构、发版流程）和
+**[SECURITY.md](SECURITY.md)**。每个版本的改动见 **[CHANGELOG.md](CHANGELOG.md)**。
 
 ## 致谢
 
@@ -183,17 +113,6 @@ PYTHONPATH=src uv run pytest tests/   # 900+ 个测试，约 3 秒
 <a href="https://github.com/leeguooooo/claude-code-usage-bar/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=leeguooooo/claude-code-usage-bar" alt="Contributors" />
 </a>
-
-## Star 历史
-
-<a href="https://star-history.com/#leeguooooo/claude-code-usage-bar&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/star-history-dark.svg">
-    <img alt="Star history" src="docs/images/star-history.svg">
-  </picture>
-</a>
-
-<sub>静态快照截于 v3.3.x；<a href="https://star-history.com/#leeguooooo/claude-code-usage-bar&Date">点开看实时图</a>。</sub>
 
 ---
 
@@ -205,12 +124,3 @@ PYTHONPATH=src uv run pytest tests/   # 900+ 个测试，约 3 秒
 
 **郭立（Guo Li / leeguoo）** 开发 —— [leeguoo.com](https://leeguoo.com/about) · [GitHub](https://github.com/leeguooooo) · [X](https://x.com/leeguooooo) · 更多工具见 [*-use 家族](https://github.com/leeguooooo/plugins)。
 
-
-## 网络观察与详细检查
-
-`cs config set show_ip_risk true` 开启可选的 IP 检查。状态栏显示缓存的网络观察，
-不能预测账号是否封禁。检测失败、过期或缺失时保留未知状态；IPv4/IPv6 出口国家不同，
-也不能单凭这一点判断泄漏。运行 `cs doctor` 查看检查覆盖范围，以及
-[IP Check](https://ip-check.leeguoo.com/#local-diagnostics) 和
-[Thermo（macOS）](https://app.leeguoo.com/thermo) 的详细检查入口。
-状态栏刷新不会触发 Thermo 深度扫描，专项诊断是否可用以安装版本为准。

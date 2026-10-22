@@ -59,39 +59,3 @@ def test_no_quota_missing_context_shows_placeholder():
     assert "ctx[" in out
     assert "--%" in out
     assert "5h[" not in out
-
-
-# --- capsule / hairline no-quota layouts (styles.py) ---
-from claude_statusbar import styles
-
-
-def test_capsule_no_quota_shows_ctx_pill_not_quota():
-    out = styles.render_capsule(
-        msgs_pct=None, weekly_pct=None, reset_5h="--", reset_7d="",
-        model="Opus 4.8", ctx_pct=35, no_quota=True, use_color=False,
-    )
-    assert "CTX" in out or "ctx" in out
-    assert "35%" in out
-    assert "5H" not in out
-    assert "7D" not in out
-    assert "Opus 4.8" in out
-
-
-def test_hairline_no_quota_shows_ctx_not_quota():
-    out = styles.render_hairline(
-        msgs_pct=None, weekly_pct=None, reset_5h="--", reset_7d="",
-        model="Opus 4.8", ctx_pct=35, no_quota=True, use_color=False,
-    )
-    assert "ctx" in out
-    assert "35%" in out
-    assert "5h" not in out
-    assert "7d" not in out
-    assert "Opus 4.8" in out
-
-
-def test_capsule_no_quota_off_unchanged():
-    out = styles.render_capsule(
-        msgs_pct=42, weekly_pct=18, reset_5h="1h", reset_7d="2d",
-        model="Opus 4.8", ctx_pct=35, use_color=False,
-    )
-    assert "5H" in out and "7D" in out

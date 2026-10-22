@@ -480,8 +480,6 @@ def run() -> int:
         _line("balance_bar", cfg.balance_bar)
         _line("show_weekly", cfg.show_weekly)
         _line("show_language", cfg.show_language)
-        if cfg.auto_compact_width:
-            _line("auto_compact_width", cfg.auto_compact_width)
         _line("config file",
               cfg_mod.CONFIG_PATH if cfg_mod.CONFIG_PATH.exists() else
               _dim(f"{cfg_mod.CONFIG_PATH} (defaults — not created yet)"))

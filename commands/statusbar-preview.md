@@ -1,9 +1,9 @@
 ---
-description: Render every style × theme combination using your real cached data
+description: Render the three status-bar looks using your real cached data
 allowed-tools: ["Bash"]
 ---
 
-# Status Bar — preview all combinations
+# Status Bar — preview the looks
 
 Run:
 
@@ -11,6 +11,6 @@ Run:
 cs preview
 ```
 
-This renders all 9 combinations (3 styles × 3 themes) with the user's real numbers from `~/.cache/claude-statusbar/last_stdin.json`.
+This renders the three looks — aurora with ■ blocks (default), aurora with a thin ━ line, and classic — with the user's real numbers from `~/.cache/claude-statusbar/last_stdin.json`.
 
-After running it, ask the user which combination they want and offer to switch with `cs config set style <name>` and `cs config set theme <name>`. Do not pick for them.
+After running it, ask the user which look they want and offer to switch with `/statusbar-style block|thin|classic`. Do not pick for them.

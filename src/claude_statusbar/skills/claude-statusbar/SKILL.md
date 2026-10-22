@@ -1,13 +1,13 @@
 ---
 name: claude-statusbar
-description: Manage `cs` (claude-statusbar) — switch theme/style/density, override severity colors, preview combinations, run doctor, reset config, install, upgrade (`cs upgrade` — the only supported upgrade path), or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age, or toggle the activity segments (todos, active tool, running subagents, session duration, lines changed, git ahead/behind). Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, 主题, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, todos / 待办, active tool, subagents / 子agent, session duration / 时长, lines changed / 行数, git ahead-behind / 领先落后, forecast / 预测 / 还能用多久, at-risk chip, show_forecast, or asks to install / upgrade / update / 升级 / configure / diagnose / customize the bottom status line in Claude Code.
+description: Manage `cs` (claude-statusbar) — switch the look (aurora blocks / aurora thin / classic) or density, override severity colors, preview the looks, run doctor, reset config, install, upgrade (`cs upgrade` — the only supported upgrade path), or remove the bar, toggle fast/daemon mode, show cost or prompt-cache age, or toggle the activity segments (todos, active tool, running subagents, session duration, lines changed, git ahead/behind). Use whenever the user mentions cs, claude-statusbar, status bar, status line, 状态栏, 主题, 样式, 粗细, theme switching, style switching, color customization, 余量颜色, 警告颜色, severity color, /statusbar, cs preview, cs doctor, fast mode, daemon, refreshInterval, 5h/7d window, context window display, prompt cache, todos / 待办, active tool, subagents / 子agent, session duration / 时长, lines changed / 行数, git ahead-behind / 领先落后, forecast / 预测 / 还能用多久, at-risk chip, show_forecast, or asks to install / upgrade / update / 升级 / configure / diagnose / customize the bottom status line in Claude Code.
 ---
 
 # claude-statusbar control skill
 
 Use this skill any time the user wants to inspect, change, customize, or
 diagnose the `cs` status bar. Replaces the older individual slash commands
-(`/statusbar`, `/statusbar-theme`, `/statusbar-style`, `/statusbar-preview`,
+(`/statusbar`, `/statusbar-style`, `/statusbar-preview`,
 `/statusbar-doctor`, `/statusbar-reset`) — they still work but this skill
 covers all of them with conversational intent.
 
@@ -19,13 +19,12 @@ give a short confirmation (one line, no lecture).
 | User intent | Command |
 |---|---|
 | Inspect current config | `cs config show` |
-| List themes | `cs themes` |
 | List styles | `cs styles` |
-| Switch theme to `<name>` | `cs config set theme <name>` |
-| Switch style to `<name>` | `cs config set style <name>` |
+| Aurora with ■ block bars (default look) | `cs config set style aurora` + `cs config set bar_glyph block` |
+| Aurora with a thin ━ line ("细一点") | `cs config set style aurora` + `cs config set bar_glyph thin` |
+| Original battery-bar look | `cs config set style classic` |
 | Change density | `cs config set density <compact\|regular\|cozy>` |
-| Show all 27 combinations | `cs preview` |
-| Filter preview to one style/theme | `cs preview --style <s>` or `cs preview --theme <t>` |
+| Show the three looks side by side | `cs preview` |
 | Diagnose problem | `cs doctor` |
 | Return one key to its default | `cs config unset <key>` (the config stores only what you changed) |
 | Wipe config | `cs config reset` |
@@ -53,7 +52,6 @@ give a short confirmation (one line, no lecture).
 | Hide weekly bar | `cs config set show_weekly false` |
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |
-| Auto-collapse to hairline below width | `cs config set auto_compact_width <px>` |
 | Force / disable no-quota (API) mode | `cs config set api_mode <auto\|on\|off>` |
 | Show working directory | `cs config set show_cwd true\|false` + `cs config set cwd_style <basename\|full>` |
 | Relay balance fuel gauge | `cs config set show_balance true\|false` + `cs config set balance_bar true\|false` (no-quota mode only; auto-hidden when the relay has no balance API) |
@@ -95,27 +93,17 @@ cs config set color_ok ""            # clear back to theme default
 ```
 
 Accepts `#rrggbb`, `#rgb`, or bare `rrggbb`. The override layers on top of
-whatever theme is active — no need to switch theme just to tune one color.
+the graphite theme.
 
 **When user says** "make 余量颜色 / safe color / green sharper", "warning
-偏淡", "critical too red" — go to the override, not the theme.
+偏淡", "critical too red" — go to the override.
 
-## Vibe → theme suggestion
+## Looks and themes
 
-If the user describes a vibe instead of naming a theme, suggest one and
-ask before switching:
-
-| Vibe / context | Theme |
-|---|---|
-| Muted, professional, dark terminal | `graphite` (default) |
-| Soft, warm, dark | `twilight` |
-| Classic dev / Nord-inspired | `nord` |
-| High contrast, vivid | `dracula` |
-| Warm, cute, light bg | `sakura` |
-| Light terminal | `linen` |
-| Pure grayscale / no color | `mono` |
-| Popular pastel, easy on long viewing | `catppuccin-mocha` |
-| Deeper neon-blue mood | `tokyo-night` |
+There are three looks — aurora ■ (default), aurora ━, classic — and one
+theme, `graphite`. The other styles (capsule, hairline) and eight themes were
+removed in 3.50.0; old configs fall back to the defaults. If a user asks for
+a different palette, reach for the `color_*` overrides above.
 
 ## Render anatomy (so you can explain what you're changing)
 
@@ -143,17 +131,16 @@ Every numeric segment colors itself by its own severity (since v3.4):
 when it sees `refreshInterval ≤ 2s` on the inline command. Fast mode drops
 1Hz CPU from ~6% to ~2%.
 
-**"Color won't change after `cs config set theme X`"** → check the user
+**"Look won't change after `cs config set …`"** → check the user
 isn't on a Claude Code session that read `settings.json` at start. Ask
-them to send a new prompt; the next render picks up the new theme.
+them to send a new prompt; the next render picks up the change.
 
 ## Don't
 
 - Don't lecture about ANSI codes or terminal compatibility unless asked.
 - Don't suggest editing `~/.claude/claude-statusbar.json` by hand. Use
   `cs config set <key> <value>`.
-- Don't change theme just to fix one color — use `color_ok / color_warn /
-  color_hot` overrides.
+- To tune one color use the `color_ok / color_warn / color_hot` overrides.
 - Don't run destructive commands (`cs config reset`, `cs daemon stop`)
   without confirming with the user.
 

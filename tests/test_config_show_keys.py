@@ -22,16 +22,16 @@ def test_show_marks_values_that_are_only_defaults(capsys, monkeypatch, tmp_path)
     # that hid a stale `show_project_branch = False` after the default flipped.
     from claude_statusbar import config as cfg_mod
     p = tmp_path / "c.json"
-    cfg_mod.set_value("theme", "nord", p)
+    cfg_mod.set_value("bar_glyph", "thin", p)
     monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
 
     monkeypatch.setattr(sys, "argv", ["cs", "config", "show"])
     assert cli.main() == 0
     out = capsys.readouterr().out
 
-    theme_line = next(l for l in out.splitlines() if l.startswith("theme"))
+    glyph_line = next(l for l in out.splitlines() if l.startswith("bar_glyph"))
     style_line = next(l for l in out.splitlines() if l.startswith("style"))
-    assert "nord" in theme_line and "(default)" not in theme_line
+    assert "thin" in glyph_line and "(default)" not in glyph_line
     assert "(default)" in style_line
 
 
@@ -39,10 +39,10 @@ def test_unset_subcommand_clears_a_key(capsys, monkeypatch, tmp_path):
     from claude_statusbar import config as cfg_mod
     import json
     p = tmp_path / "c.json"
-    cfg_mod.set_value("theme", "nord", p)
+    cfg_mod.set_value("bar_glyph", "thin", p)
     monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
 
-    monkeypatch.setattr(sys, "argv", ["cs", "config", "unset", "theme"])
+    monkeypatch.setattr(sys, "argv", ["cs", "config", "unset", "bar_glyph"])
     assert cli.main() == 0
     assert "following the default" in capsys.readouterr().out
     from claude_statusbar.config import UI_VERSION

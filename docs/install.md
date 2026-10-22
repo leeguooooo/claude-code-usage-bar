@@ -84,7 +84,7 @@ Since v3.6.0 `cs --setup` defaults to daemon mode (`cs render` + `refreshInterva
 
 ## Skill-only install (already have `cs`)
 
-If you already have the `cs` binary installed (e.g. via `pip install`) and just want the conversational `claude-statusbar` skill so Claude Code routes natural-language requests like "switch theme to nord" or "余量颜色改成 #4ec85b" to the right `cs` command:
+If you already have the `cs` binary installed (e.g. via `pip install`) and just want the conversational `claude-statusbar` skill so Claude Code routes natural-language requests like "switch to the thin bars" or "余量颜色改成 #4ec85b" to the right `cs` command:
 
 ```bash
 npx skills add leeguooooo/claude-code-usage-bar -g -y

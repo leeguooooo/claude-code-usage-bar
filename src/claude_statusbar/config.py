@@ -1,7 +1,7 @@
 """User-facing config persisted at ~/.claude/claude-statusbar.json.
 
 Resolution order for any field:
-    1. CLI flag        (e.g. --style capsule)
+    1. CLI flag        (e.g. --style classic)
     2. Env var         (e.g. CLAUDE_STATUSBAR_STYLE)
     3. Config file     (~/.claude/claude-statusbar.json)
     4. Built-in default
@@ -19,7 +19,7 @@ DEFAULT_STYLE = "aurora"
 DEFAULT_THEME = "graphite"
 DEFAULT_DENSITY = "regular"   # cozy | regular | compact
 DEFAULT_BAR_GLYPH = "block"   # block (■) | thin (━) — aurora bar cells
-DEFAULT_AUTO_COMPACT_WIDTH = 0  # 0 = disabled; otherwise force hairline below this width
+DEFAULT_AUTO_COMPACT_WIDTH = 0  # deprecated no-op: the hairline style it switched to is gone
 DEFAULT_CACHE_TTL_SECONDS = 300  # 5min — Anthropic's base prompt cache TTL.
 DEFAULT_CWD_STYLE = "basename"  # basename | full — how show_cwd renders the dir
 DEFAULT_API_MODE = "auto"  # auto-detect relay/Bedrock/Vertex | on (force) | off (force official)
@@ -37,9 +37,9 @@ class StatusbarConfig:
     theme: str = DEFAULT_THEME
     density: str = DEFAULT_DENSITY
     # Aurora bar cell shape: `block` (■, the default — `━` read as too thin
-    # for some) or `thin` (━, the original hairline look). Colors are the same.
+    # for some) or `thin` (━, the original thin line). Colors are the same.
     bar_glyph: str = DEFAULT_BAR_GLYPH
-    auto_compact_width: int = DEFAULT_AUTO_COMPACT_WIDTH
+    auto_compact_width: int = DEFAULT_AUTO_COMPACT_WIDTH  # deprecated, ignored
     show_weekly: bool = True
     show_per_model: bool = False
     show_language: bool = True
@@ -193,7 +193,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
 # Bumped when an upgrade deliberately resets everyone's look. The file records
 # the version it has seen, so the reset runs once and a later explicit choice
 # (`cs config set style classic`) sticks.
-UI_VERSION = 2
+UI_VERSION = 3
 
 
 def _migrate_ui(raw: dict, path: Path) -> dict:
@@ -209,6 +209,13 @@ def _migrate_ui(raw: dict, path: Path) -> dict:
         raw.pop("style", None)  # 3.49.0: move to aurora once.
     if seen < 2:
         raw.pop("show_mode", None)  # 3.49.4: hide the extra mode line.
+    if seen < 3:
+        # 3.50.0: only aurora / classic and the graphite theme remain.
+        if raw.get("style") not in (None, "aurora", "classic"):
+            raw.pop("style", None)
+        if raw.get("theme") not in (None, "graphite"):
+            raw.pop("theme", None)
+        raw.pop("auto_compact_width", None)
     raw["ui_version"] = UI_VERSION
     try:
         from .cache import atomic_write_text
