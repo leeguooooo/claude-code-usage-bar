@@ -250,3 +250,50 @@ def test_default_profile_login_sits_beside_its_config_dir(tmp_path, monkeypatch)
     # a config-dir profile still wins with its own in-dir login
     _, work = _profile(tmp_path, ".claude-work", "bbbbbbbb-1111-2222-3333-444455556666")
     assert predict._read_account_id(str(work)) == "bbbbbbbb-1111-2222-3333-444455556666"
+
+
+# --- organization is part of the quota owner ---
+
+def _fake_org_json(tmp_path, uuid, org, mtime):
+    p = tmp_path / "claude.json"
+    p.write_text(json.dumps({
+        "organizationUuid": "ffffffff-0000-0000-0000-000000000000",  # elsewhere: ignored
+        "oauthAccount": {"accountUuid": uuid, "organizationUuid": org,
+                         "organizationRateLimitTier": "default_claude_max_20x"},
+    }))
+    os.utime(p, (mtime, mtime))
+    return p
+
+
+def test_account_id_includes_organization(tmp_path, monkeypatch):
+    p = _fake_org_json(tmp_path, "cd5174d3-1111-2222-3333-444455556666",
+                       "0a1b2c3d-aaaa-bbbb-cccc-ddddeeeeffff", 1000)
+    monkeypatch.setattr(predict, "_CLAUDE_JSON_PATH", p)
+    monkeypatch.setattr(predict, "_ACCOUNT_CACHE", {"sig": None, "id": None})
+    assert predict._read_account_id() == (
+        "cd5174d3-1111-2222-3333-444455556666:0a1b2c3d-aaaa-bbbb-cccc-ddddeeeeffff")
+
+
+def test_org_switch_isolates_stores_and_migrates_legacy(tmp_path, monkeypatch):
+    base = tmp_path / "rate_latest.json"
+    legacy = tmp_path / "rate_latest.cd5174d3-111.json"
+    legacy.write_text("{}")
+    acct = "cd5174d3-1111-2222-3333-444455556666"
+    monkeypatch.setattr(predict, "account_id", lambda *a, **k: f"{acct}:0a1b2c3d-aaaa")
+    first = predict._account_path(base)
+    assert first.name == "rate_latest.cd5174d3-111-0a1b2c3d.json"
+    assert first.exists() and not legacy.exists()      # history handed over
+    monkeypatch.setattr(predict, "account_id", lambda *a, **k: f"{acct}:99999999-bbbb")
+    second = predict._account_path(base)
+    assert second.name == "rate_latest.cd5174d3-111-99999999.json"
+    assert not second.exists()                          # other org starts clean
+
+
+def test_org_switch_does_not_leak_readings(tmp_path, monkeypatch):
+    monkeypatch.setattr(predict, "_LATEST_PATH", tmp_path / "rate_latest.json")
+    now = 1_781_000_000.0
+    monkeypatch.setattr(predict, "account_id", lambda *a, **k: "same-acct:org-max")
+    reconcile_account(42.0, now + 3600, 15.0, now + 6 * 86400, now=now)
+    monkeypatch.setattr(predict, "account_id", lambda *a, **k: "same-acct:org-team")
+    u5, r5, u7, r7 = reconcile_account(0.0, now + 17000, 2.0, now + 4 * 86400, now=now + 60)
+    assert (u5, u7) == (0.0, 2.0)

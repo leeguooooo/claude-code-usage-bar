@@ -9,6 +9,25 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.49.1 — 2026-10-22
+
+**Quota stores are per organization; an upgrade whose daemon didn't restart retries only the restart.**
+
+- The 5h/7d stores, projection history and quota snapshots are keyed by
+  account *and* organization (`oauthAccount.organizationUuid`). One login can
+  belong to a personal Max org and a Team org, each with its own counters and
+  rate-limit tier; switching between them no longer mixes their readings.
+  Existing history moves to the current organization on first use, so a
+  single-org login keeps its projections.
+- After a binary upgrade installs, `cs upgrade` and the background
+  auto-upgrade check that the daemon came back on the new code. If it did not,
+  they retry just the restart (launchd / systemd, or `cs daemon start`) twice,
+  never another download. `cs upgrade` then says
+  `Installed vX, but the background daemon did not restart (…)` with the retry
+  command, and `cs doctor` shows a `last upgrade` line while the daemon stays down.
+
+---
+
 ## v3.49.0 — 2026-10-22
 
 **One look for everyone: aurora, a brighter green, and quieter lower lines.**

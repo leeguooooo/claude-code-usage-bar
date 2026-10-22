@@ -270,6 +270,17 @@ def run() -> int:
     except Exception:
         pass  # no cache yet or unreadable: say nothing rather than guess
     _line("auto-upgrade", auto[0], ok=auto[1])
+    # An upgrade that installed but could not bring the daemon back. Only
+    # while it is still down: a later lazy spawn or manual restart clears it.
+    try:
+        from .updater import UPGRADE_STATUS, _daemon_alive, restart_hint
+        st = json.loads(UPGRADE_STATUS.read_text(encoding="utf-8"))
+        if st.get("daemon") == "restart_failed" and not _daemon_alive():
+            _line("last upgrade", _yellow(
+                f"installed v{st.get('version') or '?'}, daemon restart failed "
+                f"({st.get('detail') or 'unknown'}) — run: {restart_hint()}"), ok=None)
+    except Exception:
+        pass
 
     # --- python ---
     _line("python", f"{sys.version.split()[0]}  ({sys.executable})")

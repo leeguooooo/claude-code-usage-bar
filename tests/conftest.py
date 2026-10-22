@@ -48,3 +48,13 @@ def _isolate_ip_risk_cache(tmp_path, monkeypatch):
     """Doctor/render tests must not consult a developer's real IP history."""
     from claude_statusbar import ip_risk
     monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path / "ip-risk-cache")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_upgrade_daemon(tmp_path, monkeypatch):
+    """Upgrade tests must never see — or restart — the developer's real daemon."""
+    from claude_statusbar import updater
+    monkeypatch.setattr(updater, "_daemon_alive", lambda: False)
+    monkeypatch.setattr(updater, "_restart_daemon_only",
+                        lambda: (False, "restart disabled in tests"))
+    monkeypatch.setattr(updater, "UPGRADE_STATUS", tmp_path / "upgrade_status.json")
