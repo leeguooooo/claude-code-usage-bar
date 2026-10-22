@@ -67,6 +67,7 @@ cs --setup                       # 接好 statusLine 钩子，并装上 skill
 ![classic](docs/images/classic-graphite.svg)
 
 ```bash
+cs theme                         # 带实时预览的选择器（↑/↓ 选，回车应用）
 cs config set bar_glyph thin     # ━ 细线，默认是 ■ 方块
 cs config set style classic      # 原来的电池条样式
 cs preview                       # 三种外观放一起看，用你的真实数据

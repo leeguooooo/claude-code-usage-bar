@@ -70,6 +70,7 @@ Three looks — aurora with block bars (default), aurora with a thin line, and c
 ![classic](docs/images/classic-graphite.svg)
 
 ```bash
+cs theme                         # pick one with a live preview (↑/↓, Enter)
 cs config set bar_glyph thin     # thin ━ line instead of ■ blocks (default)
 cs config set style classic      # the original battery-bar look
 cs preview                       # all three looks, with your real numbers

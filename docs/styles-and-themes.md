@@ -16,6 +16,7 @@ by position, so a fuller bar reaches further into the red.
 ![classic](images/classic-graphite.svg)
 
 ```bash
+cs theme                         # interactive: live preview, ↑/↓ or 1-3, Enter applies
 cs config set bar_glyph block    # aurora, block bars (default)
 cs config set bar_glyph thin     # aurora, thin line
 cs config set style classic      # classic

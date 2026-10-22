@@ -15,7 +15,10 @@ import argparse
 VERSION_FLAGS = ("--version", "-V", "-v", "-version")
 SUBCOMMANDS = (
     "config",
+    "theme",
     "themes",
+    "look",
+    "looks",
     "styles",
     "preview",
     "install-commands",
@@ -124,14 +127,6 @@ def _run_config_subcommand(rest):
     print(f"unknown config action: {action} (try: show / set / get / unset / reset)",
           file=sys.stderr)
     return 2
-
-
-def _run_themes_subcommand():
-    from .themes import list_themes
-    print("Available themes:")
-    for t in list_themes():
-        print(f"  {t.name:<10}  {t.description}")
-    return 0
 
 
 def _run_styles_subcommand():
@@ -348,8 +343,10 @@ def main():
             return _run_upgrade_subcommand()
         if sub == "config":
             return _run_config_subcommand(rest)
-        if sub == "themes":
-            return _run_themes_subcommand()
+        if sub in ("theme", "themes", "look", "looks"):
+            # Interactive picker over the three looks, with live previews.
+            from .picker import run as run_picker
+            return run_picker(no_color="--no-color" in rest)
         if sub == "styles":
             return _run_styles_subcommand()
         if sub == "preview":
@@ -457,6 +454,7 @@ Examples:
   cs config show                # Show current config
   cs config set style classic   # Persist style (aurora | classic)
   cs config set bar_glyph thin  # Aurora bars: block (■) | thin (━)
+  cs theme                      # Pick a look interactively (live preview)
   cs styles                     # List available styles
   cs preview                    # Render the three looks together
   cs install-commands           # Install /statusbar slash commands

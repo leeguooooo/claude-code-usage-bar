@@ -9,6 +9,19 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.50.1 — 2026-10-22
+
+**`cs theme` is now an interactive picker.**
+
+- `cs theme` (also `themes` / `looks`) shows the three looks with a live
+  preview from your real numbers; ↑/↓ or 1-3 to move, Enter applies, q
+  cancels. Piped or non-terminal output prints the list with the current look
+  marked. Windows falls back to typing a number.
+- Re-running `cs --setup` / `cs install-commands` removes the retired
+  `/statusbar-theme` command, unless you edited it.
+
+---
+
 ## v3.50.0 — 2026-10-22
 
 **Three looks instead of 4 styles × 9 themes.**
