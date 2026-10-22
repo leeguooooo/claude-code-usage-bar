@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from claude_statusbar import balance_cache, core, progress, styles
+from claude_statusbar import balance_cache, core, progress
 
 
 def _env(base="https://relay.example", key="sk-x"):
