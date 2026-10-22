@@ -30,6 +30,9 @@ MESSAGES = {
 }
 
 GLYPH = {"crit": "✗", "warn": "⚠", "note": "◌"}
+IP_CHECK_URL = "https://ip-check.leeguoo.com/"
+DOCTOR_URL = ("https://github.com/leeguooooo/claude-code-usage-bar/blob/main/"
+              "docs/troubleshooting.md")
 
 
 class Finding(NamedTuple):
@@ -64,6 +67,7 @@ def format_finding(f: Finding, *, theme, lang: str = "en",
         return f"{lead} │ {reason} │ {hint} · cs doctor"
     from .styles import _fg, BOLD, RESET
     from .progress import _blend
+    from ._display import hyperlink
     accent = {"crit": theme.s_hot, "warn": theme.s_warn}.get(
         f.level, _blend(theme.s_warn, theme.mute, 0.45))
     A, MUTE, EDGE = _fg(accent), _fg(theme.mute), _fg(theme.edge)
@@ -72,5 +76,8 @@ def format_finding(f: Finding, *, theme, lang: str = "en",
     lead = f"{A}{BOLD}{glyph}{RESET} {MUTE}{t(f.label, lang)}{RESET}"
     if value:
         lead += f" {A}{BOLD}{value}{RESET}"
+    # Network findings open the ip-check page; `cs doctor` opens the docs.
+    if f.label != "api":
+        lead = hyperlink(lead, IP_CHECK_URL)
     return (f"{lead}{sep}{A}{reason}{RESET}{sep}"
-            f"{MUTE}{hint}{RESET} {EDGE}· cs doctor{RESET}")
+            f"{MUTE}{hint}{RESET} {EDGE}· {hyperlink('cs doctor', DOCTOR_URL)}{RESET}")

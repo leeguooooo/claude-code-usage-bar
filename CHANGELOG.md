@@ -9,6 +9,25 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.49.3 — 2026-10-22
+
+**Aurora's lower lines are calmer and clickable.**
+
+- Lines below the first separate their parts with a faint `·` instead of
+  `│`: stacked `│`s at unrelated offsets read as a misaligned table. LAN peers
+  are separated by spacing only.
+- Unread ocs messages read `4 unread` / `4 条未读` (by system language)
+  instead of the `✉` glyph, which terminals draw as a mismatched emoji.
+- Cmd/Ctrl+click opens: the repo name (its web page, from the `origin`
+  remote), the branch (its page on GitHub / GitLab / Bitbucket-style forges),
+  the `↑version` hint (release notes), a network notice (the ip-check page)
+  and `cs doctor` (the troubleshooting docs). Links are OSC 8, which Claude
+  Code's status line supports in terminals like Ghostty, iTerm2, Kitty and
+  WezTerm; elsewhere the text simply isn't clickable. Remote credentials never
+  appear in a link, and clipping a line closes any link it cuts.
+
+---
+
 ## v3.49.2 — 2026-10-22
 
 **Updates arrive within hours, the cache countdown trusts Claude Code's expiry, and stuck installs get a guide.**

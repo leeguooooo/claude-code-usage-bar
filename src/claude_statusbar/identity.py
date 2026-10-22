@@ -79,6 +79,8 @@ class IdentityInfo:
     # How many linked worktrees this repo has in total (this one included).
     # 0 when unknown / not in a worktree.
     worktree_count: int = 0
+    # Browser URL of the repo, from the origin remote (None: no usable remote).
+    web_url: Optional[str] = None
 
 
 class _Worktree(NamedTuple):
@@ -216,6 +218,70 @@ def _resolve_toplevel(start: Path) -> Optional[Path]:
     return None
 
 
+_REMOTE_CACHE: dict = {}
+
+
+def remote_web_url(remote: str) -> Optional[str]:
+    """`git@host:o/r.git`, `ssh://git@host:22/o/r`, `https://user:tok@host/o/r.git`
+    → `https://host/o/r`. Credentials never survive; anything else → None."""
+    import re
+    remote = remote.strip()
+    m = (re.fullmatch(r"[\w.-]+@([\w.-]+):(?!\d+/)([\w./-]+?)(?:\.git)?/?", remote)
+         or re.fullmatch(r"(?:ssh|git\+ssh|https?)://(?:[^@/]*@)?([\w.-]+)(?::\d+)?/([\w./-]+?)(?:\.git)?/?",
+                         remote))
+    if not m or ".." in m.group(2):
+        return None
+    return f"https://{m.group(1)}/{m.group(2)}"
+
+
+def branch_web_url(repo_url: Optional[str], branch: Optional[str]) -> Optional[str]:
+    """Branch page on the forge: GitLab `/-/tree/`, Bitbucket `/src/`, else `/tree/`."""
+    if not repo_url or not branch:
+        return None
+    from urllib.parse import quote
+    host = repo_url.split("/")[2]
+    path = "/-/tree/" if "gitlab" in host else "/src/" if "bitbucket" in host else "/tree/"
+    return repo_url + path + quote(branch, safe="/")
+
+
+def _read_web_url(start: Path) -> Optional[str]:
+    """origin's URL (else the first remote's) from the repo's own config file —
+    no git subprocess; memoized on the config's mtime."""
+    gitdir = _resolve_gitdir(start)
+    if gitdir is None:
+        return None
+    common = gitdir
+    try:
+        rel = (gitdir / "commondir").read_text(encoding="utf-8").strip()
+        common = (gitdir / rel).resolve()
+    except OSError:
+        pass
+    cfg = common / "config"
+    try:
+        sig = (str(cfg), cfg.stat().st_mtime_ns)
+    except OSError:
+        return None
+    if sig in _REMOTE_CACHE:
+        return _REMOTE_CACHE[sig]
+    import configparser
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
+    url = None
+    try:
+        parser.read(cfg, encoding="utf-8")
+        sections = [s for s in parser.sections() if s.startswith('remote "')]
+        sections.sort(key=lambda s: s != 'remote "origin"')
+        for s in sections:
+            raw = parser.get(s, "url", fallback=None)
+            url = remote_web_url(raw) if raw else None
+            if url:
+                break
+    except (configparser.Error, OSError, UnicodeDecodeError):
+        url = None
+    _REMOTE_CACHE.clear()
+    _REMOTE_CACHE[sig] = url
+    return url
+
+
 def resolve_identity(stdin: dict) -> IdentityInfo:
     repo_name = stdin.get("workspace_repo_name")
     project_dir = stdin.get("workspace_project_dir")
@@ -264,6 +330,7 @@ def resolve_identity(stdin: dict) -> IdentityInfo:
         toplevel=str(toplevel) if toplevel else None,
         is_worktree=is_worktree,
         worktree_count=worktree_count,
+        web_url=_read_web_url(start) if head else None,
     )
 
 

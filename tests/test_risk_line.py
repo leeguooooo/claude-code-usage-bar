@@ -71,3 +71,12 @@ def test_macos_prefers_apple_languages_over_lang(monkeypatch):
 
 def test_explicit_setting_wins():
     assert i18n.ui_lang("en") == "en" and i18n.ui_lang("zh") == "zh"
+
+
+def test_colored_risk_line_links_ip_check_and_doctor():
+    f = ip_risk.finding(CN_V6)
+    out = format_finding(f, theme=THEME, lang="en", use_color=True)
+    assert "\x1b]8;;https://ip-check.leeguoo.com/\x07" in out
+    assert "docs/troubleshooting.md\x07cs doctor" in out
+    g = fp_risk.fp_risk_finding({"ANTHROPIC_BASE_URL": "https://relay.example.com"})
+    assert "ip-check" not in format_finding(g, theme=THEME, use_color=True)

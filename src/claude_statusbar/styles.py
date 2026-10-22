@@ -694,6 +694,11 @@ def _aurora_quiet(theme: Theme):
     )
 
 
+# Lines below aurora's first use a faint dot, not `│`: stacked `│`s at
+# unrelated offsets read as a misaligned table.
+_QUIET_SEP = "  ·  "
+
+
 def render_identity_line_aurora(info, *, theme: Theme, dirty,
                                 ahead=None, behind=None,
                                 duration_text: str = "", lines_text: str = "",
@@ -701,7 +706,7 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
                                 cwd_text: str = "",
                                 worktree_glyph: str = "⑂",
                                 use_color: bool = True) -> str:
-    """Aurora's 2nd line: `⎇ main ●↓1 │ project │ +244 −3 │ ⏱ 4m`, muted.
+    """Aurora's 2nd line: `⎇ main ●↓1  ·  project  ·  +244 −3  ·  ⏱ 4m`, muted.
 
     Same facts as `render_identity_line`, regrouped behind `│` separators with
     the branch leading. A linked worktree still leads the whole line; the trunk
@@ -710,21 +715,29 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
     """
     q = _aurora_quiet(theme)
     BASE, DIM, EDGE, soft = q["BASE"], q["DIM"], q["EDGE"], q["soft"]
+    from ._display import hyperlink
+    from .identity import branch_web_url
+    repo_url = getattr(info, "web_url", None)
 
     def c(color, text):
         return f"{color}{text}{RESET}" if use_color else text
+
+    def link(text, url):
+        # Cmd/Ctrl+click opens it; plain-text output stays link-free.
+        return hyperlink(text, url) if use_color else text
 
     segs = []
     if info.is_worktree:
         segs.append(c(soft(theme.wt), f"{worktree_glyph} {_worktree_label(info)}"))
     if info.in_git:
         branch = info.branch or "?"
-        head = c(DIM, "⎇ ") + c(f"{DIM}{ITAL}" if info.detached else BASE, branch)
+        head = c(DIM, "⎇ ") + link(c(f"{DIM}{ITAL}" if info.detached else BASE, branch),
+                                   None if info.detached else branch_web_url(repo_url, branch))
         flags = ("●" if dirty else "") + _ahead_behind_glyphs(ahead, behind)
         if flags:
             head += " " + c(soft(theme.s_warn), flags)
         segs.append(head)
-    segs.append(c(BASE, info.project_name))
+    segs.append(link(c(BASE, info.project_name), repo_url))
     if not info.in_git:
         segs.append(c(f"{DIM}{ITAL}", "no git"))
     if cwd_text and cwd_text != info.project_name:
@@ -744,13 +757,17 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
     if info.in_git and not info.is_worktree and info.worktree_count:
         segs.append(c(DIM, f"{worktree_glyph} trunk ({info.worktree_count})"))
     if version_text and update_text:
-        segs.append(c(DIM, f"v{version_text}") + c(soft(theme.s_warn), f" ↑{update_text}"))
-    return c(EDGE, " │ ").join(segs)
+        notes = ("https://github.com/leeguooooo/claude-code-usage-bar/releases/tag/"
+                 f"v{update_text}")
+        segs.append(c(DIM, f"v{version_text}")
+                    + link(c(soft(theme.s_warn), f" ↑{update_text}"), notes))
+    return c(EDGE, _QUIET_SEP).join(segs)
 
 
 def render_ocs_line_aurora(ocs_text: str, unread, lan, *, theme: Theme,
-                           use_color: bool = True) -> str:
-    """`ocs claude-b2242a10 │ ✉3 │ lan ● win · ● mac`, muted like line 2."""
+                           use_color: bool = True, lang: str = "en") -> str:
+    """`ocs claude-b2242a10  ·  3 unread  ·  lan ● win  ● mac`, muted like line 2.
+    Unread is a word, not ✉ — the envelope renders as a mismatched emoji."""
     q = _aurora_quiet(theme)
     BASE, DIM, EDGE, soft = q["BASE"], q["DIM"], q["EDGE"], q["soft"]
 
@@ -760,7 +777,8 @@ def render_ocs_line_aurora(ocs_text: str, unread, lan, *, theme: Theme,
     name, sep, ident = ocs_text.partition(" · ")
     segs = [c(DIM, "ocs ") + c(BASE, name) + (c(DIM, f" {ident}") if sep else "")]
     if unread:
-        segs.append(c(soft(theme.s_warn), f"✉{unread}"))
+        segs.append(c(soft(theme.s_warn),
+                      f"{unread} 条未读" if lang == "zh" else f"{unread} unread"))
     if lan:
         if not lan.get("running"):
             segs.append(c(DIM, "lan ") + c(soft(theme.s_warn), "off"))
@@ -768,11 +786,11 @@ def render_ocs_line_aurora(ocs_text: str, unread, lan, *, theme: Theme,
             peers = [c(soft(theme.s_ok) if recent else EDGE, "●") + " "
                      + c(BASE if recent else DIM, label)
                      for label, recent in (lan.get("peers") or [])]
-            body = c(DIM, " · ").join(peers) if peers else c(DIM, "on")
+            body = "  ".join(peers) if peers else c(DIM, "on")
             if lan.get("more"):
                 body += c(DIM, f" +{lan['more']}")
             segs.append(c(DIM, "lan ") + body)
-    return c(EDGE, " │ ").join(segs)
+    return c(EDGE, _QUIET_SEP).join(segs)
 
 
 def _ocs_segment(ocs_text: str, theme: Theme) -> str:
@@ -1057,7 +1075,9 @@ def render(style: str, **kwargs) -> str:
     fp_line_level = kwargs.pop("fp_line_level", "ok")
     ip_finding = kwargs.pop("ip_finding", None)
     fp_finding = kwargs.pop("fp_finding", None)
-    risk_lang = kwargs.pop("risk_lang", None) or kwargs.pop("fp_lang", None) or "en"
+    ui_lang = (kwargs.pop("ui_lang", None) or kwargs.pop("risk_lang", None)
+               or kwargs.pop("fp_lang", None) or "en")
+    kwargs.pop("risk_lang", None)
     kwargs.pop("fp_lang", None)
     show_version = kwargs.pop("identity_show_version", False)
     show_mode = kwargs.pop("mode_show", False)
@@ -1142,7 +1162,8 @@ def render(style: str, **kwargs) -> str:
             out = out + "\n" + f"⤷ {cwd_text}"
     if ocs_text and style == "aurora":
         out = out + "\n" + render_ocs_line_aurora(
-            ocs_text, ocs_unread, ocs_lan, theme=theme, use_color=use_color)
+            ocs_text, ocs_unread, ocs_lan, theme=theme, use_color=use_color,
+            lang=ui_lang)
     elif ocs_text:
         # Always its own line — the address other agents copy, not branch info.
         out = out + "\n" + (_ocs_segment(ocs_text, theme) if use_color
@@ -1157,7 +1178,7 @@ def render(style: str, **kwargs) -> str:
         nonlocal out
         if finding is not None:
             from .risk_line import format_finding
-            out = out + "\n" + format_finding(finding, theme=theme, lang=risk_lang,
+            out = out + "\n" + format_finding(finding, theme=theme, lang=ui_lang,
                                               use_color=use_color)
             return
         if not text:

@@ -1285,15 +1285,16 @@ def main(json_output: bool = False,
     # back to cwd — parse_stdin_data flattens both into workspace_current_dir).
     # Zero extra I/O: the data is already in the statusLine stdin. Rides the
     # identity line when that line is on; else gets its own minimal `⤷` line.
-    cwd_kwargs = {}
+    from .i18n import ui_lang as _ui_lang
+    cwd_kwargs = {"ui_lang": _ui_lang(cfg.lang)}
     if cfg.show_cwd:
         _raw_cwd = str(stdin_data.get('workspace_current_dir') or '')
         if _raw_cwd:
             if cfg.cwd_style == "full":
-                cwd_kwargs = {"cwd_text": _raw_cwd}
+                cwd_kwargs = {**cwd_kwargs, "cwd_text": _raw_cwd}
             else:
                 # basename (default); rstrip so "/repos/proj/" → "proj"
-                cwd_kwargs = {"cwd_text":
+                cwd_kwargs = {**cwd_kwargs, "cwd_text":
                               os.path.basename(_raw_cwd.rstrip('/')) or _raw_cwd}
 
     # Optional ocs line (address, unread DMs, LAN state): reads a per-session
@@ -1310,10 +1311,6 @@ def main(json_output: bool = False,
         except Exception:
             pass
 
-    def _risk_lang(c):
-        from .i18n import ui_lang
-        return ui_lang(c.lang)
-
     # Dedicated egress-IP risk warning line (only shows above the risk
     # threshold; independent of the git identity segment).
     ip_line_kwargs = {}
@@ -1324,8 +1321,7 @@ def main(json_output: bool = False,
             if ip_finding:
                 ip_line_kwargs = {"ip_line_text": ip_finding.legacy,
                                   "ip_line_level": ip_level,
-                                  "ip_finding": ip_finding,
-                                  "risk_lang": _risk_lang(cfg)}
+                                  "ip_finding": ip_finding}
         except Exception:
             pass
 
@@ -1338,8 +1334,7 @@ def main(json_output: bool = False,
             if fp_finding:
                 fp_line_kwargs = {"fp_line_text": fp_finding.legacy,
                                   "fp_line_level": "warn",
-                                  "fp_finding": fp_finding,
-                                  "fp_lang": _risk_lang(cfg)}
+                                  "fp_finding": fp_finding}
         except Exception:
             pass
 

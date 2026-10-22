@@ -251,13 +251,13 @@ def test_aurora_identity_line_layout():
         info, theme=get_theme("graphite"), dirty=True, ahead=0, behind=1,
         duration_text="4m", lines_text="+244", version_text="3.47.0",
         update_text="", use_color=False)
-    assert out == "⎇ main ●↓1 │ proj │ +244 │ ⏱ 4m │ ⑂ trunk (1)"
+    assert out == "⎇ main ●↓1  ·  proj  ·  +244  ·  ⏱ 4m  ·  ⑂ trunk (1)"
     # Trunk marker only with other worktrees; version only when an update waits.
     info.worktree_count = 0
     out = render_identity_line_aurora(
         info, theme=get_theme("graphite"), dirty=False, lines_text="+5 -2",
         version_text="3.48.0", update_text="3.49.0", use_color=False)
-    assert out == "⎇ main │ proj │ +5 −2 │ v3.48.0 ↑3.49.0"
+    assert out == "⎇ main  ·  proj  ·  +5 −2  ·  v3.48.0 ↑3.49.0"
 
 
 def test_aurora_ocs_line():
@@ -267,7 +267,10 @@ def test_aurora_ocs_line():
         "claude-b2242a10", 3,
         {"running": True, "peers": [("win", True), ("mac", False)]},
         theme=get_theme("graphite"), use_color=False)
-    assert out == "ocs claude-b2242a10 │ ✉3 │ lan ● win · ● mac"
+    assert out == "ocs claude-b2242a10  ·  3 unread  ·  lan ● win  ● mac"
+    zh = render_ocs_line_aurora("claude-b2242a10", 3, None,
+                                theme=get_theme("graphite"), use_color=False, lang="zh")
+    assert zh == "ocs claude-b2242a10  ·  3 条未读"
 
 
 def test_graphite_ok_is_leo_green():
