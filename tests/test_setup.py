@@ -431,3 +431,25 @@ def test_setup_never_touches_the_real_service(isolated, monkeypatch, service_cal
     tools = [c[0] for c in service_calls]
     assert "launchctl" in tools                           # handoff attempted…
     assert tools[-1] == "cmd_start"                       # …then a faked start
+
+
+def test_install_commands_prunes_retired_command_we_wrote(isolated, monkeypatch, tmp_path):
+    _, _, commands = isolated
+    monkeypatch.setattr(setup_mod, "INSTALLED_DOCS_MANIFEST", tmp_path / "m.json")
+    commands.mkdir(parents=True)
+    ours = commands / "statusbar-theme.md"
+    ours.write_text("old shipped text", encoding="utf-8")
+    setup_mod._record_installed(ours, "old shipped text")
+    setup_mod.install_commands()
+    assert not ours.exists()
+
+
+def test_install_commands_keeps_edited_retired_command(isolated, monkeypatch, tmp_path):
+    _, _, commands = isolated
+    monkeypatch.setattr(setup_mod, "INSTALLED_DOCS_MANIFEST", tmp_path / "m.json")
+    commands.mkdir(parents=True)
+    edited = commands / "statusbar-theme.md"
+    setup_mod._record_installed(edited, "old shipped text")
+    edited.write_text("my own edit", encoding="utf-8")
+    setup_mod.install_commands()
+    assert edited.read_text(encoding="utf-8") == "my own edit"

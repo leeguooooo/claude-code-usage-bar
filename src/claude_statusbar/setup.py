@@ -559,6 +559,22 @@ def _install_doc(src: Path, dst: Path, force: bool) -> str:
     return "installed"
 
 
+# Commands we used to ship. Removed on install only when the file on disk is
+# still exactly what we wrote (manifest checksum) — a user's edit stays.
+RETIRED_COMMANDS = ("statusbar-theme.md",)  # 3.50.0: one theme left
+
+
+def _prune_retired_commands() -> None:
+    manifest = _read_manifest()
+    for name in RETIRED_COMMANDS:
+        dst = COMMANDS_DIR / name
+        try:
+            if manifest.get(str(dst)) == _sha(dst.read_text(encoding="utf-8")):
+                dst.unlink()
+        except OSError:
+            pass
+
+
 def install_commands(force: bool = False) -> Tuple[int, list, list]:
     """Copy bundled slash commands into ~/.claude/commands/.
 
@@ -576,6 +592,7 @@ def install_commands(force: bool = False) -> Tuple[int, list, list]:
         return 0, [], []
 
     COMMANDS_DIR.mkdir(parents=True, exist_ok=True)
+    _prune_retired_commands()
     installed = 0
     skipped: list = []
     failed: list = []
