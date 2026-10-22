@@ -9,6 +9,16 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.49.5 — 2026-10-22
+
+**Use a clearer name for the main checkout.**
+
+- Replace the `trunk` worktree marker with `主工作区` in Chinese and
+  `main checkout` in English, following the UI language setting. Branch
+  names and linked worktree names are unchanged.
+
+---
+
 ## v3.49.4 — 2026-10-22
 
 **Hide the extra effort/thinking/fast/style line by default.**

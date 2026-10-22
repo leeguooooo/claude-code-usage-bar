@@ -589,6 +589,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
                          version_text: str = "", update_text: str = "",
                          cwd_text: str = "",
                          worktree_glyph: str = "⑂",
+                         lang: str = "en",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
 
@@ -608,6 +609,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
     appended after the branch only when it adds information — skipped when it
     equals the project name (cwd at the repo root would just repeat the anchor).
     """
+    main_label = "主工作区" if lang == "zh" else "main checkout"
     ab = _ahead_behind_glyphs(ahead, behind) if info.in_git else ""
     stats = _stats_segment(duration_text, lines_text, theme=theme,
                            use_color=use_color)
@@ -617,7 +619,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
         if info.is_worktree:
             head = f"{worktree_glyph} {_worktree_label(info)} {head}"
         elif info.in_git:
-            head = f"{worktree_glyph} trunk ({info.worktree_count}) {head}"
+            head = f"{worktree_glyph} {main_label} ({info.worktree_count}) {head}"
         if not info.in_git:
             tail = " (no git)"
         else:
@@ -653,7 +655,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
         # asked four times before this line existed. Same tree glyph as a
         # worktree — the *name* is what differs — but dimmed, because being in
         # the trunk is the ordinary case and only a worktree is a warning.
-        head = (f"{FAINT}{_fg(theme.wt)}{worktree_glyph} trunk "
+        head = (f"{FAINT}{_fg(theme.wt)}{worktree_glyph} {main_label} "
                 f"({info.worktree_count}){RESET} " + head)
     if not info.in_git:
         body = f" {MUTE}{ITAL}(no git){RESET}"
@@ -705,6 +707,7 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
                                 version_text: str = "", update_text: str = "",
                                 cwd_text: str = "",
                                 worktree_glyph: str = "⑂",
+                                lang: str = "en",
                                 use_color: bool = True) -> str:
     """Aurora's 2nd line: `⎇ main ●↓1  ·  project  ·  +244 −3  ·  ⏱ 4m`, muted.
 
@@ -713,6 +716,7 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
     marker appears only when other worktrees exist, the version only when an
     update is waiting.
     """
+    main_label = "主工作区" if lang == "zh" else "main checkout"
     q = _aurora_quiet(theme)
     BASE, DIM, EDGE, soft = q["BASE"], q["DIM"], q["EDGE"], q["soft"]
     from ._display import hyperlink
@@ -755,7 +759,7 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
     if duration_text:
         segs.append(c(DIM, f"⏱ {duration_text}"))
     if info.in_git and not info.is_worktree and info.worktree_count:
-        segs.append(c(DIM, f"{worktree_glyph} trunk ({info.worktree_count})"))
+        segs.append(c(DIM, f"{worktree_glyph} {main_label} ({info.worktree_count})"))
     if version_text and update_text:
         notes = ("https://github.com/leeguooooo/claude-code-usage-bar/releases/tag/"
                  f"v{update_text}")
@@ -1150,6 +1154,7 @@ def render(style: str, **kwargs) -> str:
             version_text=version_text, update_text=update_text,
             cwd_text=cwd_text,
             worktree_glyph=worktree_glyph,
+            lang=ui_lang,
             use_color=use_color,
         )
     elif cwd_text:
