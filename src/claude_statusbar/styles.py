@@ -682,6 +682,18 @@ def render_identity_line(info, *, theme: Theme, dirty,
     return head + body + stats + ver
 
 
+def _aurora_quiet(theme: Theme):
+    """Palette for aurora's lines below the first: line 1 carries the color,
+    these recede — grey text, with severity hues sunk halfway into mute."""
+    from .progress import _blend
+    return dict(
+        BASE=_fg(_blend(theme.pill_ink, theme.mute, 0.5)),
+        DIM=_fg(theme.mute),
+        EDGE=_fg(theme.edge),
+        soft=lambda rgb: _fg(_blend(rgb, theme.mute, 0.45)),
+    )
+
+
 def render_identity_line_aurora(info, *, theme: Theme, dirty,
                                 ahead=None, behind=None,
                                 duration_text: str = "", lines_text: str = "",
@@ -689,55 +701,77 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
                                 cwd_text: str = "",
                                 worktree_glyph: str = "⑂",
                                 use_color: bool = True) -> str:
-    """Aurora's 2nd line: `⎇ main● ↓1 │ project │ +244 │ ⏱ 4m │ ⑂ trunk (1) │ v…`.
+    """Aurora's 2nd line: `⎇ main ●↓1 │ project │ +244 −3 │ ⏱ 4m`, muted.
 
     Same facts as `render_identity_line`, regrouped behind `│` separators with
-    the branch leading. A linked worktree still leads the whole line in its own
-    hue; the ordinary trunk marker moves to the quiet tail.
+    the branch leading. A linked worktree still leads the whole line; the trunk
+    marker appears only when other worktrees exist, the version only when an
+    update is waiting.
     """
-    MUTE = _fg(theme.mute)
-    EDGE = _fg(theme.edge)
-    INK = _fg(theme.pill_ink)
-    WT = _fg(theme.wt)
-    WARN = _fg(theme.s_warn)
+    q = _aurora_quiet(theme)
+    BASE, DIM, EDGE, soft = q["BASE"], q["DIM"], q["EDGE"], q["soft"]
 
     def c(color, text):
         return f"{color}{text}{RESET}" if use_color else text
 
     segs = []
     if info.is_worktree:
-        segs.append(c(WT, f"{worktree_glyph} {_worktree_label(info)}"))
+        segs.append(c(soft(theme.wt), f"{worktree_glyph} {_worktree_label(info)}"))
     if info.in_git:
         branch = info.branch or "?"
-        branch_col = f"{MUTE}{ITAL}" if info.detached else WT
-        head = c(EDGE, "⎇ ") + c(branch_col, branch)
-        if dirty:
-            head += c(WARN, "●")
-        ab = _ahead_behind_glyphs(ahead, behind)
-        if ab:
-            head += " " + c(WARN, ab)
+        head = c(DIM, "⎇ ") + c(f"{DIM}{ITAL}" if info.detached else BASE, branch)
+        flags = ("●" if dirty else "") + _ahead_behind_glyphs(ahead, behind)
+        if flags:
+            head += " " + c(soft(theme.s_warn), flags)
         segs.append(head)
-    segs.append(c(INK, info.project_name))
+    segs.append(c(BASE, info.project_name))
     if not info.in_git:
-        segs.append(c(f"{MUTE}{ITAL}", "no git"))
+        segs.append(c(f"{DIM}{ITAL}", "no git"))
     if cwd_text and cwd_text != info.project_name:
-        segs.append(c(INK, cwd_text))
+        segs.append(c(BASE, cwd_text))
     if lines_text:
         toks = []
         for tok in lines_text.split():
-            col = (theme.s_ok if tok.startswith("+")
-                   else theme.s_hot if tok.startswith("-") else theme.mute)
-            toks.append(c(_fg(col), tok))
+            if tok.startswith("+"):
+                toks.append(c(soft(theme.s_ok), tok))
+            elif tok.startswith("-"):
+                toks.append(c(soft(theme.s_hot), "−" + tok[1:]))
+            else:
+                toks.append(c(DIM, tok))
         segs.append(" ".join(toks))
     if duration_text:
-        segs.append(c(MUTE, f"⏱ {duration_text}"))
-    if info.in_git and not info.is_worktree:
-        segs.append(c(f"{FAINT}{WT}", f"{worktree_glyph} trunk ({info.worktree_count})"))
-    if version_text:
-        ver = c(f"{FAINT}{EDGE}", f"v{version_text}")
-        if update_text:
-            ver += c(WARN, f" ↑{update_text}")
-        segs.append(ver)
+        segs.append(c(DIM, f"⏱ {duration_text}"))
+    if info.in_git and not info.is_worktree and info.worktree_count:
+        segs.append(c(DIM, f"{worktree_glyph} trunk ({info.worktree_count})"))
+    if version_text and update_text:
+        segs.append(c(DIM, f"v{version_text}") + c(soft(theme.s_warn), f" ↑{update_text}"))
+    return c(EDGE, " │ ").join(segs)
+
+
+def render_ocs_line_aurora(ocs_text: str, unread, lan, *, theme: Theme,
+                           use_color: bool = True) -> str:
+    """`ocs claude-b2242a10 │ ✉3 │ lan ● win · ● mac`, muted like line 2."""
+    q = _aurora_quiet(theme)
+    BASE, DIM, EDGE, soft = q["BASE"], q["DIM"], q["EDGE"], q["soft"]
+
+    def c(color, text):
+        return f"{color}{text}{RESET}" if use_color else text
+
+    name, sep, ident = ocs_text.partition(" · ")
+    segs = [c(DIM, "ocs ") + c(BASE, name) + (c(DIM, f" {ident}") if sep else "")]
+    if unread:
+        segs.append(c(soft(theme.s_warn), f"✉{unread}"))
+    if lan:
+        if not lan.get("running"):
+            segs.append(c(DIM, "lan ") + c(soft(theme.s_warn), "off"))
+        else:
+            peers = [c(soft(theme.s_ok) if recent else EDGE, "●") + " "
+                     + c(BASE if recent else DIM, label)
+                     for label, recent in (lan.get("peers") or [])]
+            body = c(DIM, " · ").join(peers) if peers else c(DIM, "on")
+            if lan.get("more"):
+                body += c(DIM, f" +{lan['more']}")
+            segs.append(c(DIM, "lan ") + body)
     return c(EDGE, " │ ").join(segs)
 
 
@@ -1106,7 +1140,10 @@ def render(style: str, **kwargs) -> str:
                    f"{_fg(theme.pill_ink)}{cwd_text}{RESET}")
         else:
             out = out + "\n" + f"⤷ {cwd_text}"
-    if ocs_text:
+    if ocs_text and style == "aurora":
+        out = out + "\n" + render_ocs_line_aurora(
+            ocs_text, ocs_unread, ocs_lan, theme=theme, use_color=use_color)
+    elif ocs_text:
         # Always its own line — the address other agents copy, not branch info.
         out = out + "\n" + (_ocs_segment(ocs_text, theme) if use_color
                             else f"ocs {ocs_text}")

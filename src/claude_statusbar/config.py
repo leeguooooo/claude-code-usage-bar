@@ -138,6 +138,8 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         return StatusbarConfig()
     if not isinstance(raw, dict):
         return StatusbarConfig()
+    if path == CONFIG_PATH:
+        raw = _migrate_ui(raw, path)
     return StatusbarConfig(
         style=str(raw.get("style", DEFAULT_STYLE)),
         theme=str(raw.get("theme", DEFAULT_THEME)),
@@ -183,6 +185,31 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
     )
 
 
+# Bumped when an upgrade deliberately resets everyone's look. The file records
+# the version it has seen, so the reset runs once and a later explicit choice
+# (`cs config set style classic`) sticks.
+UI_VERSION = 1
+
+
+def _migrate_ui(raw: dict, path: Path) -> dict:
+    """3.49.0: everyone moves to aurora once, whatever style they had picked."""
+    try:
+        seen = int(raw.get("ui_version", 0))
+    except (TypeError, ValueError):
+        seen = 0
+    if seen >= UI_VERSION:
+        return raw
+    raw = {k: v for k, v in raw.items() if k != "style" or v == DEFAULT_STYLE}
+    raw["ui_version"] = UI_VERSION
+    try:
+        from .cache import atomic_write_text
+        atomic_write_text(path, json.dumps(raw, indent=2, ensure_ascii=False) + "\n")
+        invalidate_rendered()
+    except OSError:
+        pass
+    return raw
+
+
 def sparse_dict(cfg: StatusbarConfig) -> dict:
     """The config as *only* the keys that differ from the defaults.
 
@@ -222,8 +249,10 @@ def save_config(cfg: StatusbarConfig, path: Optional[Path] = None) -> None:
     live = path is None or path == CONFIG_PATH
     path = CONFIG_PATH if path is None else path
     from .cache import atomic_write_text
+    data = sparse_dict(cfg)
+    data["ui_version"] = UI_VERSION
     atomic_write_text(
-        path, json.dumps(sparse_dict(cfg), indent=2, ensure_ascii=False) + "\n")
+        path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
     if live:
         invalidate_rendered()
 

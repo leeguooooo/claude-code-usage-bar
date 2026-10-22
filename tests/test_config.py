@@ -217,7 +217,7 @@ def test_save_stores_only_what_differs_from_defaults(tmp_path: Path):
     cfg = cfg_mod.StatusbarConfig(style="capsule")
     cfg_mod.save_config(cfg, tmp_path / "c.json")
     raw = json.loads((tmp_path / "c.json").read_text())
-    assert raw == {"style": "capsule"}
+    assert raw == {"style": "capsule", "ui_version": cfg_mod.UI_VERSION}
 
 
 def test_a_flipped_default_reaches_users_who_never_set_it(tmp_path: Path):
@@ -238,7 +238,8 @@ def test_a_flipped_default_reaches_users_who_never_set_it(tmp_path: Path):
 def test_deliberate_non_default_choice_survives(tmp_path: Path):
     p = tmp_path / "c.json"
     cfg_mod.set_value("show_project_branch", "false", p)
-    assert json.loads(p.read_text()) == {"show_project_branch": False}
+    assert json.loads(p.read_text()) == {"show_project_branch": False,
+                                         "ui_version": cfg_mod.UI_VERSION}
     assert cfg_mod.load_config(p).show_project_branch is False
 
 
@@ -252,7 +253,7 @@ def test_unset_returns_a_key_to_the_default(tmp_path: Path):
     assert cfg.show_project_branch is cfg_mod.StatusbarConfig().show_project_branch
     raw = json.loads(p.read_text())
     assert "show_project_branch" not in raw   # gone, not stored as the default
-    assert raw == {"theme": "nord"}           # other choices untouched
+    assert raw == {"theme": "nord", "ui_version": cfg_mod.UI_VERSION}  # other choices untouched
 
 
 def test_unset_rejects_unknown_keys(tmp_path: Path):
@@ -282,7 +283,8 @@ def test_auto_upgrade_defaults_on_and_is_togglable(tmp_path: Path):
     p = tmp_path / "c.json"
     cfg = cfg_mod.set_value("auto_upgrade", "false", p)
     assert cfg.auto_upgrade is False
-    assert json.loads(p.read_text()) == {"auto_upgrade": False}
+    assert json.loads(p.read_text()) == {"auto_upgrade": False,
+                                         "ui_version": cfg_mod.UI_VERSION}
 
 
 def test_worktree_glyph_rejects_something_too_wide(tmp_path: Path):
@@ -322,3 +324,22 @@ def test_lang_validation(tmp_path):
     assert cfg_mod.set_value("lang", "zh", p).lang == "zh"
     with pytest.raises(ValueError):
         cfg_mod.set_value("lang", "fr", p)
+
+
+def test_ui_migration_moves_explicit_style_to_aurora_once(tmp_path, monkeypatch):
+    p = tmp_path / "live.json"
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
+    p.write_text(json.dumps({"style": "classic", "theme": "nord"}))
+    cfg = cfg_mod.load_config()
+    assert cfg.style == "aurora" and cfg.theme == "nord"
+    assert json.loads(p.read_text()) == {"theme": "nord", "ui_version": cfg_mod.UI_VERSION}
+    # A choice made after the migration sticks.
+    cfg_mod.set_value("style", "classic")
+    assert cfg_mod.load_config().style == "classic"
+
+
+def test_ui_migration_skips_non_live_paths(tmp_path):
+    p = tmp_path / "other.json"
+    p.write_text(json.dumps({"style": "classic"}))
+    assert cfg_mod.load_config(p).style == "classic"
+    assert json.loads(p.read_text()) == {"style": "classic"}

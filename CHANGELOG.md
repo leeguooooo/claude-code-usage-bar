@@ -9,6 +9,24 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.49.0 — 2026-10-22
+
+**One look for everyone: aurora, a brighter green, and quieter lower lines.**
+
+- Upgrading moves every config to `aurora` once, including an explicit
+  `classic` / `capsule` / `hairline`. The file records `ui_version`, so a
+  choice made afterwards (`cs config set style classic`) sticks.
+- The default `graphite` theme's green is now `#4ec85b`. Other themes and
+  your own `color_ok` are unchanged.
+- In aurora, line 1 keeps the color and the lines below recede: grey text,
+  with the diff counts, dirty / ahead-behind flags and LAN dots in muted hues.
+  `⑂ trunk (N)` shows only when other worktrees exist, and the version only
+  when an update is waiting.
+- The ocs line in aurora reads `ocs claude-b2242a10 │ ✉3 │ lan ● win · ● mac`,
+  with a dot per LAN peer (green = seen recently).
+
+---
+
 ## v3.48.0 — 2026-10-22
 
 **IP and endpoint notices take one line, in your system language.**

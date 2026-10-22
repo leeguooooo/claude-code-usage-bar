@@ -47,7 +47,7 @@ BUILTIN_THEMES = [
         name="graphite",
         description="深冷石墨 — 安静、专业、对深色终端友好",
         ink=(218, 221, 225), mute=(120, 125, 132), edge=(75, 80, 88),
-        s_ok=(120, 200, 192), s_warn=(232, 178, 96), s_hot=(232, 116, 116),
+        s_ok=(78, 200, 91), s_warn=(232, 178, 96), s_hot=(232, 116, 116),
         pill_5h=(38, 70, 83), pill_7d=(42, 56, 79),
         pill_model=(60, 47, 65), pill_lang=(52, 65, 47), pill_cost=(48, 56, 50),
         pill_ink=(238, 235, 224),
