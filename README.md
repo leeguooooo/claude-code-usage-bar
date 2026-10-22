@@ -26,7 +26,7 @@ how much you have left, and when it resets.
 | Line | Segments |
 |---|---|
 | **Usage** | 5h / 7d rate-limit bars, reset countdowns, end-of-window projections (`→NN%`), model & context window, prompt-cache countdown, optional session cost or relay balance |
-| **Project** | git worktree marker (`⑂ name (3)` / `⑂ main checkout (3)`), project name, branch, session `+/−` lines, duration, version |
+| **Project** | git worktree marker (`⑂ name (3)` / `⑂ worktree (3)`), project name, branch, session `+/−` lines, duration, version |
 
 - **Official numbers** — the same 5h / 7d limits Claude Code enforces, not a local guess.
 - **Prompt-cache countdown** — `❄ 4m23s` tells you when the next turn pays full price.

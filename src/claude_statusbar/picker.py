@@ -29,6 +29,8 @@ TEXT = {
     "unchanged":     {"zh": "没变，还是当前这个。", "en": "No change — that's already the current look."},
     "applied":       {"zh": "已切换到 {label}，状态栏下一次刷新就生效。",
                       "en": "Switched to {label}. The status bar picks it up on its next refresh."},
+    "hint":          {"zh": "✦ 外观有更新 · 在终端运行 cs theme 挑一个",
+                      "en": "✦ New looks available · run cs theme in a terminal to pick one"},
 }
 _lang = "en"
 
@@ -151,15 +153,31 @@ def _numbered(cur: str, previews: list, color: bool) -> Optional[str]:
     return None
 
 
-def run(no_color: bool = False) -> int:
+def hint_text(lang: str) -> str:
+    """The bar's one-line nudge while `looks_seen` < LOOKS_VERSION."""
+    return TEXT["hint"][lang if lang in ("zh", "en") else "en"]
+
+
+def _mark_seen(cfg_mod) -> None:
+    try:
+        cfg_mod.set_value("looks_seen", str(cfg_mod.LOOKS_VERSION))
+    except (OSError, ValueError):
+        pass
+
+
+def run(no_color: bool = False, only_if_new: bool = False) -> int:
     global _lang
     from . import config as cfg_mod
     from ._display import terminal_width
     from .i18n import ui_lang
     cfg = cfg_mod.load_config()
+    if only_if_new and cfg.looks_seen >= cfg_mod.LOOKS_VERSION:
+        return 0
     _lang = ui_lang(cfg.lang)
     cur = current_look(cfg)
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    if only_if_new and not interactive:
+        return 0
     color = not no_color and "NO_COLOR" not in os.environ and sys.stdout.isatty()
     width = terminal_width(os.environ)
     previews = _preview_lines(color, width - 5 if width else None)
@@ -177,6 +195,7 @@ def run(no_color: bool = False) -> int:
         pick = _interactive(cur, previews, color)
     except ImportError:
         pick = _numbered(cur, previews, color)
+    _mark_seen(cfg_mod)  # seen the choices — cancelling counts too
 
     if pick is None:
         print(t("cancelled"))

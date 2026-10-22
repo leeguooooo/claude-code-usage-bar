@@ -121,7 +121,8 @@ def test_no_worktree_marker_for_normal_checkout():
                      is_worktree=False),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert "worktree" not in s.lower()
+    # Only the dimmed "worktree (N)" count, never a linked-worktree name.
+    assert s.startswith("⑂ worktree (")
 
 
 def test_color_mode_emits_ansi():
@@ -280,9 +281,9 @@ def test_main_checkout_shows_the_worktree_count():
                      is_worktree=False, worktree_count=3),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert s.startswith("⑂ main checkout (3) ⤷ proj")
-    # Same tree glyph as a worktree; "main checkout" is what says which tree you're in.
-    assert "main checkout" in s
+    assert s.startswith("⑂ worktree (3) ⤷ proj")
+    # Same glyph and word as a linked worktree; the count says how many exist.
+    assert "worktree" in s
 
 
 def test_main_checkout_reports_zero_explicitly():
@@ -294,7 +295,7 @@ def test_main_checkout_reports_zero_explicitly():
                      is_worktree=False, worktree_count=0),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert s.startswith("⑂ main checkout (0) ⤷ proj")
+    assert s.startswith("⑂ worktree (0) ⤷ proj")
 
 
 def test_no_marker_outside_a_git_repo():
@@ -316,7 +317,7 @@ def test_main_checkout_marker_is_dimmed_not_shouting():
         theme=THEME, dirty=False, use_color=True,
     )
     r, g, b = THEME.wt
-    assert s.startswith(f"\033[2m\033[38;2;{r};{g};{b}m⑂ main checkout (2)")
+    assert s.startswith(f"\033[2m\033[38;2;{r};{g};{b}m⑂ worktree (2)")
 
 
 def test_worktree_glyph_is_configurable():
@@ -338,16 +339,16 @@ def test_worktree_glyph_applies_to_the_main_checkout_form_too():
                      is_worktree=False, worktree_count=0),
         theme=THEME, dirty=False, use_color=False, worktree_glyph="├",
     )
-    assert s.startswith("├ main checkout (0) ⤷ proj")
+    assert s.startswith("├ worktree (0) ⤷ proj")
 
 
-def test_main_checkout_label_follows_ui_language_across_styles():
+def test_main_checkout_label_is_worktree_in_every_language():
     from claude_statusbar.styles import render
     info = IdentityInfo(project_name="proj", in_git=True, branch="feature-x",
                         detached=False, worktree_name=None, toplevel="/x",
                         worktree_count=3)
     for style in ("classic", "aurora"):
-        for lang, label in (("zh", "主工作区"), ("en", "main checkout")):
+        for lang, label in (("zh", "worktree"), ("en", "worktree")):
             for color in (False, True):
                 out = render(style, theme=THEME, use_color=color,
                              show_project_branch=True, identity=info,

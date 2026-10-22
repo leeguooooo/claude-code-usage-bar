@@ -9,6 +9,23 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.51.0 — 2026-10-22
+
+**New looks get offered, not just shipped.**
+
+- After an interactive `cs upgrade`, the new build opens the `cs theme`
+  picker if it ships looks you haven't chosen from yet. Background
+  auto-upgrades can't prompt, so the bar shows a faint
+  `✦ New looks available · run cs theme to pick one` line until you open the
+  picker once (picking or cancelling both count).
+- Driven by `LOOKS_VERSION` in `config.py` vs. the new `looks_seen` key —
+  bump the constant whenever a release changes the looks, and everyone gets
+  asked again.
+- The main checkout is labelled `⑂ worktree (N)` in both languages (was
+  `主工作区` / `main checkout`).
+
+---
+
 ## v3.50.2 — 2026-10-22
 
 - `cs theme` follows the `lang` setting (auto / zh / en) instead of always

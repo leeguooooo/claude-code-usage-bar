@@ -26,7 +26,7 @@ Type "export PS1='$ ' REPO=$PWD HOME=$(mktemp -d) CLAUDE_STATUSBAR_NO_UPDATE=1 &
 Enter
 Type `cs() { PYTHONPATH=$REPO/src python3 -c 'import sys;from claude_statusbar.cli import main;sys.exit(main())' "$@"; }`
 Enter
-Type "cs config set show_project_branch false >/dev/null; cs config set show_ocs false >/dev/null"
+Type "cs config set show_project_branch false >/dev/null; cs config set show_ocs false >/dev/null; cs config set looks_seen 99 >/dev/null"
 Enter
 Type `J='{"session_id":"demo","model":{"display_name":"Opus 5.5"},"context_window":{"used_percentage":42},"rate_limits":{"five_hour":{"used_percentage":31,"resets_at":'$(($(date +%s)+5940))',"status":"allow"},"seven_day":{"used_percentage":64,"resets_at":'$(($(date +%s)+230400))',"status":"allow"}}}'`
 Enter

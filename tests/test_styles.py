@@ -247,7 +247,7 @@ def test_aurora_identity_line_layout():
         info, theme=get_theme("graphite"), dirty=True, ahead=0, behind=1,
         duration_text="4m", lines_text="+244", version_text="3.47.0",
         update_text="", use_color=False)
-    assert out == "⎇ main ●↓1  ·  proj  ·  +244  ·  ⏱ 4m  ·  ⑂ main checkout (1)"
+    assert out == "⎇ main ●↓1  ·  proj  ·  +244  ·  ⏱ 4m  ·  ⑂ worktree (1)"
     # Trunk marker only with other worktrees; version only when an update waits.
     info.worktree_count = 0
     out = render_identity_line_aurora(
@@ -284,7 +284,7 @@ def test_aurora_identity_worktree_leads():
     out = render_identity_line_aurora(info, theme=get_theme("graphite"),
                                       dirty=False, use_color=False)
     assert out.startswith("⑂ ")
-    assert "main checkout" not in out
+    assert "(2)" in out
 
 
 def test_aurora_projection_wins_over_forecast():

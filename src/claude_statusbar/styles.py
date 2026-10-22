@@ -403,7 +403,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
     appended after the branch only when it adds information — skipped when it
     equals the project name (cwd at the repo root would just repeat the anchor).
     """
-    main_label = "主工作区" if lang == "zh" else "main checkout"
+    main_label = "worktree"  # same word in zh and en (leo, 2026-10-22)
     ab = _ahead_behind_glyphs(ahead, behind) if info.in_git else ""
     stats = _stats_segment(duration_text, lines_text, theme=theme,
                            use_color=use_color)
@@ -510,7 +510,7 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
     marker appears only when other worktrees exist, the version only when an
     update is waiting.
     """
-    main_label = "主工作区" if lang == "zh" else "main checkout"
+    main_label = "worktree"  # same word in zh and en (leo, 2026-10-22)
     q = _aurora_quiet(theme)
     BASE, DIM, EDGE, soft = q["BASE"], q["DIM"], q["EDGE"], q["soft"]
     from ._display import hyperlink
@@ -866,6 +866,7 @@ def render(style: str, **kwargs) -> str:
     ocs_unread = kwargs.pop("ocs_unread", None)
     ocs_lan = kwargs.pop("ocs_lan", None)
     worktree_glyph = kwargs.pop("worktree_glyph", "⑂")
+    looks_hint = kwargs.pop("looks_hint", False)
     ip_line_text = kwargs.pop("ip_line_text", "")
     ip_line_level = kwargs.pop("ip_line_level", "ok")
     fp_line_text = kwargs.pop("fp_line_text", "")
@@ -984,6 +985,11 @@ def render(style: str, **kwargs) -> str:
         color = theme.s_hot if level == "crit" else theme.s_warn
         for seg in text.split("\n"):
             out = out + "\n" + (f"{_fg(color)}{seg}{RESET}" if use_color else seg)
+
+    if looks_hint:
+        from .picker import hint_text
+        text = hint_text(ui_lang)
+        out = out + "\n" + (f"{_fg(theme.mute)}{text}{RESET}" if use_color else text)
 
     _emit_risk(ip_line_text, ip_line_level, ip_finding)
     # Custom-endpoint notice (local env inference; see fp_risk.py).

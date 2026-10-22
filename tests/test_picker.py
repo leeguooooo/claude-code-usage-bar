@@ -67,3 +67,59 @@ def test_english_ui(live_cfg, capsys):
     out = capsys.readouterr().out
     assert "Aurora, block bars (default)" in out and "← current" in out
     assert "方块" not in out
+
+
+def test_if_new_is_silent_once_seen(live_cfg, capsys):
+    cfg_mod.set_value("looks_seen", str(cfg_mod.LOOKS_VERSION))
+    assert picker.run(no_color=True, only_if_new=True) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_if_new_never_prints_without_a_terminal(live_cfg, capsys):
+    # Unseen looks, but piped: the upgrade hook must not dump a list.
+    assert picker.run(no_color=True, only_if_new=True) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_interactive_session_marks_looks_seen(live_cfg, monkeypatch):
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(picker, "_interactive", lambda *a: None)  # user cancels
+    picker.run(no_color=True)
+    assert cfg_mod.load_config().looks_seen == cfg_mod.LOOKS_VERSION
+
+
+@pytest.mark.parametrize("lang,text", [("zh", "cs theme"), ("en", "New looks")])
+def test_bar_shows_hint_only_while_looks_unseen(lang, text):
+    from claude_statusbar.styles import render
+    kw = dict(msgs_pct=10, weekly_pct=20, reset_5h="1h", reset_7d="2d",
+              model="Opus", use_color=False, ui_lang=lang)
+    assert text in render("aurora", looks_hint=True, **kw)
+    assert "✦" not in render("aurora", looks_hint=False, **kw)
+
+
+def test_core_passes_hint_from_config(live_cfg, monkeypatch):
+    import claude_statusbar.styles as styles
+    from claude_statusbar.core import main
+    seen = []
+    original = styles.render
+    monkeypatch.setattr(styles, "render",
+                        lambda style, **kw: seen.append(kw.get("looks_hint")) or original(style, **kw))
+    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO("{}"))
+    main(use_color=False, _suppress_side_effects=True)
+    cfg_mod.set_value("looks_seen", str(cfg_mod.LOOKS_VERSION))
+    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO("{}"))
+    main(use_color=False, _suppress_side_effects=True)
+    assert seen[0] is True and seen[-1] is False
+
+
+def test_upgrade_offers_picker_in_new_build(monkeypatch):
+    from claude_statusbar import cli
+    calls = []
+    monkeypatch.setattr("claude_statusbar.updater.upgrade_current_install", lambda: (True, "ok"))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("shutil.which", lambda name: "/bin/cs-new")
+    monkeypatch.setattr("subprocess.run", lambda args, **kw: calls.append(args))
+    assert cli._run_upgrade_subcommand() == 0
+    assert calls == [["/bin/cs-new", "theme", "--if-new"]]

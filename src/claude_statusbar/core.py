@@ -1252,13 +1252,14 @@ def main(json_output: bool = False,
                                stdin_data.get("lines_removed", 0))
                   if cfg.show_lines else "")
 
-    # Optional project + branch identity segment (second line).
-    identity_kwargs = {}
+    # Optional project + branch identity segment (second line). Also carries
+    # the "new looks · cs theme" nudge, since every render path spreads it.
+    identity_kwargs = {"looks_hint": cfg.looks_seen < _cfg.LOOKS_VERSION}
     if cfg.show_project_branch:
         from .identity import resolve_identity, dirty_with_async_refresh
         info = resolve_identity(stdin_data)
         dirty = dirty_with_async_refresh(info.toplevel) if info.toplevel else None
-        identity_kwargs = dict(
+        identity_kwargs.update(
             show_project_branch=True,
             identity=info,
             identity_dirty=dirty,

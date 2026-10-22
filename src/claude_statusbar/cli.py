@@ -200,7 +200,24 @@ def _run_upgrade_subcommand():
     from .updater import upgrade_current_install
     ok, message = upgrade_current_install()
     print(message)
+    if ok and sys.stdin.isatty() and sys.stdout.isatty():
+        _offer_new_looks()
     return 0 if ok else 1
+
+
+def _offer_new_looks():
+    """After an interactive upgrade, open the look picker in the *new* build if
+    it ships looks this user hasn't chosen from yet (`cs theme --if-new`).
+    This process is still the old code, so it can't know — the new one can."""
+    import shutil
+    import subprocess
+    exe = shutil.which("claude-statusbar") or shutil.which("cs")
+    if not exe:
+        return
+    try:
+        subprocess.run([exe, "theme", "--if-new"], check=False)
+    except (OSError, KeyboardInterrupt):
+        pass
 
 
 HUD_LABEL = "com.leeguoo.claude-statusbar-hud"
@@ -346,7 +363,8 @@ def main():
         if sub in ("theme", "themes", "look", "looks"):
             # Interactive picker over the three looks, with live previews.
             from .picker import run as run_picker
-            return run_picker(no_color="--no-color" in rest)
+            return run_picker(no_color="--no-color" in rest,
+                              only_if_new="--if-new" in rest)
         if sub == "styles":
             return _run_styles_subcommand()
         if sub == "preview":

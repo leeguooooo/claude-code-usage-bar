@@ -32,6 +32,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `theme` | `graphite` | Palette — the only one since 3.50.0; tune colors with `color_*` |
 | `density` | `compact` / `regular` / `cozy` | Segment padding (aurora) |
 | `bar_glyph` | `block` (default) / `thin` | Aurora bar cells: `■` blocks or the thin `━` line |
+| `looks_seen` | int, `0` | Written by `cs theme`. While it's below the current looks version the bar shows a one-line `✦ New looks available` hint, and an interactive `cs upgrade` opens the picker |
 | `show_cost` | bool, `false` | Append `$ X.XX` session cost (API-equivalent value for subscribers) |
 | `show_balance` / `balance_bar` | bool, `true` | No-quota relay balance as a fuel-gauge bar — auto-hidden if the relay doesn't support it |
 | `show_cache_age` | bool, `true` | `cache 4m23s` prompt-cache countdown (TTL auto-detected 5m/1h) |
@@ -49,7 +50,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_weekly` / `show_language` | bool | Toggle the 7d bar / language-coach segment |
 | `bar_shimmer` | bool, `false` | Experimental twinkling starfield on bars (classic only) |
 | `color_ok` / `color_warn` / `color_hot` / `color_worktree` | hex, `null` | Override the theme's severity colors / worktree-marker hue; empty string restores the theme default |
-| `worktree_glyph` | string, `⑂` | Glyph leading the worktree/main checkout segment. Any 1-2 cell symbol (`⋔`, `├`, `⧉`, `🌲`). Emoji carry their own font color, so an emoji glyph ignores the theme hue and tints only the text beside it |
+| `worktree_glyph` | string, `⑂` | Glyph leading the worktree segment. Any 1-2 cell symbol (`⋔`, `├`, `⧉`, `🌲`). Emoji carry their own font color, so an emoji glyph ignores the theme hue and tints only the text beside it |
 | `auto_upgrade` | bool, `true` | Once-a-day detached self-upgrade, every install channel including the standalone binary; `CLAUDE_STATUSBAR_NO_UPDATE=1` overrides |
 | `lang` | `auto` / `zh` / `en` | Language of the IP / endpoint notice lines. `auto` follows the OS (macOS: first system language, not `$LANG`) |
 | `api_mode` | `auto` / `on` / `off` | No-quota mode (see [No-quota mode](no-quota-mode.md)); `CS_API_MODE` env overrides |

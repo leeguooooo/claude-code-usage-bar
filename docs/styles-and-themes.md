@@ -25,6 +25,10 @@ cs preview                       # all three, with your real numbers
 cs --style classic               # try once without saving
 ```
 
+When a release adds or changes looks, an interactive `cs upgrade` opens the
+picker for you, and the bar shows a faint `✦ New looks available · run cs theme`
+line until you've opened it once (background auto-upgrades can't prompt).
+
 To tune a color rather than the whole look, override the severity colors:
 `cs config set color_ok "#4ec85b"` (also `color_warn`, `color_hot`,
 `color_worktree`; an empty string restores the default).

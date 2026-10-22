@@ -20,6 +20,7 @@ give a short confirmation (one line, no lecture).
 |---|---|
 | Inspect current config | `cs config show` |
 | Pick a look interactively (user is in their own terminal) | tell them to run `cs theme` — ↑/↓ with live previews, Enter applies; from Claude Code use the config commands below instead |
+| Hide the `✦ New looks available` line without picking | `cs config set looks_seen 1` (it goes away for good once `cs theme` has been opened) |
 | List styles | `cs styles` |
 | Aurora with ■ block bars (default look) | `cs config set style aurora` + `cs config set bar_glyph block` |
 | Aurora with a thin ━ line ("细一点") | `cs config set style aurora` + `cs config set bar_glyph thin` |
