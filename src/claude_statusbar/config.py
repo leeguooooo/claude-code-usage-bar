@@ -18,6 +18,7 @@ CONFIG_PATH = Path.home() / ".claude" / "claude-statusbar.json"
 DEFAULT_STYLE = "aurora"
 DEFAULT_THEME = "graphite"
 DEFAULT_DENSITY = "regular"   # cozy | regular | compact
+DEFAULT_BAR_GLYPH = "block"   # block (■) | thin (━) — aurora bar cells
 DEFAULT_AUTO_COMPACT_WIDTH = 0  # 0 = disabled; otherwise force hairline below this width
 DEFAULT_CACHE_TTL_SECONDS = 300  # 5min — Anthropic's base prompt cache TTL.
 DEFAULT_CWD_STYLE = "basename"  # basename | full — how show_cwd renders the dir
@@ -35,6 +36,9 @@ class StatusbarConfig:
     style: str = DEFAULT_STYLE
     theme: str = DEFAULT_THEME
     density: str = DEFAULT_DENSITY
+    # Aurora bar cell shape: `block` (■, the default — `━` read as too thin
+    # for some) or `thin` (━, the original hairline look). Colors are the same.
+    bar_glyph: str = DEFAULT_BAR_GLYPH
     auto_compact_width: int = DEFAULT_AUTO_COMPACT_WIDTH
     show_weekly: bool = True
     show_per_model: bool = False
@@ -144,6 +148,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         style=str(raw.get("style", DEFAULT_STYLE)),
         theme=str(raw.get("theme", DEFAULT_THEME)),
         density=str(raw.get("density", DEFAULT_DENSITY)),
+        bar_glyph=str(raw.get("bar_glyph", DEFAULT_BAR_GLYPH)),
         auto_compact_width=int(raw.get("auto_compact_width", DEFAULT_AUTO_COMPACT_WIDTH) or 0),
         show_weekly=_to_bool(raw.get("show_weekly", True)),
         show_per_model=_to_bool(raw.get("show_per_model", False)),
@@ -283,7 +288,7 @@ def invalidate_rendered() -> None:
 
 
 VALID_KEYS = {
-    "style", "theme", "density", "auto_compact_width",
+    "style", "theme", "density", "bar_glyph", "auto_compact_width",
     "show_weekly", "show_per_model", "show_language", "show_cost", "show_balance", "balance_bar",
     "show_cache_age",
     "show_project_branch", "show_ocs",
@@ -313,6 +318,7 @@ _FLOAT_KEYS = {"warning_threshold", "critical_threshold"}
 _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds"}
 _COLOR_KEYS = {"color_ok", "color_warn", "color_hot", "color_worktree"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}
+_VALID_BAR_GLYPH = {"block", "thin"}
 _VALID_CWD_STYLE = {"basename", "full"}
 _VALID_LANG = {"auto", "zh", "en"}
 
@@ -370,6 +376,10 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
     elif key == "density":
         if value not in _VALID_DENSITY:
             raise ValueError(f"density must be one of {sorted(_VALID_DENSITY)}, got {value!r}")
+        setattr(cfg, key, value)
+    elif key == "bar_glyph":
+        if value not in _VALID_BAR_GLYPH:
+            raise ValueError(f"bar_glyph must be one of {sorted(_VALID_BAR_GLYPH)}, got {value!r}")
         setattr(cfg, key, value)
     elif key == "lang":
         if value not in _VALID_LANG:

@@ -123,6 +123,7 @@ def render_capsule(
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
+    bar_glyph: str = "block",
     show_weekly: bool = True,
     ctx_pct: Optional[float] = None,
     projection_5h: str = "",
@@ -322,7 +323,7 @@ def render_hairline(
 
 
 # ---------------------------------------------------------------------------
-# Style: aurora — thin ━ bars whose cells blend ok→warn→hot by position
+# Style: aurora — ■ (or thin ━) bars whose cells blend ok→warn→hot by position
 # ---------------------------------------------------------------------------
 _AURORA_TOKENS_RE = _re.compile(r"\s*\([^()\n]*\)$")
 _AURORA_SECS_RE = _re.compile(r"(\d+)m\d+s$")
@@ -343,6 +344,7 @@ def render_aurora(
     use_color=True, theme: Optional[Theme]=None,
     warning_threshold=30.0, critical_threshold=70.0,
     density: str = "regular",
+    bar_glyph: str = "block",
     show_weekly: bool = True,
     ctx_pct: Optional[float] = None,
     projection_5h: str = "",
@@ -363,12 +365,13 @@ def render_aurora(
     INK  = _fg(theme.ink)
     MUTE = _fg(theme.mute)
     EDGE = _fg(theme.edge)
+    cell = "━" if bar_glyph == "thin" else "■"
 
     def bar(p, width):
         # Each cell's color is fixed by its position along the bar, so a fuller
         # bar literally reaches further into the red end of the spectrum.
         if p is None:
-            return f"{EDGE}{'━' * width}{RESET}"
+            return f"{EDGE}{cell * width}{RESET}"
         clamped = max(0.0, min(float(p), 100.0))
         filled = int(clamped / 100 * width + 0.5)
         if p > 0 and filled == 0:
@@ -379,9 +382,9 @@ def render_aurora(
                 t = i / (width - 1) if width > 1 else 0.0
                 rgb = (_blend(theme.s_ok, theme.s_warn, t * 2) if t < 0.5
                        else _blend(theme.s_warn, theme.s_hot, (t - 0.5) * 2))
-                out += f"{_fg(rgb)}━"
+                out += f"{_fg(rgb)}{cell}"
             else:
-                out += f"{EDGE}━"
+                out += f"{EDGE}{cell}"
         return out + RESET
 
     def pct_text(p, rgb):

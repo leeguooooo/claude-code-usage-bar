@@ -273,11 +273,18 @@ def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:
 
 
 def ip_risk_finding(*, spawn: bool = True):
-    """Status-line form of ip_risk_line: (Finding or None, level)."""
+    """Status-line form of ip_risk_line: (Finding or None, level).
+
+    A check that couldn't run says nothing about the network, so the status
+    line stays quiet instead of showing `ip ? 检测不可用`; cs doctor still
+    reports it."""
     entry = read_cache()
     if spawn:
         ensure_fresh(entry)
-    return cached_finding(entry)
+    f, level = cached_finding(entry)
+    if f is not None and f.reason == "check_unavailable":
+        return None, "ok"
+    return f, level
 
 
 def ensure_fresh(entry=None) -> None:

@@ -51,7 +51,7 @@ def _run_config_subcommand(rest):
             mark = "" if key in chosen or placeholder else "   (default)"
             print(f"{key:<20}= {value}{mark}")
 
-        line("style"); line("theme"); line("density")
+        line("style"); line("theme"); line("density"); line("bar_glyph")
         line("auto_compact_width", cfg.auto_compact_width or "(disabled)")
         for key in ("show_weekly", "show_language", "show_cost", "show_balance",
                     "balance_bar", "show_cache_age", "show_project_branch",

@@ -9,6 +9,18 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.49.6 — 2026-10-22
+
+**Thicker aurora bars, and no more "ip check unavailable" noise.**
+
+- Aurora bars now use `■` blocks by default — the thin `━` line read as too
+  faint. Same colors and gradient. Prefer the old look?
+  `cs config set bar_glyph thin`.
+- When the IP risk check can't run, the status line now stays quiet instead
+  of showing `ip ? check unavailable`. `cs doctor` still reports it.
+
+---
+
 ## v3.49.5 — 2026-10-22
 
 **Use a clearer name for the main checkout.**

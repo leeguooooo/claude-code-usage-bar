@@ -80,3 +80,11 @@ def test_colored_risk_line_links_ip_check_and_doctor():
     assert "docs/troubleshooting.md\x07cs doctor" in out
     g = fp_risk.fp_risk_finding({"ANTHROPIC_BASE_URL": "https://relay.example.com"})
     assert "ip-check" not in format_finding(g, theme=THEME, use_color=True)
+
+
+def test_status_line_hides_unavailable_ip_check(monkeypatch):
+    from claude_statusbar import ip_risk
+    monkeypatch.setattr(ip_risk, "read_cache", lambda: None)
+    assert ip_risk.ip_risk_finding(spawn=False) == (None, "ok")
+    # doctor still reports it
+    assert "unavailable" in ip_risk.cached_status(None)[0]

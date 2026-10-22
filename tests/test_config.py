@@ -78,6 +78,15 @@ def test_set_value_accepts_valid_density(tmp_path: Path, ok: str):
     assert cfg_mod.load_config(tmp_path / "cfg.json").density == ok
 
 
+def test_bar_glyph_defaults_to_block_and_accepts_thin(tmp_path: Path):
+    path = tmp_path / "cfg.json"
+    assert cfg_mod.load_config(path).bar_glyph == "block"
+    cfg_mod.set_value("bar_glyph", "thin", path)
+    assert cfg_mod.load_config(path).bar_glyph == "thin"
+    with pytest.raises(ValueError):
+        cfg_mod.set_value("bar_glyph", "fat", path)
+
+
 def test_set_value_rejects_invalid_style(tmp_path: Path):
     with pytest.raises(ValueError):
         cfg_mod.set_value("style", "capsulee", tmp_path / "cfg.json")
