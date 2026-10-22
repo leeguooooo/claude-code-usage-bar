@@ -9,6 +9,12 @@ For a quick overview of the latest release, see the
 
 ---
 
+## Unreleased
+
+- Add opt-in `narrow_layout=stack` to keep quota bars visible in narrow panes.
+
+---
+
 ## v3.51.2 — 2026-10-22
 
 - The `✦ New looks available` hint now also goes away when a look is chosen

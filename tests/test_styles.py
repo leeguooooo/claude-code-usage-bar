@@ -69,6 +69,46 @@ def test_max_width_caps_every_physical_line(style, use_color):
     assert all(visible_width(line) <= 38 for line in out.splitlines())
 
 
+@pytest.mark.parametrize("style", ["aurora", "classic"])
+@pytest.mark.parametrize("width", [40, 70])
+def test_narrow_stack_keeps_quota_windows_on_separate_lines(style, width):
+    out = render(
+        style,
+        theme=get_theme("graphite"),
+        use_color=False,
+        max_width=width,
+        narrow_layout="stack",
+        msgs_pct=41,
+        weekly_pct=35,
+        reset_5h="3h54m",
+        reset_7d="5d11h",
+        model="Opus 5.5(583k/1M)",
+        projection_5h="→100%·1h40m",
+        projection_7d="→100%·2d15h",
+        cost_text="12.34",
+        cache_age_text="5m",
+    )
+    lines = out.splitlines()
+    five_hour = next(i for i, line in enumerate(lines) if line.startswith("5h"))
+    seven_day = next(i for i, line in enumerate(lines) if line.startswith("7d"))
+    model_line = next(i for i, line in enumerate(lines) if "Opus 5.5" in line)
+
+    assert five_hour != seven_day
+    assert model_line > max(five_hour, seven_day)
+    marker = "[" if style == "classic" else "■"
+    assert lines[five_hour].index(marker) == lines[seven_day].index(marker)
+    assert all(visible_width(line) <= width for line in lines)
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_narrow_stack_is_noop_when_output_fits(style):
+    kwargs = dict(theme=get_theme("graphite"), use_color=False, **SAMPLE)
+    expected = render(style, max_width=500, **kwargs)
+    actual = render(style, max_width=500, narrow_layout="stack", **kwargs)
+
+    assert actual == expected
+
+
 @pytest.mark.parametrize("style", list(RENDERERS))
 def test_max_width_is_noop_when_output_already_fits(style):
     kwargs = dict(theme=get_theme("graphite"), use_color=False, **SAMPLE)

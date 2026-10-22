@@ -484,6 +484,7 @@ def format_status_line(
     balance_pct=None,
     balance_amount="",
     quota_stale: bool = False,
+    stack_quotas: bool = False,
 ):
     """Build the complete classic-style status line.
 
@@ -633,4 +634,6 @@ def format_status_line(
         parts.append(colorize("⚠️BYPASS", _fg(theme.s_hot), use_color))
 
     separator = colorize(" | ", mute, use_color)
+    if stack_quotas:
+        return "\n".join((dim_5h, dim_7d, separator.join(parts[2:])))
     return separator.join(parts)

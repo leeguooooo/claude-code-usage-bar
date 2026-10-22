@@ -146,6 +146,7 @@ def render_aurora(
     no_quota: bool = False,
     balance_text: str = "",
     quota_stale: bool = False,
+    stack_quotas: bool = False,
     **_ignored,
 ) -> str:
     from .progress import (window_severity_rgb, _blend, projection_pct,
@@ -187,7 +188,7 @@ def render_aurora(
     def window(label, p, chip, forecast, reset, emoji=""):
         rgb = window_severity_rgb(p, chip, theme,
                                   warning_threshold, critical_threshold)
-        out = (f"{MUTE}{label}{RESET} {bar(p, 12)} {pct_text(p, rgb)} "
+        out = (f"{MUTE}{label:>2}{RESET} {bar(p, 12)} {pct_text(p, rgb)} "
                f"{EDGE}⏰{MUTE}{reset or '--'}{emoji}{RESET}")
         if chip:
             out += " " + _render_projection(chip, theme, True)
@@ -198,6 +199,7 @@ def render_aurora(
 
     sep_pad = DENSITY_PAD.get(density, " ")
     sep = f"{sep_pad}{EDGE}│{RESET}{sep_pad}"
+    quota_parts = []
     parts = []
 
     if no_quota:
@@ -206,11 +208,11 @@ def render_aurora(
     elif quota_stale and msgs_pct is None and weekly_pct is None:
         parts.append(f"{_fg(theme.s_warn)}⟳ 5h/7d stale·restart{RESET}")
     else:
-        parts.append(window("5h", msgs_pct, projection_5h, forecast_5h,
-                            reset_5h, countdown_emoji))
+        quota_parts.append(window("5h", msgs_pct, projection_5h, forecast_5h,
+                                 reset_5h, countdown_emoji))
         if show_weekly:
-            parts.append(window("7d", weekly_pct, projection_7d, forecast_7d,
-                                reset_7d))
+            quota_parts.append(window("7d", weekly_pct, projection_7d, forecast_7d,
+                                      reset_7d))
 
     # The mini bar carries context fill, so the `(70.0k/1.0M)` suffix is
     # redundant here; no_quota already shows ctx as the lead segment.
@@ -240,7 +242,12 @@ def render_aurora(
     if bypass:
         parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
 
-    line = sep.join(parts)
+    if stack_quotas and len(quota_parts) > 1:
+        line = "\n".join(quota_parts + [sep.join(parts)])
+        if not use_color:
+            return _strip(line)
+        return line
+    line = sep.join(quota_parts + parts)
     if not use_color:
         return _strip(line)
     return line
@@ -266,6 +273,7 @@ def render_classic(
     balance_pct=None,
     balance_amount: str = "",
     quota_stale: bool = False,
+    stack_quotas: bool = False,
     **_ignored,
 ) -> str:
     from .progress import format_status_line, _fg, colorize, RESET
@@ -296,6 +304,7 @@ def render_classic(
         balance_pct=balance_pct,
         balance_amount=balance_amount,
         quota_stale=quota_stale,
+        stack_quotas=stack_quotas,
     )
     if cache_age_text:
         # Three-level severity: COLD red, <1m yellow, otherwise green.
@@ -854,6 +863,7 @@ def render(style: str, **kwargs) -> str:
     bottom line per running subagent. All extra lines are style-agnostic.
     """
     max_width = kwargs.pop("max_width", None)
+    narrow_layout = kwargs.pop("narrow_layout", "clip")
     show_pb = kwargs.pop("show_project_branch", False)
     info = kwargs.pop("identity", None)
     dirty = kwargs.pop("identity_dirty", None)
@@ -895,6 +905,7 @@ def render(style: str, **kwargs) -> str:
     fn = RENDERERS.get(style, render_aurora)
     render_kwargs = dict(kwargs)
     out = fn(**render_kwargs)
+    scoped = ""
     if per_model_limits:
         from .scoped_usage import render_limits
         scoped = render_limits(per_model_limits, theme, use_color,
@@ -903,10 +914,24 @@ def render(style: str, **kwargs) -> str:
         if scoped:
             out += '\n' + scoped
 
+    def rerender():
+        rendered = fn(**render_kwargs)
+        return rendered + ("\n" + scoped if scoped else "")
+
     # Preserve core quota/model signal before hard clipping. Optional segments
     # disappear in stable least-important-first order; selected style stays put.
     if (max_width is not None and max_width > 0
             and visible_width(out.split("\n", 1)[0]) > max_width):
+        stacked = False
+        if narrow_layout == "stack":
+            render_kwargs["stack_quotas"] = True
+            out = rerender()
+            stacked = "\n" in out
+
+        def fits(text):
+            lines = text.splitlines() if stacked else text.split("\n", 1)[:1]
+            return all(visible_width(line) <= max_width for line in lines)
+
         degradation = (
             {"cache_age_text": ""},
             {"lang_body": ""},
@@ -915,27 +940,28 @@ def render(style: str, **kwargs) -> str:
             {"forecast_5h": "", "forecast_7d": ""},
             {"projection_5h": "", "projection_7d": ""},
         )
-        for replacements in degradation:
-            render_kwargs.update(replacements)
-            out = fn(**render_kwargs)
-            if visible_width(out.split("\n", 1)[0]) <= max_width:
-                break
-        else:
-            # Context tokens go last, and in two steps: drop the window
-            # denominator first — "Opus 5(139.3k/1.0M)" → "Opus 5(139.3k)" buys
-            # ~6 columns and keeps the number people actually read. A ~70-col
-            # pane on a 1M-context model lands exactly here, so dropping
-            # straight to a bare model name loses the count for no reason.
-            import re
-            model = str(render_kwargs.get("model", ""))
-            m = re.search(r"\s*\(([^()\n]*)/[^()\n]*\)$", model)
-            if m:
-                head = model[:m.start()]
-                for candidate in (f"{head}({m.group(1)})", head):
-                    render_kwargs["model"] = candidate
-                    out = fn(**render_kwargs)
-                    if visible_width(out.split("\n", 1)[0]) <= max_width:
-                        break
+        if not fits(out):
+            for replacements in degradation:
+                render_kwargs.update(replacements)
+                out = rerender()
+                if fits(out):
+                    break
+            else:
+                # Context tokens go last, and in two steps: drop the window
+                # denominator first — "Opus 5(139.3k/1.0M)" → "Opus 5(139.3k)" buys
+                # ~6 columns and keeps the number people actually read. A ~70-col
+                # pane on a 1M-context model lands exactly here, so dropping
+                # straight to a bare model name loses the count for no reason.
+                import re
+                model = str(render_kwargs.get("model", ""))
+                m = re.search(r"\s*\(([^()\n]*)/[^()\n]*\)$", model)
+                if m:
+                    head = model[:m.start()]
+                    for candidate in (f"{head}({m.group(1)})", head):
+                        render_kwargs["model"] = candidate
+                        out = rerender()
+                        if fits(out):
+                            break
 
     if show_pb and info is not None:
         version_text = _statusbar_version() if show_version else ""

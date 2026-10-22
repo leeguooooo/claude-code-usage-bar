@@ -23,6 +23,7 @@ DEFAULT_BAR_GLYPH = "block"   # block (■) | thin (━) — aurora bar cells
 # whose `looks_seen` is lower gets the picker after an interactive `cs upgrade`
 # and a one-line hint on the bar until they open it.
 LOOKS_VERSION = 1   # 3.50: aurora ■ / aurora ━ / classic
+DEFAULT_NARROW_LAYOUT = "clip"  # clip (current behavior) | stack quota bars
 DEFAULT_AUTO_COMPACT_WIDTH = 0  # deprecated no-op: the hairline style it switched to is gone
 DEFAULT_CACHE_TTL_SECONDS = 300  # 5min — Anthropic's base prompt cache TTL.
 DEFAULT_CWD_STYLE = "basename"  # basename | full — how show_cwd renders the dir
@@ -45,6 +46,8 @@ class StatusbarConfig:
     bar_glyph: str = DEFAULT_BAR_GLYPH
     # Last LOOKS_VERSION the user has seen in `cs theme`; written by the picker.
     looks_seen: int = 0
+    # Stack 5h/7d quotas on separate lines when the first line is too wide.
+    narrow_layout: str = DEFAULT_NARROW_LAYOUT
     auto_compact_width: int = DEFAULT_AUTO_COMPACT_WIDTH  # deprecated, ignored
     show_weekly: bool = True
     show_per_model: bool = False
@@ -154,6 +157,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         density=str(raw.get("density", DEFAULT_DENSITY)),
         bar_glyph=str(raw.get("bar_glyph", DEFAULT_BAR_GLYPH)),
         looks_seen=int(raw.get("looks_seen", 0) or 0),
+        narrow_layout=str(raw.get("narrow_layout", DEFAULT_NARROW_LAYOUT)),
         auto_compact_width=int(raw.get("auto_compact_width", DEFAULT_AUTO_COMPACT_WIDTH) or 0),
         show_weekly=_to_bool(raw.get("show_weekly", True)),
         show_per_model=_to_bool(raw.get("show_per_model", False)),
@@ -301,6 +305,7 @@ def invalidate_rendered() -> None:
 
 VALID_KEYS = {
     "style", "theme", "density", "bar_glyph", "looks_seen", "auto_compact_width",
+    "narrow_layout",
     "show_weekly", "show_per_model", "show_language", "show_cost", "show_balance", "balance_bar",
     "show_cache_age",
     "show_project_branch", "show_ocs",
@@ -331,6 +336,7 @@ _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds", "looks_seen"}
 _COLOR_KEYS = {"color_ok", "color_warn", "color_hot", "color_worktree"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}
 _VALID_BAR_GLYPH = {"block", "thin"}
+_VALID_NARROW_LAYOUT = {"clip", "stack"}
 _VALID_CWD_STYLE = {"basename", "full"}
 _VALID_LANG = {"auto", "zh", "en"}
 
@@ -396,6 +402,12 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
         # Choosing a look by any route counts as having seen the looks, so the
         # bar's "new looks · cs theme" nudge doesn't outlive the choice.
         cfg.looks_seen = max(cfg.looks_seen, LOOKS_VERSION)
+    elif key == "narrow_layout":
+        if value not in _VALID_NARROW_LAYOUT:
+            raise ValueError(
+                f"narrow_layout must be one of {sorted(_VALID_NARROW_LAYOUT)}, got {value!r}"
+            )
+        setattr(cfg, key, value)
     elif key == "lang":
         if value not in _VALID_LANG:
             raise ValueError(f"lang must be one of {sorted(_VALID_LANG)}, got {value!r}")

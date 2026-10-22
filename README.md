@@ -71,6 +71,7 @@ Three looks — aurora with block bars (default), aurora with a thin line, and c
 cs theme                         # pick one with a live preview (↑/↓, Enter)
 cs config set bar_glyph thin     # thin ━ line instead of ■ blocks (default)
 cs config set style classic      # the original battery-bar look
+cs config set narrow_layout stack # stack 5h / 7d bars in narrow panes
 cs preview                       # all three looks, with your real numbers
 cs config show                   # every key, and which ones you changed
 ```

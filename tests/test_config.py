@@ -14,6 +14,7 @@ def test_load_returns_defaults_when_missing(tmp_path: Path):
     assert cfg.style == cfg_mod.DEFAULT_STYLE
     assert cfg.theme == cfg_mod.DEFAULT_THEME
     assert cfg.density == cfg_mod.DEFAULT_DENSITY
+    assert cfg.narrow_layout == "clip"
     assert cfg.show_weekly is True
     assert cfg.show_language is True
 
@@ -48,6 +49,7 @@ def test_set_value_persists(tmp_path: Path):
     cfg_mod.set_value("show_weekly", "false", p)
     cfg_mod.set_value("warning_threshold", "25.5", p)
     cfg_mod.set_value("auto_compact_width", "100", p)
+    cfg_mod.set_value("narrow_layout", "stack", p)
 
     cfg = cfg_mod.load_config(p)
     assert cfg.style == "classic"
@@ -55,6 +57,7 @@ def test_set_value_persists(tmp_path: Path):
     assert cfg.show_weekly is False
     assert cfg.warning_threshold == 25.5
     assert cfg.auto_compact_width == 100
+    assert cfg.narrow_layout == "stack"
 
 
 def test_set_value_rejects_unknown_key(tmp_path: Path):
@@ -70,6 +73,11 @@ def test_set_value_rejects_non_numeric_threshold(tmp_path: Path):
 def test_set_value_rejects_invalid_density(tmp_path: Path):
     with pytest.raises(ValueError):
         cfg_mod.set_value("density", "snug", tmp_path / "cfg.json")
+
+
+def test_set_value_rejects_invalid_narrow_layout(tmp_path: Path):
+    with pytest.raises(ValueError):
+        cfg_mod.set_value("narrow_layout", "wrap", tmp_path / "cfg.json")
 
 
 @pytest.mark.parametrize("ok", ["compact", "regular", "cozy"])
