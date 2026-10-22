@@ -116,13 +116,19 @@ def cached_limits(*, spawn=True):
 
 
 def render_limits(limits, theme, use_color, warning, critical, projection=True):
+    return ' | '.join(seg for _, seg in limit_parts(
+        limits, theme, use_color, warning, critical, projection))
+
+
+def limit_parts(limits, theme, use_color, warning, critical, projection=True):
+    """One ``(label, segment)`` per usable per-model limit, in input order."""
     from .progress import _build_dimension, _fg, _render_projection
     from .predict import project_window, format_eta
     from .progress import window_severity_rgb
     parts = []
     now = time.time()
     if not isinstance(limits, list):
-        return ''
+        return parts
     for row in limits:
         try:
             pct = float(row['percent'])
@@ -143,6 +149,6 @@ def render_limits(limits, theme, use_color, warning, critical, projection=True):
         rgb = window_severity_rgb(pct, chip, theme, warning, critical) or theme.mute
         bar = _build_dimension(label, pct, _fg(rgb), use_color,
                                warning, critical, theme, fill_rgb=rgb)
-        parts.append(bar + '⏰' + format_eta(remaining) +
-                     (' ' + _render_projection(chip, theme, use_color) if chip else ''))
-    return ' | '.join(parts)
+        parts.append((label, bar + '⏰' + format_eta(remaining) +
+                      (' ' + _render_projection(chip, theme, use_color) if chip else '')))
+    return parts

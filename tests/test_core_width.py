@@ -31,7 +31,8 @@ def _payload(session_env):
     })
 
 
-def _run(tmp_path, monkeypatch, capsys, session_env, terminal_width=None):
+def _run(tmp_path, monkeypatch, capsys, session_env, terminal_width=None,
+         **extra_config):
     config_path = tmp_path / ".claude" / "claude-statusbar.json"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(json.dumps({
@@ -42,6 +43,7 @@ def _run(tmp_path, monkeypatch, capsys, session_env, terminal_width=None):
         "show_todos": False,
         "show_mode": False,
         "show_version": False,
+        **extra_config,
     }), encoding="utf-8")
 
     import claude_statusbar.config as config
@@ -99,3 +101,12 @@ def test_unavailable_width_preserves_unbounded_style(
     seen, out = _run(tmp_path, monkeypatch, capsys, {"COLUMNS": "bad"})
     assert seen == {"style": "classic", "max_width": None}
     assert out
+
+
+def test_narrow_layout_stack_reaches_the_renderer(tmp_path, monkeypatch, capsys):
+    _, out = _run(tmp_path, monkeypatch, capsys, {"COLUMNS": "36"},
+                  narrow_layout="stack")
+    rows = out.splitlines()
+    assert rows[0].lstrip().startswith("5h") and "7d" not in rows[0]
+    assert rows[1].lstrip().startswith("7d")
+    assert all(visible_width(line) <= 36 for line in rows)

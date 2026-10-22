@@ -52,6 +52,7 @@ give a short confirmation (one line, no lecture).
 | Toggle the ⚙ session-mode line (effort/thinking/fast/output-style) | `cs config set show_mode true\|false` (default off) |
 | Toggle the per-effort colour gradient on the mode line | `cs config set mode_gradient true\|false` (default on) |
 | Hide weekly bar | `cs config set show_weekly false` |
+| Narrow panes: stack the quota bars one per line instead of dropping forecast/projection | `cs config set narrow_layout stack\|drop` (default `drop`) |
 | Set warning threshold | `cs config set warning_threshold <0-100>` |
 | Set critical threshold | `cs config set critical_threshold <0-100>` |
 | Force / disable no-quota (API) mode | `cs config set api_mode <auto\|on\|off>` |
