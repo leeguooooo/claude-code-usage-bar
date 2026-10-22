@@ -43,12 +43,12 @@ def test_line_hidden_at_or_below_threshold():
 def test_line_warn_and_crit_wording():
     warn = ip_risk.line_text({"risk": 55, "type": "VPN"})
     assert warn.split("\n")[0].startswith("⚠ ip risk 55/100 (VPN)")
-    assert "log" in warn.lower() and "account-ban" in warn
+    assert "network signal" in warn and "cs doctor" in warn
     crit = ip_risk.line_text({"risk": 82, "type": "VPN"})
     assert crit.split("\n")[0].startswith("✗ ip risk 82/100 (VPN)")
     # crit must name the login action and the certain consequence
-    assert "log in" in crit and "WILL be banned" in crit
-    assert "switch network" in crit
+    assert "WILL be banned" not in crit and "cs doctor" in crit
+    assert "review network" in crit
 
 
 def test_line_is_two_lines_summary_then_action():
@@ -103,11 +103,11 @@ def test_stale_cache_keeps_last_reading_and_spawns(tmp_path, monkeypatch):
     assert spawned
 
 
-def test_failed_cache_hides_line(tmp_path, monkeypatch):
+def test_failed_cache_reports_unknown(tmp_path, monkeypatch):
     _iso(tmp_path, monkeypatch)
     ip_risk.write_cache_atomic({"ok": False, "ts": time.time()})
     text, level = ip_risk.ip_risk_line(spawn=False)
-    assert text == ""
+    assert "unknown" in text and level == "warn"
 
 
 def test_failed_entry_retries_sooner_than_ok(tmp_path, monkeypatch):
@@ -310,9 +310,9 @@ def test_split_families_warn_even_when_ipv4_is_clean():
     e = _fam({"ip": "5.6.7.8", "loc": "US", "warp": "off"},
              {"ip": "2400:2410::1", "loc": "JP", "warp": "off"})
     lines = ip_risk.line_text(e).split("\n")
-    assert lines[0].startswith("✗ ip split: IPv4 US / IPv6 JP")
-    assert "↳" in lines[1] and "IPv6" in lines[1]
-    assert ip_risk.risk_level(e) == "crit"
+    assert lines[0].startswith("⚠ ip exits differ: IPv4 US / IPv6 JP")
+    assert "↳" in lines[1] and "unverified" in lines[1]
+    assert ip_risk.risk_level(e) == "warn"
 
 
 def test_unsupported_region_seen_by_claude_warns():
@@ -330,7 +330,7 @@ def test_family_issue_wins_over_score_line():
     e = _fam({"ip": "5.6.7.8", "loc": "US", "warp": "off"},
              {"ip": "2400:2410::1", "loc": "JP", "warp": "off"})
     e["risk"] = 55
-    assert ip_risk.line_text(e).startswith("✗ ip split")
+    assert ip_risk.line_text(e).startswith("⚠ ip exits differ")
 
 
 def test_refresh_stores_family_traces(tmp_path, monkeypatch):
@@ -371,7 +371,9 @@ def test_ban_risk_family_type_warns():
 def test_split_wording_does_not_claim_to_measure_claude():
     e = _fam({"ip": "5.6.7.8", "loc": "US", "warp": "off"},
              {"ip": "2400:2410::1", "loc": "JP", "warp": "off"})
-    assert "claude.ai prefers IPv6" in ip_risk.line_text(e)
+    assert "unverified" in ip_risk.line_text(e)
+    assert "disable IPv6" not in ip_risk.line_text(e)
+    assert "TUN" not in ip_risk.line_text(e)
     assert "claude.ai sees" not in ip_risk.line_text(e)
 
 

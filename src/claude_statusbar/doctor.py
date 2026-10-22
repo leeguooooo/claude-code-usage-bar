@@ -177,6 +177,31 @@ def _statusline_shell_check(cmd: str, cache: Path) -> None:
 _ISSUES_URL = "https://github.com/leeguooooo/claude-code-usage-bar/issues"
 
 
+def risk_details() -> None:
+    """Read cached/local evidence only. No refresh, install, browser or Thermo scan."""
+    from . import ip_risk
+    from .config import load_config
+    from .fp_risk import fp_risk_line
+    cfg = load_config()
+    entry = ip_risk.read_cache()
+    state = ip_risk.cache_state(entry)
+    level = ip_risk.cached_status(entry)[1]
+    summary = f"{state} — cached network signals ({level}); account status unverified"
+    _line("IP probe", summary if cfg.show_ip_risk else "off (opt-in)", ok=None)
+    family = entry.get("families") if isinstance(entry, dict) else None
+    _line("family probe coverage", "IPv4/IPv6 samples recorded; not a Claude-route verification"
+          if isinstance(family, dict) and family.get("v4") and family.get("v6")
+          else "partial, unavailable or skipped; not proof of no IPv6", ok=None)
+    endpoint, _ = fp_risk_line()
+    _line("endpoint metadata", "custom endpoint configured; payload not inspected" if endpoint
+          else "not established by this local setting check", ok=None)
+    print("    Risk summary reads cache only; existing render/shell smoke tests may refresh enabled collectors.")
+    print("    No account-suspension verdict; a probe may use a different route from Claude.")
+    print("    Network details: https://ip-check.leeguoo.com/#local-diagnostics")
+    print("    Local checks (macOS): https://app.leeguoo.com/thermo")
+    print("    Check the installed Thermo version for Claude diagnostic availability.")
+
+
 def run() -> int:
     print()
     print("  cs doctor — claude-statusbar self-check")
@@ -413,6 +438,12 @@ def run() -> int:
                   _dim("skipped — no statusLine entry recognized as ours"))
     except Exception as e:
         _line("statusLine shell test", _dim(f"check skipped: {e}"))
+
+    # --- opt-in network/cache and local endpoint evidence ---
+    try:
+        risk_details()
+    except Exception:
+        _line("risk checks", "unavailable; not an account verdict", ok=None)
 
     # --- terminal ---
     try:

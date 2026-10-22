@@ -1,6 +1,6 @@
 """Detached egress-IP risk prober — spawned by ip_risk.ensure_fresh().
 
-Fully local: no call to our own Worker. Two tiers keep third-party load tiny:
+Background-only probing. Two tiers keep enrichment load small:
 
   * cheap tier — ipify returns the egress IP (unlimited, ~no cost). Run every
     spawn to detect a VPN toggle fast.
@@ -103,9 +103,10 @@ def classify_ip(ip: str) -> dict:
 def family_traces() -> dict:
     """{"v4": trace|None, "v6": trace|None}; a family that can't connect is
     simply absent (no IPv6 is normal). Skipped (empty) when an HTTPS proxy is
-    configured in the environment: Claude Code would go through that proxy,
+    configured: a client may go through that proxy,
     which a raw socket doesn't, so the reading wouldn't be Claude's route."""
-    if urllib.request.getproxies().get("https"):
+    proxies = urllib.request.getproxies()
+    if any(proxies.get(key) for key in ("http", "https", "all")):
         return {}
 
     def one(family):
@@ -191,9 +192,11 @@ def _refresh_locked() -> int:
             entry = evaluate_ip()
     except Exception:
         entry = {"ok": False, "ts": now}
-        if prev.get("ok"):
-            entry["last_good"] = {k: prev.get(k) for k in
-                                  ("ip", "risk", "proxy", "type")}
+        previous = prev if prev.get("ok") else prev.get("last_good")
+        if isinstance(previous, dict):
+            entry["last_good"] = {k: previous[k] for k in
+                                  ("ip", "risk", "proxy", "type", "country", "region",
+                                   "verdict", "ts", "checked_ts", "families") if k in previous}
         entry["checked_ts"] = now
         try:
             ip_risk.write_cache_atomic(entry)

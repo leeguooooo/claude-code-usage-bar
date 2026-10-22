@@ -191,3 +191,13 @@ PYTHONPATH=src uv run pytest tests/   # 900+ 个测试，约 3 秒
 ## 作者
 
 **郭立（Guo Li / leeguoo）** 开发 —— [leeguoo.com](https://leeguoo.com/about) · [GitHub](https://github.com/leeguooooo) · [X](https://x.com/leeguooooo) · 更多工具见 [*-use 家族](https://github.com/leeguooooo/plugins)。
+
+
+## 网络观察与详细检查
+
+`cs config set show_ip_risk true` 开启可选的 IP 检查。状态栏显示缓存的网络观察，
+不能预测账号是否封禁。检测失败、过期或缺失时保留未知状态；IPv4/IPv6 出口国家不同，
+也不能单凭这一点判断泄漏。运行 `cs doctor` 查看检查覆盖范围，以及
+[IP Check](https://ip-check.leeguoo.com/#local-diagnostics) 和
+[Thermo（macOS）](https://app.leeguoo.com/thermo) 的详细检查入口。
+状态栏刷新不会触发 Thermo 深度扫描，专项诊断是否可用以安装版本为准。

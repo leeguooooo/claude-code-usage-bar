@@ -9,6 +9,28 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.46.2 — 2026-10-22
+
+**Network warnings describe observations; failed checks stay visible as unknown.**
+
+- Remove timezone-based watermark assertions and timezone-change advice. A custom
+  API endpoint produces a local configuration notice, without exposing its URL.
+- Add opt-in, separately measured IPv4/IPv6 exit observations using our own
+  Cloudflare origin, never an Anthropic host. Direct family probes skip configured
+  HTTP/HTTPS/ALL proxies rather than pretending to follow a client proxy route.
+- Remove certain account-ban predictions. Different IPv4/IPv6 exit countries are
+  an amber discrepancy, not proof of an IPv6 leak or a reason to disable IPv6.
+  Independent WARP, unsupported-region and classified exit warnings retain priority.
+- Failed or stale probes show current status as unknown. Prior warnings are labelled
+  last known; repeated failures retain the previous observation without resetting
+  its timestamp. Fresh clean readings remain silent.
+- `cs doctor` adds cache/coverage information and links to IP Check and Thermo.
+  The new risk summary reads cache only and never runs a deep local scanner.
+  Existing doctor render/shell smoke checks retain normal collector behavior.
+  State, not raw IPs, credentials or endpoint URLs, is included in the summary.
+
+---
+
 ## v3.46.1 — 2026-10-09
 
 **`cs doctor` shows when you're behind; a failed refresh keeps the per-model limits.**
