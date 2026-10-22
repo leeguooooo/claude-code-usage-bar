@@ -45,8 +45,10 @@ def test_unset_subcommand_clears_a_key(capsys, monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["cs", "config", "unset", "bar_glyph"])
     assert cli.main() == 0
     assert "following the default" in capsys.readouterr().out
-    from claude_statusbar.config import UI_VERSION
-    assert json.loads(p.read_text()) == {"ui_version": UI_VERSION}
+    from claude_statusbar.config import UI_VERSION, LOOKS_VERSION
+    # bar_glyph is gone; choosing it once also recorded the looks as seen.
+    assert json.loads(p.read_text()) == {"ui_version": UI_VERSION,
+                                         "looks_seen": LOOKS_VERSION}
 
 
 def test_unset_rejects_unknown_key(capsys, monkeypatch, tmp_path):

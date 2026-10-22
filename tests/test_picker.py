@@ -123,3 +123,13 @@ def test_upgrade_offers_picker_in_new_build(monkeypatch):
     monkeypatch.setattr("subprocess.run", lambda args, **kw: calls.append(args))
     assert cli._run_upgrade_subcommand() == 0
     assert calls == [["/bin/cs-new", "theme", "--if-new"]]
+
+
+@pytest.mark.parametrize("key,value", [("style", "classic"), ("style", "aurora"),
+                                       ("bar_glyph", "thin"), ("bar_glyph", "block")])
+def test_choosing_a_look_any_way_clears_the_hint(live_cfg, key, value):
+    # /statusbar-style, the skill and plain `cs config set` never open the
+    # picker; the hint must still go away once a look has been chosen.
+    assert cfg_mod.load_config().looks_seen < cfg_mod.LOOKS_VERSION
+    cfg_mod.set_value(key, value)
+    assert cfg_mod.load_config().looks_seen == cfg_mod.LOOKS_VERSION

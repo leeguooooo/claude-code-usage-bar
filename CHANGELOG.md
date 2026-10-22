@@ -9,6 +9,14 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.51.2 — 2026-10-22
+
+- The `✦ New looks available` hint now also goes away when a look is chosen
+  without the picker — `/statusbar-style`, the skill, or
+  `cs config set style|bar_glyph`. Before, only `cs theme` cleared it.
+
+---
+
 ## v3.51.1 — 2026-10-22
 
 - Worktree marker reads `worktree (🌳3)` / `fix-login (🌳3)`: no leading `⑂`,

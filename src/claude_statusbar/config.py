@@ -393,6 +393,9 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
         if value not in _VALID_BAR_GLYPH:
             raise ValueError(f"bar_glyph must be one of {sorted(_VALID_BAR_GLYPH)}, got {value!r}")
         setattr(cfg, key, value)
+        # Choosing a look by any route counts as having seen the looks, so the
+        # bar's "new looks · cs theme" nudge doesn't outlive the choice.
+        cfg.looks_seen = max(cfg.looks_seen, LOOKS_VERSION)
     elif key == "lang":
         if value not in _VALID_LANG:
             raise ValueError(f"lang must be one of {sorted(_VALID_LANG)}, got {value!r}")
@@ -422,6 +425,7 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
         if value not in valid:
             raise ValueError(f"style must be one of {sorted(valid)}, got {value!r}")
         setattr(cfg, key, value)
+        cfg.looks_seen = max(cfg.looks_seen, LOOKS_VERSION)
     elif key == "theme":
         from .themes import list_themes
         valid = {t.name for t in list_themes()}
