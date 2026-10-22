@@ -9,6 +9,14 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.51.1 — 2026-10-22
+
+- Worktree marker reads `worktree (🌳3)` / `fix-login (🌳3)`: no leading `⑂`,
+  the glyph sits inside the count and defaults to 🌳. A `worktree_glyph` you
+  set yourself is kept and moves inside the parentheses.
+
+---
+
 ## v3.51.0 — 2026-10-22
 
 **New looks get offered, not just shipped.**

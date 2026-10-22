@@ -50,7 +50,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_weekly` / `show_language` | bool | Toggle the 7d bar / language-coach segment |
 | `bar_shimmer` | bool, `false` | Experimental twinkling starfield on bars (classic only) |
 | `color_ok` / `color_warn` / `color_hot` / `color_worktree` | hex, `null` | Override the theme's severity colors / worktree-marker hue; empty string restores the theme default |
-| `worktree_glyph` | string, `⑂` | Glyph leading the worktree segment. Any 1-2 cell symbol (`⋔`, `├`, `⧉`, `🌲`). Emoji carry their own font color, so an emoji glyph ignores the theme hue and tints only the text beside it |
+| `worktree_glyph` | string, `🌳` | Glyph inside the worktree count: `worktree (🌳3)`. Any 1-2 cell symbol (`⑂`, `⧉`, `🌲`) |
 | `auto_upgrade` | bool, `true` | Once-a-day detached self-upgrade, every install channel including the standalone binary; `CLAUDE_STATUSBAR_NO_UPDATE=1` overrides |
 | `lang` | `auto` / `zh` / `en` | Language of the IP / endpoint notice lines. `auto` follows the OS (macOS: first system language, not `$LANG`) |
 | `api_mode` | `auto` / `on` / `off` | No-quota mode (see [No-quota mode](no-quota-mode.md)); `CS_API_MODE` env overrides |

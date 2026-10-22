@@ -60,7 +60,7 @@ give a short confirmation (one line, no lecture).
 | Exit-IP purity segment (also checks IPv4 and IPv6 exits separately against our own host — warns on an IPv4/IPv6 split, WARP, VPN/proxy, or an unsupported region; never contacts Anthropic, and a per-domain proxy rule can still route claude.ai differently) | `cs config set show_ip_risk true\|false` |
 | Local custom-endpoint notice (no watermark or account prediction) | `cs config set show_fp_risk true\|false` |
 | Window-end projection `→NN%` | `cs config set show_projection true\|false` |
-| Worktree marker glyph | `cs config set worktree_glyph 🌲` (default `⑂`; any 1-2 cell symbol — an emoji ignores the theme color, the emoji font decides it) |
+| Worktree count glyph (`worktree (🌳3)`) | `cs config set worktree_glyph ⑂` (default `🌳`; any 1-2 cell symbol) |
 | Worktree marker color | `cs config set color_worktree "#bd93f9"` (empty string restores the theme's hue) |
 
 ## No-quota mode (third-party relay / Bedrock / Vertex)

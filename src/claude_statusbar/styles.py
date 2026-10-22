@@ -354,7 +354,7 @@ def _stats_segment(duration_text: str, lines_text: str, *, theme: Theme,
     return f" {MUTE}·{RESET} " + sep.join(segs)
 
 
-def _worktree_label(info) -> str:
+def _worktree_label(info, glyph: str = "🌳") -> str:
     """Display name for a linked worktree checkout.
 
     The worktree's own name, with a redundant repo prefix trimmed
@@ -374,7 +374,7 @@ def _worktree_label(info) -> str:
     # actually forget once you keep parallel checkouts around. A plain total,
     # not an ordinal: "which one of N am I" is already answered by the name.
     total = getattr(info, "worktree_count", 0) or 0
-    return f"{name} ({total})" if total else name
+    return f"{name} ({glyph}{total})" if total else name
 
 
 def render_identity_line(info, *, theme: Theme, dirty,
@@ -382,7 +382,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
                          duration_text: str = "", lines_text: str = "",
                          version_text: str = "", update_text: str = "",
                          cwd_text: str = "",
-                         worktree_glyph: str = "⑂",
+                         worktree_glyph: str = "🌳",
                          lang: str = "en",
                          use_color: bool = True) -> str:
     """Render the 2nd line: `⤷ <project> ⎇ <branch>●↑2↓1 · ⏱ <dur> · +/-lines`.
@@ -393,7 +393,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
     arrows render only for nonzero directions and only inside a git repo.
     `duration_text`/`lines_text` are the session stats, shown here (next to the
     project) rather than on the live-activity line. When the checkout is a
-    linked git worktree (`info.is_worktree`), a ``⑂ <name>`` marker in the
+    linked git worktree (`info.is_worktree`), a ``<name> (🌳N)`` marker in the
     theme's dedicated worktree hue (`theme.wt`) *leads* the line — before the
     repo — so "I am not in the main checkout" is the first thing read, never
     something you scan past. The name collapses to a bare ``⧉ worktree`` when
@@ -411,9 +411,9 @@ def render_identity_line(info, *, theme: Theme, dirty,
     if not use_color:
         head = f"⤷ {info.project_name}"
         if info.is_worktree:
-            head = f"{worktree_glyph} {_worktree_label(info)} {head}"
+            head = f"{_worktree_label(info, worktree_glyph)} {head}"
         elif info.in_git:
-            head = f"{worktree_glyph} {main_label} ({info.worktree_count}) {head}"
+            head = f"{main_label} ({worktree_glyph}{info.worktree_count}) {head}"
         if not info.in_git:
             tail = " (no git)"
         else:
@@ -441,7 +441,7 @@ def render_identity_line(info, *, theme: Theme, dirty,
         # Leads the line, in its own hue — not mute: "this is not the main
         # checkout" is the one fact here you must never scan past (it's what
         # stops a commit landing on the wrong tree).
-        head = (f"{_fg(theme.wt)}{worktree_glyph} {_worktree_label(info)}"
+        head = (f"{_fg(theme.wt)}{_worktree_label(info, worktree_glyph)}"
                 f"{RESET} " + head)
     elif info.in_git:
         # Main checkout: always report, `(0)` included. An omitted marker and
@@ -449,8 +449,8 @@ def render_identity_line(info, *, theme: Theme, dirty,
         # asked four times before this line existed. Same tree glyph as a
         # worktree — the *name* is what differs — but dimmed, because being in
         # the trunk is the ordinary case and only a worktree is a warning.
-        head = (f"{FAINT}{_fg(theme.wt)}{worktree_glyph} {main_label} "
-                f"({info.worktree_count}){RESET} " + head)
+        head = (f"{FAINT}{_fg(theme.wt)}{main_label} "
+                f"({worktree_glyph}{info.worktree_count}){RESET} " + head)
     if not info.in_git:
         body = f" {MUTE}{ITAL}(no git){RESET}"
     else:
@@ -500,7 +500,7 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
                                 duration_text: str = "", lines_text: str = "",
                                 version_text: str = "", update_text: str = "",
                                 cwd_text: str = "",
-                                worktree_glyph: str = "⑂",
+                                worktree_glyph: str = "🌳",
                                 lang: str = "en",
                                 use_color: bool = True) -> str:
     """Aurora's 2nd line: `⎇ main ●↓1  ·  project  ·  +244 −3  ·  ⏱ 4m`, muted.
@@ -526,7 +526,7 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
 
     segs = []
     if info.is_worktree:
-        segs.append(c(soft(theme.wt), f"{worktree_glyph} {_worktree_label(info)}"))
+        segs.append(c(soft(theme.wt), _worktree_label(info, worktree_glyph)))
     if info.in_git:
         branch = info.branch or "?"
         head = c(DIM, "⎇ ") + link(c(f"{DIM}{ITAL}" if info.detached else BASE, branch),
@@ -553,7 +553,7 @@ def render_identity_line_aurora(info, *, theme: Theme, dirty,
     if duration_text:
         segs.append(c(DIM, f"⏱ {duration_text}"))
     if info.in_git and not info.is_worktree and info.worktree_count:
-        segs.append(c(DIM, f"{worktree_glyph} {main_label} ({info.worktree_count})"))
+        segs.append(c(DIM, f"{main_label} ({worktree_glyph}{info.worktree_count})"))
     if version_text and update_text:
         notes = ("https://github.com/leeguooooo/claude-code-usage-bar/releases/tag/"
                  f"v{update_text}")
@@ -865,7 +865,7 @@ def render(style: str, **kwargs) -> str:
     ocs_text = kwargs.pop("ocs_text", "")
     ocs_unread = kwargs.pop("ocs_unread", None)
     ocs_lan = kwargs.pop("ocs_lan", None)
-    worktree_glyph = kwargs.pop("worktree_glyph", "⑂")
+    worktree_glyph = kwargs.pop("worktree_glyph", "🌳")
     looks_hint = kwargs.pop("looks_hint", False)
     ip_line_text = kwargs.pop("ip_line_text", "")
     ip_line_level = kwargs.pop("ip_line_level", "ok")

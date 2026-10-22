@@ -55,7 +55,7 @@ def test_worktree_suffix_collapses_when_name_repeats_branch():
                      is_worktree=True),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert "⑂ worktree" in s
+    assert s.startswith("worktree ⤷ proj")
 
 
 def test_worktree_shows_the_repo_total():
@@ -65,7 +65,7 @@ def test_worktree_shows_the_repo_total():
                      is_worktree=True, worktree_count=3),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert s.startswith("⑂ wt-party (3) ⤷ proj")
+    assert s.startswith("wt-party (🌳3) ⤷ proj")
 
 
 def test_worktree_total_omitted_when_unknown():
@@ -75,7 +75,7 @@ def test_worktree_total_omitted_when_unknown():
                      is_worktree=True, worktree_count=0),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert s.startswith("⑂ wt-party ⤷ proj")
+    assert s.startswith("wt-party ⤷ proj")
 
 
 def test_worktree_shows_its_own_name():
@@ -86,9 +86,9 @@ def test_worktree_shows_its_own_name():
         theme=THEME, dirty=False, use_color=False,
     )
     assert "proj" in s and "main" in s
-    assert "⑂ release-1.2.0-work" in s
+    assert "release-1.2.0-work" in s
     # Leads the line — read before the repo, never scanned past.
-    assert s.startswith("⑂ release-1.2.0-work ⤷ proj")
+    assert s.startswith("release-1.2.0-work ⤷ proj")
 
 
 def test_worktree_name_drops_redundant_repo_prefix():
@@ -98,7 +98,7 @@ def test_worktree_name_drops_redundant_repo_prefix():
                      toplevel="/x", is_worktree=True),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert "⑂ wt-party" in s
+    assert s.startswith("wt-party")
 
 
 def test_worktree_marker_uses_the_theme_worktree_hue():
@@ -109,7 +109,7 @@ def test_worktree_marker_uses_the_theme_worktree_hue():
         theme=THEME, dirty=False, use_color=True,
     )
     r, g, b = THEME.wt
-    assert s.startswith(f"\033[38;2;{r};{g};{b}m⑂ wt-party")
+    assert s.startswith(f"\033[38;2;{r};{g};{b}mwt-party")
     # ...and that hue is its own thing, not a severity color reused.
     assert THEME.wt not in (THEME.s_ok, THEME.s_warn, THEME.s_hot, THEME.mute)
 
@@ -122,7 +122,7 @@ def test_no_worktree_marker_for_normal_checkout():
         theme=THEME, dirty=False, use_color=False,
     )
     # Only the dimmed "worktree (N)" count, never a linked-worktree name.
-    assert s.startswith("⑂ worktree (")
+    assert s.startswith("worktree (🌳")
 
 
 def test_color_mode_emits_ansi():
@@ -281,7 +281,7 @@ def test_main_checkout_shows_the_worktree_count():
                      is_worktree=False, worktree_count=3),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert s.startswith("⑂ worktree (3) ⤷ proj")
+    assert s.startswith("worktree (🌳3) ⤷ proj")
     # Same glyph and word as a linked worktree; the count says how many exist.
     assert "worktree" in s
 
@@ -295,7 +295,7 @@ def test_main_checkout_reports_zero_explicitly():
                      is_worktree=False, worktree_count=0),
         theme=THEME, dirty=False, use_color=False,
     )
-    assert s.startswith("⑂ worktree (0) ⤷ proj")
+    assert s.startswith("worktree (🌳0) ⤷ proj")
 
 
 def test_no_marker_outside_a_git_repo():
@@ -305,7 +305,7 @@ def test_no_marker_outside_a_git_repo():
                      is_worktree=False, worktree_count=0),
         theme=THEME, dirty=None, use_color=False,
     )
-    assert "⑂" not in s
+    assert "worktree" not in s and "🌳" not in s
     assert "(no git)" in s
 
 
@@ -317,19 +317,18 @@ def test_main_checkout_marker_is_dimmed_not_shouting():
         theme=THEME, dirty=False, use_color=True,
     )
     r, g, b = THEME.wt
-    assert s.startswith(f"\033[2m\033[38;2;{r};{g};{b}m⑂ worktree (2)")
+    assert s.startswith(f"\033[2m\033[38;2;{r};{g};{b}mworktree (🌳2)")
 
 
 def test_worktree_glyph_is_configurable():
-    # 🌲 reads as a tree but emoji carry their own font color, so the theme's
-    # worktree hue reaches only the text. A 1-cell symbol takes the color.
+    # The glyph sits inside the count; any 1-2 cell symbol (🌳 by default).
     s = render_identity_line(
         IdentityInfo(project_name="proj", in_git=True, branch="main",
                      detached=False, worktree_name="wt-a", toplevel="/x",
                      is_worktree=True, worktree_count=2),
         theme=THEME, dirty=False, use_color=False, worktree_glyph="⑂",
     )
-    assert s.startswith("⑂ wt-a (2) ⤷ proj")
+    assert s.startswith("wt-a (⑂2) ⤷ proj")
 
 
 def test_worktree_glyph_applies_to_the_main_checkout_form_too():
@@ -339,7 +338,7 @@ def test_worktree_glyph_applies_to_the_main_checkout_form_too():
                      is_worktree=False, worktree_count=0),
         theme=THEME, dirty=False, use_color=False, worktree_glyph="├",
     )
-    assert s.startswith("├ worktree (0) ⤷ proj")
+    assert s.startswith("worktree (├0) ⤷ proj")
 
 
 def test_main_checkout_label_is_worktree_in_every_language():
@@ -354,6 +353,6 @@ def test_main_checkout_label_is_worktree_in_every_language():
                              show_project_branch=True, identity=info,
                              ui_lang=lang, msgs_pct=10, weekly_pct=5,
                              reset_5h="1h", reset_7d="1d", model="Sonnet")
-                assert f"⑂ {label} (3)" in out
+                assert f"{label} (🌳3)" in out
                 assert "feature-x" in out
                 assert "trunk" not in out
