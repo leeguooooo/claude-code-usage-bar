@@ -77,7 +77,7 @@ class StatusbarConfig:
     # A faint `· vX.Y.Z` at the very end of the identity line (dimmest grey).
     show_version: bool = True
     # A dedicated `⚙ effort:… · think:… · fast:… · style:…` session-mode line.
-    show_mode: bool = True
+    show_mode: bool = False
     # When effort is top-tier (xhigh/max/ultracode), flow a pink→purple gradient
     # across the whole mode line (steps ~1 char/s — statusLine can't animate
     # smoothly). Default on.
@@ -166,7 +166,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         show_lines=_to_bool(raw.get("show_lines", True)),
         show_ahead_behind=_to_bool(raw.get("show_ahead_behind", False)),
         show_version=_to_bool(raw.get("show_version", True)),
-        show_mode=_to_bool(raw.get("show_mode", True)),
+        show_mode=_to_bool(raw.get("show_mode", False)),
         mode_gradient=_to_bool(raw.get("mode_gradient", True)),
         bar_shimmer=_to_bool(raw.get("bar_shimmer", False)),
         show_forecast=_to_bool(raw.get("show_forecast", True)),
@@ -188,18 +188,22 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
 # Bumped when an upgrade deliberately resets everyone's look. The file records
 # the version it has seen, so the reset runs once and a later explicit choice
 # (`cs config set style classic`) sticks.
-UI_VERSION = 1
+UI_VERSION = 2
 
 
 def _migrate_ui(raw: dict, path: Path) -> dict:
-    """3.49.0: everyone moves to aurora once, whatever style they had picked."""
+    """Apply each appearance reset once; later explicit choices stick."""
     try:
         seen = int(raw.get("ui_version", 0))
     except (TypeError, ValueError):
         seen = 0
     if seen >= UI_VERSION:
         return raw
-    raw = {k: v for k, v in raw.items() if k != "style" or v == DEFAULT_STYLE}
+    raw = dict(raw)
+    if seen < 1:
+        raw.pop("style", None)  # 3.49.0: move to aurora once.
+    if seen < 2:
+        raw.pop("show_mode", None)  # 3.49.4: hide the extra mode line.
     raw["ui_version"] = UI_VERSION
     try:
         from .cache import atomic_write_text

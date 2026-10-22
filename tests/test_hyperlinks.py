@@ -1,5 +1,4 @@
 """Clickable (OSC 8) links on aurora's lower lines and risk rows."""
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest

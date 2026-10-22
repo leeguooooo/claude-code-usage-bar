@@ -343,3 +343,36 @@ def test_ui_migration_skips_non_live_paths(tmp_path):
     p.write_text(json.dumps({"style": "classic"}))
     assert cfg_mod.load_config(p).style == "classic"
     assert json.loads(p.read_text()) == {"style": "classic"}
+
+
+@pytest.mark.parametrize("saved_mode", [None, True, False])
+def test_mode_line_upgrade_hides_once_and_preserves_other_choices(
+        tmp_path, monkeypatch, saved_mode):
+    p = tmp_path / "live.json"
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
+    raw = {"ui_version": 1, "style": "classic", "theme": "nord"}
+    if saved_mode is not None:
+        raw["show_mode"] = saved_mode
+    p.write_text(json.dumps(raw))
+    from claude_statusbar import render_thin
+    meta = render_thin._SESSIONS_DIR / "abc" / "rendered.meta.json"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("{}")
+
+    cfg = cfg_mod.load_config()
+    assert cfg.show_mode is False
+    assert (cfg.style, cfg.theme) == ("classic", "nord")
+    assert json.loads(p.read_text()) == {
+        "ui_version": cfg_mod.UI_VERSION, "style": "classic", "theme": "nord"}
+    assert not meta.exists()
+
+    cfg_mod.set_value("show_mode", "true")
+    assert cfg_mod.load_config().show_mode is True
+    cfg_mod.set_value("theme", "twilight")
+    assert cfg_mod.load_config().show_mode is True
+
+
+def test_mode_line_missing_key_follows_new_default(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text('{}')
+    assert cfg_mod.load_config(p).show_mode is False

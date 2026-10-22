@@ -45,7 +45,8 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `show_agents` | bool, `false` | One bottom line per running subagent (Claude Code shows these natively too) |
 | `show_duration` / `show_lines` | bool | Session `⏱` duration / `+/−` lines on the identity line |
 | `show_version` | bool, `true` | Faint `· vX.Y.Z` (+ amber `↑newver` when a newer PyPI release exists) |
-| `show_mode` / `mode_gradient` | bool, `true` | `⚙` session-mode line + effort-tier gradient tint |
+| `show_mode` | bool, `false` | Show the `⚙` effort/thinking/fast/style line |
+| `mode_gradient` | bool, `true` | Gradient tint when the session-mode line is enabled |
 | `show_weekly` / `show_language` | bool | Toggle the 7d bar / language-coach segment |
 | `bar_shimmer` | bool, `false` | Experimental twinkling starfield on bars (classic only) |
 | `color_ok` / `color_warn` / `color_hot` / `color_worktree` | hex, `null` | Override the theme's severity colors / worktree-marker hue; empty string restores the theme default |
@@ -105,7 +106,7 @@ cs config set show_agents true  # bottom line(s): running subagents + elapsed
 cs config set show_duration true # identity line: ⏱ session duration
 cs config set show_lines false  # hide identity-line +added -removed (on by default)
 cs config set show_version false  # hide the faint · vX.Y.Z (+ ↑update hint) at line end
-cs config set show_mode false    # hide the ⚙ effort/thinking/fast/style line
+cs config set show_mode true     # opt in to the ⚙ effort/thinking/fast/style line
 cs config set mode_gradient false # mode line: plain per-tier colours, no gradient
 cs config set show_ahead_behind true  # ↑2↓1 on the project/branch line
 cs config set api_mode on        # force no-quota layout (relay/Bedrock/Vertex; default auto)

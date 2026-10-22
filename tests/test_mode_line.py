@@ -32,8 +32,8 @@ def test_color_output_is_ansi_clean_when_off():
     assert "\033[" not in s
 
 
-def test_show_mode_default_on():
-    assert StatusbarConfig().show_mode is True
+def test_show_mode_default_off():
+    assert StatusbarConfig().show_mode is False
 
 
 def test_effort_color_tiers():

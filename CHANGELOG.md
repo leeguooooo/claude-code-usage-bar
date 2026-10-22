@@ -9,6 +9,17 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.49.4 — 2026-10-22
+
+**Hide the extra effort/thinking/fast/style line by default.**
+
+- New installs and upgrades hide the `⚙ effort:… · think:… · fast:… · style:…`
+  line. Existing configurations are migrated once, including saved `show_mode`
+  values; other appearance choices are preserved.
+- To show it again, run `cs config set show_mode true`. That choice persists.
+
+---
+
 ## v3.49.3 — 2026-10-22
 
 **Aurora's lower lines are calmer and clickable.**
