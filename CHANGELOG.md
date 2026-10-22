@@ -9,6 +9,24 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.47.0 — 2026-10-22
+
+**New `aurora` style: thin gradient bars and a regrouped second line.**
+
+- `cs config set style aurora` switches to thin `━` bars for 5h / 7d. Each
+  cell's color is fixed by its position (green → amber → red), so a fuller bar
+  reaches further into red. The percentage keeps the projection-driven color.
+- The model gets a 6-cell context bar plus percentage in place of the
+  `(70.0k/1.0M)` suffix. Without a context reading the token suffix stays.
+- Cache countdown drops seconds once 10+ minutes remain (`❄ 59m`, `❄ 1h00m`);
+  under 10 minutes it stays exact (`❄ 4m23s`).
+- The 2nd line in aurora reads `⎇ main● ↓1 │ project │ +244 │ ⏱ 4m │ ⑂ trunk (1) │ v3.47.0`.
+  A linked worktree still leads the line in its own hue.
+- Honors `color_ok` / `color_warn` / `color_hot` and all 9 themes. `classic`
+  stays the default and is unchanged.
+
+---
+
 ## v3.46.2 — 2026-10-22
 
 **Network warnings describe observations; failed checks stay visible as unknown.**

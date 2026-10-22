@@ -25,7 +25,7 @@ SAMPLE = dict(
 
 
 def test_three_builtin_styles():
-    assert set(list_styles()) == {"classic", "capsule", "hairline"}
+    assert set(list_styles()) == {"classic", "capsule", "hairline", "aurora"}
 
 
 def test_builtin_themes():
@@ -212,3 +212,56 @@ def test_every_theme_has_pill_cost():
             f"{t.name}.pill_cost must be an RGB 3-tuple"
         assert t.pill_cost != t.pill_lang, \
             f"{t.name}.pill_cost must differ from pill_lang (collision is the bug)"
+
+
+def test_aurora_cache_text_drops_seconds_when_far():
+    from claude_statusbar.styles import _aurora_cache_text
+    assert _aurora_cache_text("1h00m00s") == "1h00m"
+    assert _aurora_cache_text("59m12s") == "59m"
+    assert _aurora_cache_text("4m23s") == "4m23s"
+    assert _aurora_cache_text("42s") == "42s"
+    assert _aurora_cache_text("COLD") == "COLD"
+
+
+def test_aurora_plain_layout():
+    from claude_statusbar.styles import render
+    out = render("aurora", msgs_pct=4, weekly_pct=74, reset_5h="4h16m",
+                 reset_7d="2d18h", model="Opus 5.5(70.0k/1.0M)", ctx_pct=7,
+                 cache_age_text="59m12s", use_color=False)
+    assert out == ("5h ━━━━━━━━━━━━  4% ⏰4h16m │ 7d ━━━━━━━━━━━━ 74% ⏰2d18h"
+                   " │ Opus 5.5 ━━━━━━ 7% │ ❄ 59m")
+
+
+def test_aurora_keeps_tokens_without_ctx_and_handles_stale():
+    from claude_statusbar.styles import render
+    out = render("aurora", msgs_pct=None, weekly_pct=None, reset_5h="",
+                 reset_7d="", model="Opus 5.5(70.0k/1.0M)", quota_stale=True,
+                 use_color=False)
+    assert out.startswith("⟳ 5h/7d stale·restart │ Opus 5.5(70.0k/1.0M)")
+
+
+def test_aurora_identity_line_layout():
+    from types import SimpleNamespace
+    from claude_statusbar.styles import render_identity_line_aurora
+    from claude_statusbar.themes import get_theme
+    info = SimpleNamespace(project_name="proj", in_git=True, branch="main",
+                           detached=False, is_worktree=False, worktree_count=1,
+                           worktree_name=None)
+    out = render_identity_line_aurora(
+        info, theme=get_theme("graphite"), dirty=True, ahead=0, behind=1,
+        duration_text="4m", lines_text="+244", version_text="3.47.0",
+        update_text="", use_color=False)
+    assert out == "⎇ main● ↓1 │ proj │ +244 │ ⏱ 4m │ ⑂ trunk (1) │ v3.47.0"
+
+
+def test_aurora_identity_worktree_leads():
+    from types import SimpleNamespace
+    from claude_statusbar.styles import render_identity_line_aurora
+    from claude_statusbar.themes import get_theme
+    info = SimpleNamespace(project_name="proj", in_git=True, branch="feat",
+                           detached=False, is_worktree=True, worktree_count=2,
+                           worktree_name="proj-wt-x")
+    out = render_identity_line_aurora(info, theme=get_theme("graphite"),
+                                      dirty=False, use_color=False)
+    assert out.startswith("⑂ ")
+    assert "trunk" not in out

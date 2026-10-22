@@ -29,9 +29,9 @@ Persisted to `~/.claude/claude-statusbar.json`:
 
 | Key | Values | What it does |
 |-----|--------|--------------|
-| `style` | `classic` / `capsule` / `hairline` | Layout |
+| `style` | `classic` / `capsule` / `hairline` / `aurora` | Layout |
 | `theme` | 9 themes (see [Styles & themes](styles-and-themes.md)) | Colors |
-| `density` | `compact` / `regular` / `cozy` | Segment padding (capsule + hairline only) |
+| `density` | `compact` / `regular` / `cozy` | Segment padding (capsule, hairline, aurora) |
 | `auto_compact_width` | int | Force `hairline` below this terminal width; `0` = off |
 | `show_cost` | bool, `false` | Append `$ X.XX` session cost (API-equivalent value for subscribers) |
 | `show_balance` / `balance_bar` | bool, `true` | No-quota relay balance as a fuel-gauge bar — auto-hidden if the relay doesn't support it |

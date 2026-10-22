@@ -143,6 +143,7 @@ def run(use_color: bool = True, theme_filter: Optional[str] = None,
         "classic":  "01 · CLASSIC（原版）",
         "capsule":  "02 · CAPSULE（胶囊）",
         "hairline": "03 · HAIRLINE（极简线条）",
+        "aurora":   "04 · AURORA（极光细线）",
     }
     # All three styles are theme-aware now (per-segment color management).
     # Keeping THEME_AGNOSTIC as an empty set so the per-theme loop picks up

@@ -19,6 +19,7 @@ cs preview                             # render every style × theme together
 | `classic`  | Original `[bar] \| pipe` engineering layout. Default. |
 | `capsule`  | Each metric is a colored pill — type badge (`◷ 5H` / `☷ 7D` / `◆` / `📚`) on the left, value, severity dot on the right. Subway-signage feel. |
 | `hairline` | One-character mini-bar (`▁▃▆█`) per metric, dashed `┊` separators, tight typography. Maximally calm. |
+| `aurora`   | Thin `━` bars whose cells blend green → amber → red along their length, a mini context bar after the model, `│` separators. The 2nd line regroups as `⎇ branch │ project │ +lines │ ⏱ time`. |
 
 **Capsule** — `graphite` · `twilight` · `nord` · `dracula` · `sakura` · `linen` · `mono` · `catppuccin-mocha` · `tokyo-night`
 

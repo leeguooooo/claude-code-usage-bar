@@ -1,6 +1,6 @@
 ---
-description: Switch the status-bar style (classic / capsule / hairline)
-argument-hint: <classic|capsule|hairline>
+description: Switch the status-bar style (classic / capsule / hairline / aurora)
+argument-hint: <classic|capsule|hairline|aurora>
 allowed-tools: ["Bash"]
 ---
 
@@ -22,4 +22,4 @@ Steps:
    If the cache file does not exist, skip this step — it just means no Claude Code session has populated it yet.
 4. Tell the user the change is now persistent for all future Claude Code sessions.
 
-If `$ARGUMENTS` is not one of `classic`, `capsule`, `hairline`, surface the error from `cs` directly and suggest `cs styles` for valid options.
+If `$ARGUMENTS` is not one of `classic`, `capsule`, `hairline`, `aurora`, surface the error from `cs` directly and suggest `cs styles` for valid options.

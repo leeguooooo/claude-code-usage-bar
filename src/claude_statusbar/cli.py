@@ -141,6 +141,7 @@ def _run_styles_subcommand():
         "classic":  "原始样式（带 [bar] 与 | 分隔）",
         "capsule":  "胶囊样式 — 带底色的药丸，地铁标识感",
         "hairline": "极简线条 — 3 格小条 + 虚线分隔",
+        "aurora":   "极光细线 — 绿→黄→红渐变细条 + 竖线分隔",
     }
     print("Available styles:")
     for name in list_styles():

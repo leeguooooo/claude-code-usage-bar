@@ -38,7 +38,7 @@ got left, and when does it reset?"*
 - **Prompt-cache countdown** — see how long your cache stays warm (`cache 4m23s`) so you know when the next turn pays full price.
 - **Cost & balance** — optional per-session cost, or live relay/API balance in no-quota setups.
 - **Two surfaces** — inline `statusLine` in the terminal, or an always-on-top floating HUD for the Claude desktop app (macOS).
-- **3 styles × 9 themes** — switch the whole look with one command: battery-bar, capsule, or hairline.
+- **4 styles × 9 themes** — switch the whole look with one command: battery-bar, capsule, hairline, or aurora.
 - **Fast mode** — release bundles use a native cache reader and two persistent render workers. Git and network collection run on separate, bounded background queues.
 - **More when you want it** — git branch & diff stats, session activity, IELTS writing-coach progress — each opt-in.
 - **Zero-dependency install** — a single prebuilt binary (no Python needed) or a `pip` package. Auto-updates.
