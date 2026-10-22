@@ -68,6 +68,17 @@ cs --setup                       # 接好 statusLine 钩子，并装上 skill
 
 重启 Claude Code，状态栏就出现在底部了。其余安装方式（只装 skill、插件市场）都在 **[安装指南](docs/install.md)** 里。
 
+**版本没跟上？** `cs` 会在后台自动升级（每 6 小时检查一次）。但有几个老版本的升级逻辑本身是坏的，
+自己升不上来，手动跑一次就好，之后自动升级会恢复正常：
+
+```bash
+cs --version    # 看当前版本
+cs upgrade      # 二进制 / pip / pipx / uv 都适用，会自动选对渠道
+```
+
+没有 `cs upgrade` 或者它报错，就重新跑一遍上面的安装命令。
+[哪些版本受影响、为什么](docs/troubleshooting.md#stuck-on-an-old-version)。
+
 > **延伸阅读：**[`cache 4m23s` 这行到底准不准？prompt 缓存倒计时是怎么算出来的](https://blog.leeguoo.com/posts/claude-statusbar-cache-countdown/)
 
 ### Claude 桌面端（macOS）· `cs hud`

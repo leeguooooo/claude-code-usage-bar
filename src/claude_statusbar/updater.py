@@ -817,7 +817,7 @@ def spawn_background_upgrade_check() -> None:
     """Fire-and-forget: run the version check + upgrade in a DETACHED
     subprocess (`python -m claude_statusbar.updater`) so it never blocks a
     status-line render — the upgrade itself can take tens of seconds. The
-    detached process re-checks the 24h marker is irrelevant here (the caller
+    detached process re-checks the 6h marker is irrelevant here (the caller
     already gated on it); it just performs the check_and_upgrade once.
 
     Best-effort: any spawn failure is swallowed so a render is never harmed.

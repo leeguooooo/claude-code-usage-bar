@@ -1,4 +1,4 @@
-"""check_for_updates rate-limits to one check per machine per 24h AND never
+"""check_for_updates rate-limits to one check per machine per 6h AND never
 runs the upgrade synchronously — it spawns a detached background process so a
 slow `uv tool install` can't block a status-line render.
 
@@ -178,3 +178,20 @@ def test_background_check_skips_a_shadow_install(monkeypatch):
 
     monkeypatch.setattr(updater.subprocess, "Popen", boom)
     updater.spawn_background_upgrade_check()  # returns quietly
+
+
+@pytest.mark.parametrize("age_h,expect", [(5, []), (7, [1])])
+def test_check_interval_is_six_hours(isolated_cache, monkeypatch, age_h, expect):
+    import os
+    cache_dir = isolated_cache / ".cache" / "claude-statusbar"
+    cache_dir.mkdir(parents=True)
+    marker = cache_dir / "last_update_check"
+    marker.touch()
+    old = marker.stat().st_mtime - age_h * 3600
+    os.utime(marker, (old, old))
+    called = []
+    import claude_statusbar.updater as updater
+    monkeypatch.setattr(updater, "spawn_background_upgrade_check",
+                        lambda: called.append(1))
+    core.check_for_updates(session_id="x")
+    assert called == expect

@@ -114,7 +114,7 @@ class StatusbarConfig:
     # glyph uncolored and only tints the text beside it, which defeats the
     # point of a colored marker. Set any 1-2 cell symbol, 🌲 included.
     worktree_glyph: str = "⑂"
-    # Keep cs current on its own, once a day, in a detached background process.
+    # Keep cs current on its own (checked every 6h) in a detached background process.
     # CLAUDE_STATUSBAR_NO_UPDATE=1 still wins over this.
     auto_upgrade: bool = True
     # Language of sentence-like status text (risk lines): auto follows the OS.

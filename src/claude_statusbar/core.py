@@ -617,11 +617,13 @@ print("")
     # "--" at the resets_at-absent branch).
     return "--"
 
-# Auto-update is rate-limited to once per machine per day. We use the mtime
+# Auto-update is rate-limited to once per machine every 6 hours (a day let a
+# release take up to 24h of Claude Code use to arrive; 4 checks a day stays far
+# below GitHub's 60/hour unauthenticated limit even behind a shared IP). We use the mtime
 # of `last_update_check` as the timestamp — touching it before the slow
 # urlopen+pip work means N concurrent new sessions only fire ONE check
 # (the first one to win the touch race; the rest see a fresh mtime and skip).
-_UPDATE_CHECK_INTERVAL_S = 24 * 3600
+_UPDATE_CHECK_INTERVAL_S = 6 * 3600
 
 
 _ENSURE_STATUSLINE_INTERVAL_S = 24 * 60 * 60  # once per day
@@ -657,7 +659,7 @@ def _maybe_ensure_statusline():
 
 
 def check_for_updates(session_id: str = ''):
-    """Check for updates at most once per machine per 24 hours.
+    """Check for updates at most once per machine per 6 hours.
 
     Disabled by setting env CLAUDE_STATUSBAR_NO_UPDATE=1 or
     passing --no-auto-update on the CLI.

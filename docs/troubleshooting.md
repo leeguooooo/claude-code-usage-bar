@@ -39,6 +39,22 @@ Paste the output verbatim in any bug report — it's almost always enough to dia
 
 **`cs --setup --fast` then daemon shows wrong rate-limits** — Fixed in v3.2.1. Upgrade with `cs upgrade`.
 
+### Stuck on an old version
+
+Auto-upgrade checks every 6 hours while Claude Code is running. These releases
+shipped an updater that cannot upgrade itself; run `cs upgrade` once (or re-run
+the install one-liner) and auto-upgrade works from then on:
+
+| You are on | Why it never upgrades | Fix once |
+|---|---|---|
+| uv install ≤ 3.29.3 whose daemon runs as a launchd/systemd service | the service couldn't find uv and fell back to pip, which a uv env lacks | `cs upgrade` |
+| standalone binary ≤ 3.33.0 | no CA certificates bundled, every HTTPS check failed | re-run `install.sh` |
+| standalone binary < 3.36.0 | binaries had no auto-upgrade yet | `cs upgrade` or `install.sh` |
+| uv install 3.35.2–3.42.x | misread as a duplicate install (#71) | see below |
+| Windows < 3.43.6 | auto-upgrade never ran on Windows | close Claude Code, `cs daemon stop`, `uv tool upgrade claude-statusbar` |
+| Windows pip / pipx (any) | can't replace files in use | close Claude Code, then `pip install -U claude-statusbar` |
+| two installs of `cs` | the copy that doesn't own `cs` won't upgrade itself | `cs doctor` names both; remove one |
+
 **Stuck on an old version (uv installs on 3.35.2–3.42.x)** — Those versions misread a `uv tool install` as a duplicate install and skip every auto-upgrade, so they can't fix themselves ([#71](https://github.com/leeguooooo/claude-code-usage-bar/issues/71)). On macOS/Linux run `cs upgrade` once; auto-upgrade works normally afterwards. On Windows with uv below 3.43.7, don't use `cs upgrade` (it can leave `cs` broken, #66): close Claude Code, run `cs daemon stop`, then `uv tool upgrade claude-statusbar`. From 3.46.1, `cs doctor` flags a blocked auto-upgrade and an available update.
 
 **Auto-update is annoying / blocked** — `export CLAUDE_STATUSBAR_NO_UPDATE=1` in your shell rc.
@@ -47,7 +63,8 @@ For anything else: open a [GitHub issue](https://github.com/leeguooooo/claude-co
 
 ## Upgrading
 
-Auto-updates once per day from PyPI. To upgrade manually, one command works for
+Auto-updates in the background (checked every 6 hours; the standalone binary from
+GitHub Releases, pip/pipx/uv installs from PyPI). To upgrade manually, one command works for
 every install (pip, pipx, or uv — it detects which one is actually running `cs`
 and uses that, so you never need to know or guess):
 

@@ -9,6 +9,28 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.49.2 — 2026-10-22
+
+**Updates arrive within hours, the cache countdown trusts Claude Code's expiry, and stuck installs get a guide.**
+
+- Auto-upgrade checks every 6 hours instead of once a day, so a release reaches
+  active machines the same day. Four checks a day stay far below GitHub's
+  unauthenticated rate limit even behind a shared IP.
+- Standalone binaries now cache the latest version they resolve from GitHub
+  Releases, so the `↑newver` hint and `cs doctor`'s `latest` line see new
+  releases (they were stuck on whatever PyPI said last). `cs doctor` no longer
+  prints a cached "latest" older than the installed version.
+- The cache countdown uses Claude Code's `prompt_cache.expires_at` when it is
+  sent (Claude Code 2.1.308+), so a cache refreshed without a new assistant
+  turn (e.g. a keep-alive fork) no longer shows `COLD`. Older Claude Code keeps
+  the transcript-based countdown (#72, thanks @azliabdullah).
+- README and troubleshooting list the releases whose updater can't upgrade
+  itself, with the one command each needs (`cs upgrade` or the installer).
+- Tests no longer start, stop or restart the developer's real daemon service,
+  and no longer write the real version cache.
+
+---
+
 ## v3.49.1 — 2026-10-22
 
 **Quota stores are per organization; an upgrade whose daemon didn't restart retries only the restart.**

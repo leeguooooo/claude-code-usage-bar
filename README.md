@@ -119,6 +119,18 @@ cs --setup                       # wires the statusLine hook + installs the skil
 Restart Claude Code and the bar appears at the bottom. Other paths (skill-only, plugin
 marketplace) are in the **[install guide](docs/install.md)**.
 
+**Not on the latest version?** `cs` upgrades itself in the background (checked every 6 hours).
+Some older releases had a broken updater and can't fix themselves — run this once and
+auto-upgrade takes over again:
+
+```bash
+cs --version    # what you have now
+cs upgrade      # binary, pip, pipx or uv: picks the right channel
+```
+
+If `cs upgrade` is missing or fails, re-run the install one-liner above.
+[Which versions are affected and why](docs/troubleshooting.md#stuck-on-an-old-version).
+
 > **Deep dive:** [Is that `cache 4m23s` line actually accurate? — how the prompt-cache countdown is computed](https://blog.leeguoo.com/en/posts/claude-statusbar-cache-countdown/)
 
 ### Claude desktop app (macOS) — `cs hud`
