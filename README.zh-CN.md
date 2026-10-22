@@ -90,9 +90,11 @@ cs hud install                        # launchd：登录自启 + 保活
 
 ## 显示什么
 
-默认样式的状态栏，`classic` 样式、`graphite` 主题：
+默认样式的状态栏，`aurora` 样式、`graphite` 主题：
 
-![默认状态栏](docs/images/classic-graphite.svg)
+![默认状态栏](docs/images/aurora-graphite.svg)
+
+想要原来的电池条样式：`cs config set style classic`。
 
 完整刷新时最多三行，每一段都可以单独关掉：
 

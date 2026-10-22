@@ -37,6 +37,13 @@ def _isolate_ocs(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_render_sessions(tmp_path, monkeypatch):
+    """Config writes invalidate session renders; keep that off the real cache."""
+    from claude_statusbar import render_thin
+    monkeypatch.setattr(render_thin, "_SESSIONS_DIR", tmp_path / "render-sessions")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_ip_risk_cache(tmp_path, monkeypatch):
     """Doctor/render tests must not consult a developer's real IP history."""
     from claude_statusbar import ip_risk

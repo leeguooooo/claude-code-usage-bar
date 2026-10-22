@@ -293,3 +293,25 @@ def test_worktree_glyph_rejects_something_too_wide(tmp_path: Path):
 def test_worktree_glyph_accepts_a_one_cell_symbol(tmp_path: Path):
     cfg = cfg_mod.set_value("worktree_glyph", "⑂", tmp_path / "c.json")
     assert cfg.worktree_glyph == "⑂"
+
+
+def test_saving_live_config_invalidates_session_renders(tmp_path, monkeypatch):
+    from claude_statusbar import render_thin
+    sessions = render_thin._SESSIONS_DIR
+    meta = sessions / "abc" / "rendered.meta.json"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("{}")
+    (sessions / "abc" / "rendered.ansi").write_text("old")
+    monkeypatch.setattr(cfg_mod, "CONFIG_PATH", tmp_path / "cfg.json")
+    cfg_mod.set_value("style", "classic")
+    assert not meta.exists()
+    assert (sessions / "abc" / "rendered.ansi").exists()
+
+
+def test_saving_other_config_path_leaves_renders(tmp_path):
+    from claude_statusbar import render_thin
+    meta = render_thin._SESSIONS_DIR / "abc" / "rendered.meta.json"
+    meta.parent.mkdir(parents=True)
+    meta.write_text("{}")
+    cfg_mod.set_value("style", "classic", tmp_path / "other.json")
+    assert meta.exists()

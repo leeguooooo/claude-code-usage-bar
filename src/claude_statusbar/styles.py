@@ -347,12 +347,16 @@ def render_aurora(
     ctx_pct: Optional[float] = None,
     projection_5h: str = "",
     projection_7d: str = "",
+    forecast_5h: str = "",
+    forecast_7d: str = "",
+    countdown_emoji: str = "",
     no_quota: bool = False,
     balance_text: str = "",
     quota_stale: bool = False,
     **_ignored,
 ) -> str:
-    from .progress import (window_severity_rgb, _blend,
+    from .progress import (window_severity_rgb, _blend, projection_pct,
+                           _render_projection, _render_forecast,
                            CONTEXT_WARNING_THRESHOLD as _CW,
                            CONTEXT_CRITICAL_THRESHOLD as _CC)
     theme = theme or get_theme("graphite")
@@ -386,11 +390,17 @@ def render_aurora(
         col = _fg(rgb) if rgb is not None else INK
         return f"{col}{BOLD}{int(round(p)):>2}%{RESET}"
 
-    def window(label, p, chip, reset):
+    def window(label, p, chip, forecast, reset, emoji=""):
         rgb = window_severity_rgb(p, chip, theme,
                                   warning_threshold, critical_threshold)
-        return (f"{MUTE}{label}{RESET} {bar(p, 12)} {pct_text(p, rgb)} "
-                f"{EDGE}⏰{MUTE}{reset or '--'}{RESET}")
+        out = (f"{MUTE}{label}{RESET} {bar(p, 12)} {pct_text(p, rgb)} "
+               f"{EDGE}⏰{MUTE}{reset or '--'}{emoji}{RESET}")
+        if chip:
+            out += " " + _render_projection(chip, theme, True)
+        # Same rule as classic: a usable projection wins over the ⚠ forecast.
+        if forecast and projection_pct(chip) is None:
+            out += " " + _render_forecast(forecast, theme, True)
+        return out
 
     sep_pad = DENSITY_PAD.get(density, " ")
     sep = f"{sep_pad}{EDGE}│{RESET}{sep_pad}"
@@ -402,9 +412,11 @@ def render_aurora(
     elif quota_stale and msgs_pct is None and weekly_pct is None:
         parts.append(f"{_fg(theme.s_warn)}⟳ 5h/7d stale·restart{RESET}")
     else:
-        parts.append(window("5h", msgs_pct, projection_5h, reset_5h))
+        parts.append(window("5h", msgs_pct, projection_5h, forecast_5h,
+                            reset_5h, countdown_emoji))
         if show_weekly:
-            parts.append(window("7d", weekly_pct, projection_7d, reset_7d))
+            parts.append(window("7d", weekly_pct, projection_7d, forecast_7d,
+                                reset_7d))
 
     # The mini bar carries context fill, so the `(70.0k/1.0M)` suffix is
     # redundant here; no_quota already shows ctx as the lead segment.

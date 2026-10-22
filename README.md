@@ -146,9 +146,11 @@ Full details in the **[Desktop HUD guide](docs/desktop-hud.md)**.
 
 ## What it shows
 
-The default bar — `classic` style, `graphite` theme:
+The default bar — `aurora` style, `graphite` theme:
 
-![default status bar](docs/images/classic-graphite.svg)
+![default status bar](docs/images/aurora-graphite.svg)
+
+Prefer the original battery-bar look? `cs config set style classic`.
 
 At a full refresh it can render up to three lines, each segment optional:
 

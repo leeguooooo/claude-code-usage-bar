@@ -9,6 +9,22 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.47.1 — 2026-10-22
+
+**`aurora` is the default style; config changes show on the next render.**
+
+- New installs, and anyone who never set `style`, now get `aurora`. To go
+  back: `cs config set style classic`. An explicit `style` in
+  `~/.claude/claude-statusbar.json` is left alone.
+- `aurora` shows the `→NN%` projection and `⚠~8m` forecast chips (same rule as
+  classic: a usable projection wins) and the countdown emoji, so turning on
+  `show_projection` / `show_forecast` works in every default install.
+- `cs config set` / `unset` / `reset` drop each session's cached daemon render,
+  so the next render redraws with the new config. Before, a render right after
+  the change could show the old look for a second or two.
+
+---
+
 ## v3.47.0 — 2026-10-22
 
 **New `aurora` style: thin gradient bars and a regrouped second line.**

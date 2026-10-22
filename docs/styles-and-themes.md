@@ -1,6 +1,6 @@
 # Styles & themes
 
-The default style (`classic`) stays the same forever. Two alternative styles, plus a palette of seven themes, are opt-in.
+The default style is `aurora` (since 3.47.1). `classic`, the original battery-bar layout, stays unchanged for anyone who sets it; `capsule` and `hairline` are the other options, and every style works with every theme.
 
 ```bash
 cs --style capsule  --theme graphite   # try once
@@ -16,10 +16,10 @@ cs preview                             # render every style × theme together
 
 | Style | Look |
 |-------|------|
-| `classic`  | Original `[bar] \| pipe` engineering layout. Default. |
+| `classic`  | Original `[bar] \| pipe` engineering layout. Default before 3.47.1. |
 | `capsule`  | Each metric is a colored pill — type badge (`◷ 5H` / `☷ 7D` / `◆` / `📚`) on the left, value, severity dot on the right. Subway-signage feel. |
 | `hairline` | One-character mini-bar (`▁▃▆█`) per metric, dashed `┊` separators, tight typography. Maximally calm. |
-| `aurora`   | Thin `━` bars whose cells blend green → amber → red along their length, a mini context bar after the model, `│` separators. The 2nd line regroups as `⎇ branch │ project │ +lines │ ⏱ time`. |
+| `aurora`   | Default. Thin `━` bars whose cells blend green → amber → red along their length, a mini context bar after the model, `│` separators. The 2nd line regroups as `⎇ branch │ project │ +lines │ ⏱ time`. |
 
 **Capsule** — `graphite` · `twilight` · `nord` · `dracula` · `sakura` · `linen` · `mono` · `catppuccin-mocha` · `tokyo-night`
 

@@ -265,3 +265,15 @@ def test_aurora_identity_worktree_leads():
                                       dirty=False, use_color=False)
     assert out.startswith("⑂ ")
     assert "trunk" not in out
+
+
+def test_aurora_projection_wins_over_forecast():
+    from claude_statusbar.styles import render
+    out = render("aurora", msgs_pct=40, weekly_pct=10, reset_5h="2h",
+                 reset_7d="3d", model="Opus", projection_5h="→80%",
+                 forecast_5h="~8m", use_color=False)
+    assert "→80%" in out and "~8m" not in out
+    out = render("aurora", msgs_pct=40, weekly_pct=10, reset_5h="2h",
+                 reset_7d="3d", model="Opus", forecast_5h="~8m",
+                 use_color=False)
+    assert "⚠~8m" in out

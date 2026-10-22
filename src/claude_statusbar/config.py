@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 CONFIG_PATH = Path.home() / ".claude" / "claude-statusbar.json"
 
-DEFAULT_STYLE = "classic"     # keep existing behavior for upgraders
+DEFAULT_STYLE = "aurora"
 DEFAULT_THEME = "graphite"
 DEFAULT_DENSITY = "regular"   # cozy | regular | compact
 DEFAULT_AUTO_COMPACT_WIDTH = 0  # 0 = disabled; otherwise force hairline below this width
@@ -216,10 +216,34 @@ def save_config(cfg: StatusbarConfig, path: Optional[Path] = None) -> None:
 
     Only non-default values are written; see `sparse_dict`.
     """
+    live = path is None or path == CONFIG_PATH
     path = CONFIG_PATH if path is None else path
     from .cache import atomic_write_text
     atomic_write_text(
         path, json.dumps(sparse_dict(cfg), indent=2, ensure_ascii=False) + "\n")
+    if live:
+        invalidate_rendered()
+
+
+def invalidate_rendered() -> None:
+    """Drop every session's daemon render so the next tick redraws inline.
+
+    The daemon re-renders about once a second and the cache fast paths (Go
+    and Python) never look at the config file, so `cs config set style X`
+    followed straight away by a render used to serve the old look. Without a
+    meta file both fast paths fall through to an inline render with the new
+    config; the daemon rewrites the meta on its next pass. Best-effort.
+    """
+    from .render_thin import _SESSIONS_DIR
+    try:
+        entries = list(_SESSIONS_DIR.iterdir())
+    except OSError:
+        return
+    for d in entries:
+        try:
+            (d / "rendered.meta.json").unlink()
+        except OSError:
+            pass
 
 
 VALID_KEYS = {
