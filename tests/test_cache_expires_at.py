@@ -7,6 +7,7 @@ used to leave the countdown at COLD while the cache was still warm.
 
 import io
 import json
+import re
 import sys
 import time
 
@@ -64,4 +65,5 @@ def test_render_prefers_expires_at_over_an_old_transcript(tmp_path, monkeypatch,
     core.main(use_color=False, _suppress_side_effects=True)
     out = capsys.readouterr().out
     assert "COLD" not in out
-    assert "cache 49m" in out or "cache 50m" in out, out
+    # classic prints `cache 49m59s`, aurora (the default since 3.47.1) `❄ 49m`.
+    assert re.search(r"(cache|❄) (49|50)m", out), out
