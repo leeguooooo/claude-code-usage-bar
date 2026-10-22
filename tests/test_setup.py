@@ -410,3 +410,24 @@ def test_real_copy_failure_is_reported_and_fails(isolated, monkeypatch, capsys):
     _n, skipped, failed = setup_mod.install_commands()
     assert failed and not skipped
     assert setup_mod.run_setup(verbose=False) != 0
+
+
+
+def test_setup_never_touches_the_real_service(isolated, monkeypatch, service_calls):
+    """Regression: setup's daemon handoff ran `launchctl kickstart -k` (which
+    restarts the running daemon) on the developer's machine. With a service
+    installed it must reach only the conftest fakes, never a real subprocess."""
+    import subprocess
+    real_run = subprocess.run
+
+    def guard(cmd, *a, **k):
+        assert not (cmd and cmd[0] in ("launchctl", "systemctl")), cmd
+        return real_run(cmd, *a, **k)
+    monkeypatch.setattr(subprocess, "run", guard)
+    from claude_statusbar import service
+    monkeypatch.setattr(service, "_platform", lambda: "macos")
+    monkeypatch.setattr(service, "is_installed", lambda: True)
+    setup_mod.run_setup(verbose=False, install_cmds=False)
+    tools = [c[0] for c in service_calls]
+    assert "launchctl" in tools                           # handoff attempted…
+    assert tools[-1] == "cmd_start"                       # …then a faked start

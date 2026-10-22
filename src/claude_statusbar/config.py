@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 CONFIG_PATH = Path.home() / ".claude" / "claude-statusbar.json"
 
-DEFAULT_STYLE = "classic"     # keep existing behavior for upgraders
+DEFAULT_STYLE = "aurora"
 DEFAULT_THEME = "graphite"
 DEFAULT_DENSITY = "regular"   # cozy | regular | compact
 DEFAULT_AUTO_COMPACT_WIDTH = 0  # 0 = disabled; otherwise force hairline below this width
@@ -68,10 +68,8 @@ class StatusbarConfig:
     # Egress-IP risk chip on the identity line (proxycheck.io, 30-min cadence,
     # detached prober — see ip_risk.py). Opt-in: it talks to a third party.
     show_ip_risk: bool = False
-    # Relay fingerprint-risk warning line: relay base URL + a marked system
-    # timezone → Claude Code's request is fingerprintable (see fp_risk.py).
-    # Local-only, no network, silent unless there's real risk → default on so
-    # affected relay users are warned without having to opt in.
+    # Local-only custom-endpoint notice, not a watermark/account detector.
+    # Default on; no request inspection, network calls or timezone inference.
     show_fp_risk: bool = True
     show_duration: bool = False
     show_lines: bool = True
@@ -119,6 +117,8 @@ class StatusbarConfig:
     # Keep cs current on its own, once a day, in a detached background process.
     # CLAUDE_STATUSBAR_NO_UPDATE=1 still wins over this.
     auto_upgrade: bool = True
+    # Language of sentence-like status text (risk lines): auto follows the OS.
+    lang: str = "auto"
 
 
 def _to_bool(v):
@@ -138,6 +138,8 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         return StatusbarConfig()
     if not isinstance(raw, dict):
         return StatusbarConfig()
+    if path == CONFIG_PATH:
+        raw = _migrate_ui(raw, path)
     return StatusbarConfig(
         style=str(raw.get("style", DEFAULT_STYLE)),
         theme=str(raw.get("theme", DEFAULT_THEME)),
@@ -179,7 +181,33 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         color_worktree=raw.get("color_worktree") or None,
         worktree_glyph=str(raw.get("worktree_glyph", "⑂") or "⑂"),
         auto_upgrade=_to_bool(raw.get("auto_upgrade", True)),
+        lang=str(raw.get("lang", "auto") or "auto"),
     )
+
+
+# Bumped when an upgrade deliberately resets everyone's look. The file records
+# the version it has seen, so the reset runs once and a later explicit choice
+# (`cs config set style classic`) sticks.
+UI_VERSION = 1
+
+
+def _migrate_ui(raw: dict, path: Path) -> dict:
+    """3.49.0: everyone moves to aurora once, whatever style they had picked."""
+    try:
+        seen = int(raw.get("ui_version", 0))
+    except (TypeError, ValueError):
+        seen = 0
+    if seen >= UI_VERSION:
+        return raw
+    raw = {k: v for k, v in raw.items() if k != "style" or v == DEFAULT_STYLE}
+    raw["ui_version"] = UI_VERSION
+    try:
+        from .cache import atomic_write_text
+        atomic_write_text(path, json.dumps(raw, indent=2, ensure_ascii=False) + "\n")
+        invalidate_rendered()
+    except OSError:
+        pass
+    return raw
 
 
 def sparse_dict(cfg: StatusbarConfig) -> dict:
@@ -218,10 +246,36 @@ def save_config(cfg: StatusbarConfig, path: Optional[Path] = None) -> None:
 
     Only non-default values are written; see `sparse_dict`.
     """
+    live = path is None or path == CONFIG_PATH
     path = CONFIG_PATH if path is None else path
     from .cache import atomic_write_text
+    data = sparse_dict(cfg)
+    data["ui_version"] = UI_VERSION
     atomic_write_text(
-        path, json.dumps(sparse_dict(cfg), indent=2, ensure_ascii=False) + "\n")
+        path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    if live:
+        invalidate_rendered()
+
+
+def invalidate_rendered() -> None:
+    """Drop every session's daemon render so the next tick redraws inline.
+
+    The daemon re-renders about once a second and the cache fast paths (Go
+    and Python) never look at the config file, so `cs config set style X`
+    followed straight away by a render used to serve the old look. Without a
+    meta file both fast paths fall through to an inline render with the new
+    config; the daemon rewrites the meta on its next pass. Best-effort.
+    """
+    from .render_thin import _SESSIONS_DIR
+    try:
+        entries = list(_SESSIONS_DIR.iterdir())
+    except OSError:
+        return
+    for d in entries:
+        try:
+            (d / "rendered.meta.json").unlink()
+        except OSError:
+            pass
 
 
 VALID_KEYS = {
@@ -237,7 +291,7 @@ VALID_KEYS = {
     "show_mode", "mode_gradient",
     "cache_ttl_seconds", "api_mode",
     "warning_threshold", "critical_threshold",
-    "color_ok", "color_warn", "color_hot", "color_worktree",
+    "color_ok", "color_warn", "color_hot", "color_worktree", "lang",
     "auto_upgrade", "worktree_glyph",
 }
 _VALID_API_MODE = {"auto", "on", "off"}
@@ -256,6 +310,7 @@ _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds"}
 _COLOR_KEYS = {"color_ok", "color_warn", "color_hot", "color_worktree"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}
 _VALID_CWD_STYLE = {"basename", "full"}
+_VALID_LANG = {"auto", "zh", "en"}
 
 
 def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarConfig:
@@ -311,6 +366,10 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
     elif key == "density":
         if value not in _VALID_DENSITY:
             raise ValueError(f"density must be one of {sorted(_VALID_DENSITY)}, got {value!r}")
+        setattr(cfg, key, value)
+    elif key == "lang":
+        if value not in _VALID_LANG:
+            raise ValueError(f"lang must be one of {sorted(_VALID_LANG)}, got {value!r}")
         setattr(cfg, key, value)
     elif key == "api_mode":
         if value not in _VALID_API_MODE:

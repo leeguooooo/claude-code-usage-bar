@@ -35,7 +35,7 @@ def _run(tmp_path, monkeypatch, capsys, session_env, terminal_width=None):
     config_path = tmp_path / ".claude" / "claude-statusbar.json"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(json.dumps({
-        "style": "classic",
+        "style": "classic", "ui_version": 1,
         "auto_compact_width": 60,
         "show_project_branch": False,
         "show_cache_age": False,

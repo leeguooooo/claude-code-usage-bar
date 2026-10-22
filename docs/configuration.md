@@ -29,9 +29,9 @@ Persisted to `~/.claude/claude-statusbar.json`:
 
 | Key | Values | What it does |
 |-----|--------|--------------|
-| `style` | `classic` / `capsule` / `hairline` | Layout |
+| `style` | `classic` / `capsule` / `hairline` / `aurora` | Layout |
 | `theme` | 9 themes (see [Styles & themes](styles-and-themes.md)) | Colors |
-| `density` | `compact` / `regular` / `cozy` | Segment padding (capsule + hairline only) |
+| `density` | `compact` / `regular` / `cozy` | Segment padding (capsule, hairline, aurora) |
 | `auto_compact_width` | int | Force `hairline` below this terminal width; `0` = off |
 | `show_cost` | bool, `false` | Append `$ X.XX` session cost (API-equivalent value for subscribers) |
 | `show_balance` / `balance_bar` | bool, `true` | No-quota relay balance as a fuel-gauge bar — auto-hidden if the relay doesn't support it |
@@ -51,6 +51,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `color_ok` / `color_warn` / `color_hot` / `color_worktree` | hex, `null` | Override the theme's severity colors / worktree-marker hue; empty string restores the theme default |
 | `worktree_glyph` | string, `⑂` | Glyph leading the worktree/trunk segment. Any 1-2 cell symbol (`⋔`, `├`, `⧉`, `🌲`). Emoji carry their own font color, so an emoji glyph ignores the theme hue and tints only the text beside it |
 | `auto_upgrade` | bool, `true` | Once-a-day detached self-upgrade, every install channel including the standalone binary; `CLAUDE_STATUSBAR_NO_UPDATE=1` overrides |
+| `lang` | `auto` / `zh` / `en` | Language of the IP / endpoint notice lines. `auto` follows the OS (macOS: first system language, not `$LANG`) |
 | `api_mode` | `auto` / `on` / `off` | No-quota mode (see [No-quota mode](no-quota-mode.md)); `CS_API_MODE` env overrides |
 
 Full per-key detail is in the [segment reference](segments.md) or

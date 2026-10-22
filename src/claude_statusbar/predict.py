@@ -134,27 +134,52 @@ def _read_account_id(transcript_path=None) -> Optional[str]:
     # Anchor on the oauthAccount object so an unrelated future "accountUuid"
     # key elsewhere in the file can't shadow the login identity.
     anchor = data.find(b'"oauthAccount"')
-    m = re.search(rb'"accountUuid"\s*:\s*"([0-9a-fA-F-]{8,64})"',
-                  data[anchor:] if anchor >= 0 else data)
+    scope = data[anchor:] if anchor >= 0 else data
+    m = re.search(rb'"accountUuid"\s*:\s*"([0-9a-fA-F-]{8,64})"', scope)
     aid = m.group(1).decode("ascii") if m else None
+    # Quota belongs to the subscription, i.e. the organization: one login can
+    # be a member of a personal Max org and a Team org, with separate 5h/7d
+    # counters and rate-limit tiers (oauthAccount carries organizationUuid and
+    # organizationRateLimitTier next to the account). Keying on the account
+    # alone merged both orgs' readings. Stay inside the oauthAccount object —
+    # it is a few hundred bytes — so no other "organizationUuid" can match.
+    if aid and anchor >= 0:
+        o = re.search(rb'"organizationUuid"\s*:\s*"([0-9a-fA-F-]{8,64})"',
+                      scope[:4096])
+        if o:
+            aid = f"{aid}:{o.group(1).decode('ascii')}"
     _ACCOUNT_CACHE["sig"] = sig
     _ACCOUNT_CACHE["id"] = aid
     return aid
 
 
 def account_id(transcript_path=None) -> Optional[str]:
-    """Uuid of the account logged in to the config dir this session uses, or
-    None if undetectable."""
+    """Quota owner of the login this session uses — `<account>:<org>`, or the
+    bare account uuid when no organization is recorded — or None if
+    undetectable."""
     return _read_account_id(transcript_path)
 
 
 def _account_path(base: Path, transcript_path=None) -> Path:
-    """Per-account variant of a shared-store path (`rate_latest.<uuid12>.json`).
-    Unknown account → the legacy unsuffixed path."""
+    """Per-owner variant of a shared-store path: `rate_latest.<acct12>-<org8>.json`
+    (`rate_latest.<acct12>.json` without an org). Unknown account → the legacy
+    unsuffixed path."""
     aid = account_id(transcript_path)
     if not aid:
         return base
-    return base.with_name(f"{base.stem}.{aid[:12]}{base.suffix}")
+    acct, _, org = aid.partition(":")
+    legacy = base.with_name(f"{base.stem}.{acct[:12]}{base.suffix}")
+    if not org:
+        return legacy
+    path = base.with_name(f"{base.stem}.{acct[:12]}-{org[:8]}{base.suffix}")
+    # Pre-3.49.1 stores were keyed by account only. Hand that history to the
+    # first org seen — for the usual single-org login it is exactly its own.
+    if not path.exists() and legacy.exists():
+        try:
+            os.replace(legacy, path)
+        except OSError:
+            pass
+    return path
 
 
 def _latest_path(transcript_path=None) -> Path:

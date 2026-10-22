@@ -1308,29 +1308,36 @@ def main(json_output: bool = False,
         except Exception:
             pass
 
+    def _risk_lang(c):
+        from .i18n import ui_lang
+        return ui_lang(c.lang)
+
     # Dedicated egress-IP risk warning line (only shows above the risk
     # threshold; independent of the git identity segment).
     ip_line_kwargs = {}
     if cfg.show_ip_risk:
         try:
-            from .ip_risk import ip_risk_line
-            ip_text, ip_level = ip_risk_line()
-            if ip_text:
-                ip_line_kwargs = {"ip_line_text": ip_text,
-                                  "ip_line_level": ip_level}
+            from .ip_risk import ip_risk_finding
+            ip_finding, ip_level = ip_risk_finding()
+            if ip_finding:
+                ip_line_kwargs = {"ip_line_text": ip_finding.legacy,
+                                  "ip_line_level": ip_level,
+                                  "ip_finding": ip_finding,
+                                  "risk_lang": _risk_lang(cfg)}
         except Exception:
             pass
 
-    # Relay fingerprint-risk warning line (local-only: relay base URL + a
-    # marked system timezone). Its own dedicated line, distinct from ip_risk.
+    # Local custom-endpoint notice. No watermark, timezone or account inference.
     fp_line_kwargs = {}
     if cfg.show_fp_risk:
         try:
-            from .fp_risk import fp_risk_line
-            fp_text, fp_level = fp_risk_line(_effective_env)
-            if fp_text:
-                fp_line_kwargs = {"fp_line_text": fp_text,
-                                  "fp_line_level": fp_level}
+            from .fp_risk import fp_risk_finding
+            fp_finding = fp_risk_finding(_effective_env)
+            if fp_finding:
+                fp_line_kwargs = {"fp_line_text": fp_finding.legacy,
+                                  "fp_line_level": "warn",
+                                  "fp_finding": fp_finding,
+                                  "fp_lang": _risk_lang(cfg)}
         except Exception:
             pass
 

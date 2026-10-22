@@ -38,7 +38,7 @@ got left, and when does it reset?"*
 - **Prompt-cache countdown** — see how long your cache stays warm (`cache 4m23s`) so you know when the next turn pays full price.
 - **Cost & balance** — optional per-session cost, or live relay/API balance in no-quota setups.
 - **Two surfaces** — inline `statusLine` in the terminal, or an always-on-top floating HUD for the Claude desktop app (macOS).
-- **3 styles × 9 themes** — switch the whole look with one command: battery-bar, capsule, or hairline.
+- **4 styles × 9 themes** — switch the whole look with one command: battery-bar, capsule, hairline, or aurora.
 - **Fast mode** — release bundles use a native cache reader and two persistent render workers. Git and network collection run on separate, bounded background queues.
 - **More when you want it** — git branch & diff stats, session activity, IELTS writing-coach progress — each opt-in.
 - **Zero-dependency install** — a single prebuilt binary (no Python needed) or a `pip` package. Auto-updates.
@@ -146,9 +146,11 @@ Full details in the **[Desktop HUD guide](docs/desktop-hud.md)**.
 
 ## What it shows
 
-The default bar — `classic` style, `graphite` theme:
+The default bar — `aurora` style, `graphite` theme:
 
-![default status bar](docs/images/classic-graphite.svg)
+![default status bar](docs/images/aurora-graphite.svg)
+
+Prefer the original battery-bar look? `cs config set style classic`.
 
 At a full refresh it can render up to three lines, each segment optional:
 
@@ -161,6 +163,16 @@ At a full refresh it can render up to three lines, each segment optional:
 Every icon, color threshold, and toggle is documented in the
 **[segment reference](docs/segments.md)**. Nine themes and three styles are in
 **[styles & themes](docs/styles-and-themes.md)**.
+
+## Network observations
+
+Enable optional IP checks with `cs config set show_ip_risk true`. The bar
+reports cached network observations, not account-suspension predictions.
+Unavailable checks stay unknown; IPv4/IPv6 country differences do not prove
+a leak. `cs doctor` explains coverage and links to [IP Check](https://ip-check.leeguoo.com/#local-diagnostics)
+and [Thermo for macOS](https://app.leeguoo.com/thermo) for explicit deeper checks.
+No Thermo scan runs on the render path. Check the installed Thermo version
+for Claude diagnostic availability.
 
 ## Documentation
 

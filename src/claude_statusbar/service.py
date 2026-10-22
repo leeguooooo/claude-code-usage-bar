@@ -400,6 +400,21 @@ def start_job() -> Tuple[bool, str]:
     return False, f"unsupported platform {sys.platform!r}"
 
 
+def restart() -> Tuple[bool, str]:
+    """Restart the supervised daemon through the service manager (which
+    launches whatever `cs` now points at). Only the restart — nothing is
+    reinstalled."""
+    plat = _platform()
+    if plat == "macos":
+        return _macos_kickstart()
+    if plat == "linux":
+        rc, _, err = _systemctl_user("restart", SYSTEMD_UNIT)
+        if rc != 0:
+            return False, f"systemctl restart failed: {err.strip()}"
+        return True, "daemon restarted by systemd"
+    return False, f"unsupported platform {sys.platform!r}"
+
+
 def adopt_running_daemon() -> Tuple[bool, str]:
     """Make the service manager own the daemon process.
 

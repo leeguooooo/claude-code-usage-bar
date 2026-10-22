@@ -177,6 +177,34 @@ def _statusline_shell_check(cmd: str, cache: Path) -> None:
 _ISSUES_URL = "https://github.com/leeguooooo/claude-code-usage-bar/issues"
 
 
+def risk_details() -> None:
+    """Read cached/local evidence only. No refresh, install, browser or Thermo scan."""
+    from . import ip_risk
+    from .config import load_config
+    from .fp_risk import fp_risk_line
+    cfg = load_config()
+    entry = ip_risk.read_cache()
+    state = ip_risk.cache_state(entry)
+    level = ip_risk.cached_status(entry)[1]
+    summary = f"{state} — cached network signals ({level}); account status unverified"
+    _line("IP probe", summary if cfg.show_ip_risk else "off (opt-in)", ok=None)
+    coverage = entry if isinstance(entry, dict) and entry.get("ok") else (
+        entry.get("last_good") if isinstance(entry, dict) else None)
+    family = coverage.get("families") if isinstance(coverage, dict) else None
+    label = "last-known " if state in ("failed", "stale") and isinstance(family, dict) else "cached "
+    _line("family probe coverage", label + "IPv4/IPv6 samples recorded; not a Claude-route verification"
+          if isinstance(family, dict) and family.get("v4") and family.get("v6")
+          else label + "partial, unavailable or skipped; not proof of no IPv6", ok=None)
+    endpoint, _ = fp_risk_line()
+    _line("endpoint metadata", "custom endpoint configured; payload not inspected" if endpoint
+          else "not established by this local setting check", ok=None)
+    print("    Risk summary reads cache only; existing render/shell smoke tests may refresh enabled collectors.")
+    print("    No account-suspension verdict; a probe may use a different route from Claude.")
+    print("    Network details: https://ip-check.leeguoo.com/#local-diagnostics")
+    print("    Local checks (macOS): https://app.leeguoo.com/thermo")
+    print("    Check the installed Thermo version for Claude diagnostic availability.")
+
+
 def run() -> int:
     print()
     print("  cs doctor — claude-statusbar self-check")
@@ -238,10 +266,23 @@ def run() -> int:
         elif compare_versions(current, latest):
             _line("latest", _yellow(f"{latest} available — run: cs upgrade"), ok=None)
         else:
-            _line("latest", f"{latest} (up to date)")
+            # A cache older than the install names a version below ours.
+            shown = current if compare_versions(latest, current) else latest
+            _line("latest", f"{shown} (up to date)")
     except Exception:
         pass  # no cache yet or unreadable: say nothing rather than guess
     _line("auto-upgrade", auto[0], ok=auto[1])
+    # An upgrade that installed but could not bring the daemon back. Only
+    # while it is still down: a later lazy spawn or manual restart clears it.
+    try:
+        from .updater import UPGRADE_STATUS, _daemon_alive, restart_hint
+        st = json.loads(UPGRADE_STATUS.read_text(encoding="utf-8"))
+        if st.get("daemon") == "restart_failed" and not _daemon_alive():
+            _line("last upgrade", _yellow(
+                f"installed v{st.get('version') or '?'}, daemon restart failed "
+                f"({st.get('detail') or 'unknown'}) — run: {restart_hint()}"), ok=None)
+    except Exception:
+        pass
 
     # --- python ---
     _line("python", f"{sys.version.split()[0]}  ({sys.executable})")
@@ -413,6 +454,12 @@ def run() -> int:
                   _dim("skipped — no statusLine entry recognized as ours"))
     except Exception as e:
         _line("statusLine shell test", _dim(f"check skipped: {e}"))
+
+    # --- opt-in network/cache and local endpoint evidence ---
+    try:
+        risk_details()
+    except Exception:
+        _line("risk checks", "unavailable; not an account verdict", ok=None)
 
     # --- terminal ---
     try:

@@ -45,7 +45,8 @@ def test_unset_subcommand_clears_a_key(capsys, monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "argv", ["cs", "config", "unset", "theme"])
     assert cli.main() == 0
     assert "following the default" in capsys.readouterr().out
-    assert json.loads(p.read_text()) == {}
+    from claude_statusbar.config import UI_VERSION
+    assert json.loads(p.read_text()) == {"ui_version": UI_VERSION}
 
 
 def test_unset_rejects_unknown_key(capsys, monkeypatch, tmp_path):

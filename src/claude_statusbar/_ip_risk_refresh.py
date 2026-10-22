@@ -1,6 +1,6 @@
 """Detached egress-IP risk prober — spawned by ip_risk.ensure_fresh().
 
-Fully local: no call to our own Worker. Two tiers keep third-party load tiny:
+Background-only probing. Two tiers keep enrichment load small:
 
   * cheap tier — ipify returns the egress IP (unlimited, ~no cost). Run every
     spawn to detect a VPN toggle fast.
@@ -103,9 +103,10 @@ def classify_ip(ip: str) -> dict:
 def family_traces() -> dict:
     """{"v4": trace|None, "v6": trace|None}; a family that can't connect is
     simply absent (no IPv6 is normal). Skipped (empty) when an HTTPS proxy is
-    configured in the environment: Claude Code would go through that proxy,
+    configured: a client may go through that proxy,
     which a raw socket doesn't, so the reading wouldn't be Claude's route."""
-    if urllib.request.getproxies().get("https"):
+    proxies = urllib.request.getproxies()
+    if any(proxies.get(key) for key in ("http", "https", "all")):
         return {}
 
     def one(family):
@@ -145,6 +146,30 @@ def evaluate_ip() -> dict:
     out = ip_score.evaluate(sig, country)
     out.update({"ok": True, "ip": ip, "provider": "ipapi.is+local"})
     return out
+
+
+def evaluate_via_origin(ip: str) -> dict:
+    """Fallback verdict from our own ip-check origin when ipapi.is is out of
+    reach (it refuses connections from some networks outright, and then every
+    check read as "unavailable" although the egress IP was known). Same 0–100
+    risk scale; anything malformed raises so the caller records a failure."""
+    raw = json.loads(_get(f"https://{_TRACE_HOST}/_asn?v=2&ip="
+                          + urllib.request.quote(ip, safe="")))
+    risk = raw.get("risk")
+    if (isinstance(risk, bool) or not isinstance(risk, (int, float))
+            or not 0 <= risk <= 100):
+        raise ValueError("no risk")
+    kind = str(raw.get("type") or "").lower() or None
+    claude = raw.get("claude") if isinstance(raw.get("claude"), dict) else {}
+    out = {
+        "ok": True, "ip": raw.get("ip") or ip, "provider": "ip-check-origin",
+        "risk": risk, "type": kind,
+        "country": (raw.get("country") or "").upper() or None,
+        "verdict": claude.get("verdict"),
+        "proxy": "yes" if (kind in ip_score._BAN_TYPES or kind == "hosting"
+                           or risk >= ip_risk.WARN_RISK) else "no",
+    }
+    return {k: v for k, v in out.items() if v is not None}
 
 
 def _parse_abuser(s):
@@ -188,12 +213,17 @@ def _refresh_locked() -> int:
                 and ip_risk.is_fresh(prev, now)):
             entry = dict(prev)
         else:
-            entry = evaluate_ip()
+            try:
+                entry = evaluate_ip()
+            except Exception:
+                entry = evaluate_via_origin(ip)
     except Exception:
         entry = {"ok": False, "ts": now}
-        if prev.get("ok"):
-            entry["last_good"] = {k: prev.get(k) for k in
-                                  ("ip", "risk", "proxy", "type")}
+        previous = prev if prev.get("ok") else prev.get("last_good")
+        if isinstance(previous, dict):
+            entry["last_good"] = {k: previous[k] for k in
+                                  ("ip", "risk", "proxy", "type", "country", "region",
+                                   "verdict", "ts", "checked_ts", "families") if k in previous}
         entry["checked_ts"] = now
         try:
             ip_risk.write_cache_atomic(entry)

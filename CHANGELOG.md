@@ -9,6 +9,130 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.49.1 — 2026-10-22
+
+**Quota stores are per organization; an upgrade whose daemon didn't restart retries only the restart.**
+
+- The 5h/7d stores, projection history and quota snapshots are keyed by
+  account *and* organization (`oauthAccount.organizationUuid`). One login can
+  belong to a personal Max org and a Team org, each with its own counters and
+  rate-limit tier; switching between them no longer mixes their readings.
+  Existing history moves to the current organization on first use, so a
+  single-org login keeps its projections.
+- After a binary upgrade installs, `cs upgrade` and the background
+  auto-upgrade check that the daemon came back on the new code. If it did not,
+  they retry just the restart (launchd / systemd, or `cs daemon start`) twice,
+  never another download. `cs upgrade` then says
+  `Installed vX, but the background daemon did not restart (…)` with the retry
+  command, and `cs doctor` shows a `last upgrade` line while the daemon stays down.
+
+---
+
+## v3.49.0 — 2026-10-22
+
+**One look for everyone: aurora, a brighter green, and quieter lower lines.**
+
+- Upgrading moves every config to `aurora` once, including an explicit
+  `classic` / `capsule` / `hairline`. The file records `ui_version`, so a
+  choice made afterwards (`cs config set style classic`) sticks.
+- The default `graphite` theme's green is now `#4ec85b`. Other themes and
+  your own `color_ok` are unchanged.
+- In aurora, line 1 keeps the color and the lines below recede: grey text,
+  with the diff counts, dirty / ahead-behind flags and LAN dots in muted hues.
+  `⑂ trunk (N)` shows only when other worktrees exist, and the version only
+  when an update is waiting.
+- The ocs line in aurora reads `ocs claude-b2242a10 │ ✉3 │ lan ● win · ● mac`,
+  with a dot per LAN peer (green = seen recently).
+
+---
+
+## v3.48.0 — 2026-10-22
+
+**IP and endpoint notices take one line, in your system language.**
+
+- The network notices under the status line collapse from two full-color
+  lines into one segmented line in the aurora look:
+  `✗ IPv6 CN │ unsupported region │ route unverified · cs doctor`. Only the
+  glyph, the value and the reason are colored; the `cs doctor` pointer is dim.
+- Chinese and English. `cs config set lang auto|zh|en` (default `auto`). On
+  macOS `auto` reads the first system language, so a Chinese system gets
+  `✗ IPv6 CN │ 不支持的地区 │ 实际路线未验证 · cs doctor` even when the
+  terminal's `$LANG` is `en_US.UTF-8`. Other platforms use `LC_ALL` /
+  `LC_MESSAGES` / `LANG`.
+- The custom-endpoint notice becomes a quieter `◌` note. `cs doctor` and the
+  checks behind each notice are unchanged.
+
+---
+
+## v3.47.2 — 2026-10-22
+
+**The IP check no longer goes "unavailable" when ipapi.is is out of reach.**
+
+- Some networks refuse connections to `api.ipapi.is` outright. The egress IP
+  was still known, yet every check failed and the status line kept a two-line
+  `⚠ ip check unavailable` notice. The check now falls back to our own
+  ip-check origin (the one already used for the IPv4/IPv6 readings) for the
+  risk score, type and country. A clean reading stays silent as before.
+- If both sources fail, the check is still reported as unknown.
+
+---
+
+## v3.47.1 — 2026-10-22
+
+**`aurora` is the default style; config changes show on the next render.**
+
+- New installs, and anyone who never set `style`, now get `aurora`. To go
+  back: `cs config set style classic`. An explicit `style` in
+  `~/.claude/claude-statusbar.json` is left alone.
+- `aurora` shows the `→NN%` projection and `⚠~8m` forecast chips (same rule as
+  classic: a usable projection wins) and the countdown emoji, so turning on
+  `show_projection` / `show_forecast` works in every default install.
+- `cs config set` / `unset` / `reset` drop each session's cached daemon render,
+  so the next render redraws with the new config. Before, a render right after
+  the change could show the old look for a second or two.
+
+---
+
+## v3.47.0 — 2026-10-22
+
+**New `aurora` style: thin gradient bars and a regrouped second line.**
+
+- `cs config set style aurora` switches to thin `━` bars for 5h / 7d. Each
+  cell's color is fixed by its position (green → amber → red), so a fuller bar
+  reaches further into red. The percentage keeps the projection-driven color.
+- The model gets a 6-cell context bar plus percentage in place of the
+  `(70.0k/1.0M)` suffix. Without a context reading the token suffix stays.
+- Cache countdown drops seconds once 10+ minutes remain (`❄ 59m`, `❄ 1h00m`);
+  under 10 minutes it stays exact (`❄ 4m23s`).
+- The 2nd line in aurora reads `⎇ main● ↓1 │ project │ +244 │ ⏱ 4m │ ⑂ trunk (1) │ v3.47.0`.
+  A linked worktree still leads the line in its own hue.
+- Honors `color_ok` / `color_warn` / `color_hot` and all 9 themes. `classic`
+  stays the default and is unchanged.
+
+---
+
+## v3.46.2 — 2026-10-22
+
+**Network warnings describe observations; failed checks stay visible as unknown.**
+
+- Remove timezone-based watermark assertions and timezone-change advice. A custom
+  API endpoint produces a local configuration notice, without exposing its URL.
+- Add opt-in, separately measured IPv4/IPv6 exit observations using our own
+  Cloudflare origin, never an Anthropic host. Direct family probes skip configured
+  HTTP/HTTPS/ALL proxies rather than pretending to follow a client proxy route.
+- Remove certain account-ban predictions. Different IPv4/IPv6 exit countries are
+  an amber discrepancy, not proof of an IPv6 leak or a reason to disable IPv6.
+  Independent WARP, unsupported-region and classified exit warnings retain priority.
+- Failed or stale probes show current status as unknown. Prior warnings are labelled
+  last known; repeated failures retain the previous observation without resetting
+  its timestamp. Fresh clean readings remain silent.
+- `cs doctor` adds cache/coverage information and links to IP Check and Thermo.
+  The new risk summary reads cache only and never runs a deep local scanner.
+  Existing doctor render/shell smoke checks retain normal collector behavior.
+  State, not raw IPs, credentials or endpoint URLs, is included in the summary.
+
+---
+
 ## v3.46.1 — 2026-10-09
 
 **`cs doctor` shows when you're behind; a failed refresh keeps the per-model limits.**

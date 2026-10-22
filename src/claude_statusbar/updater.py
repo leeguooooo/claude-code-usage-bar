@@ -9,6 +9,7 @@ import logging
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -101,7 +102,13 @@ def latest_release_tag() -> Optional[str]:
         )
         with urllib.request.urlopen(req, timeout=5) as response:
             tag = str(json.loads(response.read().decode())["tag_name"])
-        return tag.lstrip("v") or None
+        version = tag.lstrip("v") or None
+        if version:
+            # The ↑ hint and `cs doctor` read this cache; binary installs
+            # resolve through here, so skipping it left them on whatever PyPI
+            # said last (doctor: "latest 3.46.1" on 3.49.1).
+            _cache_latest_version(version)
+        return version
     except (urllib.error.URLError, json.JSONDecodeError, KeyError, TimeoutError):
         return None
 
@@ -442,6 +449,85 @@ def _run_installer(version: Optional[str] = None) -> bool:
         return False
 
 
+UPGRADE_STATUS = Path.home() / ".cache" / "claude-statusbar" / "upgrade_status.json"
+_RESTART_WAIT_S = 6.0
+_RESTART_RETRIES = 2
+
+
+def _daemon_alive() -> bool:
+    from .daemon import read_pidfile, is_alive
+    pid = read_pidfile()
+    return bool(pid) and is_alive(pid)
+
+
+def _daemon_started_since(t0: float) -> bool:
+    """A live daemon whose pidfile was written after t0 — i.e. one started by
+    (or after) the install, so it runs the new code."""
+    from .daemon import pid_path
+    try:
+        return _daemon_alive() and pid_path().stat().st_mtime >= t0 - 1
+    except OSError:
+        return False
+
+
+def _wait_daemon(t0: float, timeout: float) -> bool:
+    deadline = time.time() + timeout
+    while True:
+        if _daemon_started_since(t0):
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(0.5)
+
+
+def _restart_daemon_only() -> Tuple[bool, str]:
+    """Retry just the restart: the service manager when one supervises the
+    daemon, otherwise a detached `cs daemon start` from the new binary."""
+    from . import service
+    if service.is_installed():
+        return service.restart()
+    entry = path_entrypoint()
+    cmd = [str(entry) if entry else "cs", "daemon", "start"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return False, f"`cs daemon start` failed: {e}"
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout or "").strip()[-200:] or "`cs daemon start` failed"
+    return True, "daemon started"
+
+
+def settle_daemon(t0: float, needed: bool) -> Tuple[str, str]:
+    """After an install that landed: confirm the daemon came back on the new
+    code, retrying only the restart. → (state, detail) with state one of
+    restarted | not_running | restart_failed; recorded for `cs doctor`."""
+    if not needed:
+        state, detail = "not_running", ""
+    elif _wait_daemon(t0, _RESTART_WAIT_S):
+        state, detail = "restarted", ""
+    else:
+        state, detail = "restart_failed", "daemon did not come back after the install"
+        for attempt in range(1, _RESTART_RETRIES + 1):
+            ok, msg = _restart_daemon_only()
+            if _wait_daemon(t0, _RESTART_WAIT_S):
+                state, detail = "restarted", f"after {attempt} restart retr{'y' if attempt == 1 else 'ies'}"
+                break
+            detail = msg if not ok else "restart reported ok but no new daemon appeared"
+    try:
+        from .cache import atomic_write_text
+        atomic_write_text(UPGRADE_STATUS, json.dumps({
+            "version": installed_version_on_path() or "", "ts": time.time(),
+            "daemon": state, "detail": detail}))
+    except Exception:
+        pass
+    return state, detail
+
+
+def restart_hint() -> str:
+    from . import service
+    return "cs daemon install" if service.is_installed() else "cs daemon start"
+
+
 def installed_version_on_path() -> Optional[str]:
     """The version of the `cs` that PATH resolves to, by asking it.
 
@@ -587,9 +673,17 @@ def auto_upgrade() -> bool:
         latest = resolve_latest_version()
         if latest is None or not compare_versions(get_current_version(), latest):
             return False
+        had_daemon, t0 = _daemon_alive(), time.time()
         if not _run_installer(latest):
             return False
-        return installed_version_on_path() == latest
+        if installed_version_on_path() != latest:
+            return False
+        # Installed is installed: a failed restart is retried on its own and
+        # never triggers another download.
+        state, detail = settle_daemon(t0, had_daemon)
+        if state == "restart_failed":
+            logging.error(f"upgraded to {latest} but daemon restart failed: {detail}")
+        return True
 
     ok, broken = _upgrade_with_repair(get_upgrade_command())
     if ok:
@@ -652,6 +746,7 @@ def upgrade_current_install() -> Tuple[bool, str]:
         # frozen install — that one runs unattended, and *that* is the case
         # "never pipe curl|sh behind the user's back" was written for.
         print(f"Upgrading the standalone binary v{current} → v{latest}...")
+        had_daemon, t0 = _daemon_alive(), time.time()
         if not _run_installer(latest):
             return False, (
                 f"Upgrade to v{latest} failed. Run it manually to see why:\n"
@@ -672,11 +767,20 @@ def upgrade_current_install() -> Tuple[bool, str]:
                 f"The release assets may still be publishing — try again in "
                 f"a minute."
             )
+        state, detail = settle_daemon(t0, had_daemon)
+        if state == "restart_failed":
+            return False, (
+                f"Installed v{landed}, but the background daemon did not restart "
+                f"({detail}). Retried the restart {_RESTART_RETRIES}× without "
+                f"reinstalling. The status line still renders meanwhile.\n"
+                f"Retry the restart with:  {restart_hint()}"
+            )
+        note = " Daemon restarted on the new version." if state == "restarted" else ""
         return True, (
-            # No restart needed: Claude Code spawns `cs render` fresh every
-            # statusline tick, so the replaced binary is live within ~1s.
+            # Claude Code spawns `cs render` fresh every statusline tick, so
+            # the replaced binary is live within ~1s.
             f"Upgraded the standalone binary to v{landed}. "
-            f"Live on the next statusline tick — no restart needed."
+            f"Live on the next statusline tick — no restart needed.{note}"
         )
 
     cmd = get_upgrade_command()

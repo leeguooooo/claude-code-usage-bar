@@ -25,7 +25,7 @@ Lightweight Claude Code statusLine monitor with switchable styles and 7 color th
 `claude-statusbar` powers the Claude Code statusLine slot at the bottom of every session. It reads Anthropic's official rate-limit headers (5-hour and 7-day windows), context-window usage, and current model directly from the stdin payload Claude Code sends to custom statusLine commands — no API keys, no extra requests.
 
 Three styles cover different aesthetics:
-- `classic` — the original `[bar] | pipe` engineering layout (default, never changes)
+- `classic` — the original `[bar] | pipe` engineering layout (unchanged; the default is now `aurora`)
 - `capsule` — colored "transit pill" segments with type badges, severity dots, and themed backgrounds
 - `hairline` — Swiss/editorial minimalism with single-character mini-bars and dashed dividers
 

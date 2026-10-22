@@ -764,3 +764,18 @@ def test_failed_upgrade_shows_what_the_installer_said(monkeypatch):
     ok, msg = updater.upgrade_current_install()
     assert ok is False
     assert "unexpected argument '--refresh-package'" in msg
+
+
+def test_github_latest_is_cached_for_the_hint(monkeypatch, tmp_path):
+    """Binary installs resolve via GitHub; the ↑ hint / doctor read the cache."""
+    import io, json as _json
+    cache = tmp_path / "latest_version.json"
+    monkeypatch.setattr(updater, "LATEST_VERSION_CACHE", cache)
+
+    class Resp(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    monkeypatch.setattr(updater.urllib.request, "urlopen",
+                        lambda *a, **k: Resp(_json.dumps({"tag_name": "v3.49.1"}).encode()))
+    assert updater.latest_release_tag() == "3.49.1"
+    assert _json.loads(cache.read_text())["version"] == "3.49.1"

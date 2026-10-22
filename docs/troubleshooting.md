@@ -60,3 +60,24 @@ Don't reach for `uv tool install`/`pipx upgrade` by hand — if you installed vi
 you with two parallel installs. `cs upgrade` picks the right channel for you.
 
 To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
+
+
+## Network and custom-endpoint notices
+
+`show_ip_risk` stays opt-in. A fresh low-risk result is silent; unavailable,
+failed or stale observations display **unknown**, with an explicit last-known
+label when retaining an old warning. A difference between IPv4/IPv6 exit
+countries does not establish a leak or Claude's actual route. Scores and local
+configuration do not predict account suspension. Custom-endpoint notices do
+not inspect request metadata or infer a watermark from your timezone.
+
+Run `cs doctor` for cached coverage and these detailed checks:
+
+- [IP Check](https://ip-check.leeguoo.com/#local-diagnostics): network and browser-visible observations.
+- [Thermo for macOS](https://app.leeguoo.com/thermo): local checks; verify whether your installed version includes Claude diagnostics.
+
+The status line does not invoke Thermo, install it, or scan installation IDs and
+Sentry files on each render. The new `cs doctor` risk summary reads existing
+cache only and omits raw endpoint URLs. Doctor's existing render/shell smoke
+tests still act like normal status-line invocations and may refresh enabled
+background collectors; they do not launch Thermo.

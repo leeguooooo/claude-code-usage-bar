@@ -322,6 +322,137 @@ def render_hairline(
 
 
 # ---------------------------------------------------------------------------
+# Style: aurora — thin ━ bars whose cells blend ok→warn→hot by position
+# ---------------------------------------------------------------------------
+_AURORA_TOKENS_RE = _re.compile(r"\s*\([^()\n]*\)$")
+_AURORA_SECS_RE = _re.compile(r"(\d+)m\d+s$")
+
+
+def _aurora_cache_text(text: str) -> str:
+    """Drop the seconds once they stop mattering: `1h00m00s` → `1h00m`,
+    `59m12s` → `59m`. Under 10 minutes the seconds stay (`4m23s`)."""
+    m = _AURORA_SECS_RE.search(text)
+    if m and ("h" in text or int(m.group(1)) >= 10):
+        return text[:m.end(1)] + "m"
+    return text
+
+
+def render_aurora(
+    *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
+    lang_body="", cost_text="", cache_age_text="", bypass=False,
+    use_color=True, theme: Optional[Theme]=None,
+    warning_threshold=30.0, critical_threshold=70.0,
+    density: str = "regular",
+    show_weekly: bool = True,
+    ctx_pct: Optional[float] = None,
+    projection_5h: str = "",
+    projection_7d: str = "",
+    forecast_5h: str = "",
+    forecast_7d: str = "",
+    countdown_emoji: str = "",
+    no_quota: bool = False,
+    balance_text: str = "",
+    quota_stale: bool = False,
+    **_ignored,
+) -> str:
+    from .progress import (window_severity_rgb, _blend, projection_pct,
+                           _render_projection, _render_forecast,
+                           CONTEXT_WARNING_THRESHOLD as _CW,
+                           CONTEXT_CRITICAL_THRESHOLD as _CC)
+    theme = theme or get_theme("graphite")
+    INK  = _fg(theme.ink)
+    MUTE = _fg(theme.mute)
+    EDGE = _fg(theme.edge)
+
+    def bar(p, width):
+        # Each cell's color is fixed by its position along the bar, so a fuller
+        # bar literally reaches further into the red end of the spectrum.
+        if p is None:
+            return f"{EDGE}{'━' * width}{RESET}"
+        clamped = max(0.0, min(float(p), 100.0))
+        filled = int(clamped / 100 * width + 0.5)
+        if p > 0 and filled == 0:
+            filled = 1
+        out = ""
+        for i in range(width):
+            if i < filled:
+                t = i / (width - 1) if width > 1 else 0.0
+                rgb = (_blend(theme.s_ok, theme.s_warn, t * 2) if t < 0.5
+                       else _blend(theme.s_warn, theme.s_hot, (t - 0.5) * 2))
+                out += f"{_fg(rgb)}━"
+            else:
+                out += f"{EDGE}━"
+        return out + RESET
+
+    def pct_text(p, rgb):
+        if p is None:
+            return f"{MUTE}--%{RESET}"
+        col = _fg(rgb) if rgb is not None else INK
+        return f"{col}{BOLD}{int(round(p)):>2}%{RESET}"
+
+    def window(label, p, chip, forecast, reset, emoji=""):
+        rgb = window_severity_rgb(p, chip, theme,
+                                  warning_threshold, critical_threshold)
+        out = (f"{MUTE}{label}{RESET} {bar(p, 12)} {pct_text(p, rgb)} "
+               f"{EDGE}⏰{MUTE}{reset or '--'}{emoji}{RESET}")
+        if chip:
+            out += " " + _render_projection(chip, theme, True)
+        # Same rule as classic: a usable projection wins over the ⚠ forecast.
+        if forecast and projection_pct(chip) is None:
+            out += " " + _render_forecast(forecast, theme, True)
+        return out
+
+    sep_pad = DENSITY_PAD.get(density, " ")
+    sep = f"{sep_pad}{EDGE}│{RESET}{sep_pad}"
+    parts = []
+
+    if no_quota:
+        rgb = _severity_color(theme, ctx_pct, _CW, _CC)
+        parts.append(f"{MUTE}ctx{RESET} {bar(ctx_pct, 12)} {pct_text(ctx_pct, rgb)}")
+    elif quota_stale and msgs_pct is None and weekly_pct is None:
+        parts.append(f"{_fg(theme.s_warn)}⟳ 5h/7d stale·restart{RESET}")
+    else:
+        parts.append(window("5h", msgs_pct, projection_5h, forecast_5h,
+                            reset_5h, countdown_emoji))
+        if show_weekly:
+            parts.append(window("7d", weekly_pct, projection_7d, forecast_7d,
+                                reset_7d))
+
+    # The mini bar carries context fill, so the `(70.0k/1.0M)` suffix is
+    # redundant here; no_quota already shows ctx as the lead segment.
+    # A rose between the hot and worktree hues — reads as "the model", never
+    # as a severity, and follows each theme's palette.
+    accent = _fg(_blend(theme.s_hot, theme.wt, 0.5))
+    if ctx_pct is not None and not no_quota:
+        name = _AURORA_TOKENS_RE.sub("", str(model))
+        rgb = _severity_color(theme, ctx_pct, _CW, _CC)
+        parts.append(f"{accent}{name}{RESET} {bar(ctx_pct, 6)} "
+                     f"{_fg(rgb)}{int(round(ctx_pct))}%{RESET}")
+    else:
+        parts.append(f"{accent}{model}{RESET}")
+
+    if balance_text:
+        parts.append(f"{_fg(theme.s_ok)}{balance_text}{RESET}")
+    if cost_text:
+        parts.append(f"{MUTE}$ {INK}{cost_text}{RESET}")
+
+    if lang_body:
+        parts.append(f"{MUTE}{lang_body}{RESET}")
+
+    if cache_age_text:
+        col = _fg(_cache_severity(theme, cache_age_text))
+        parts.append(f"{col}❄ {_aurora_cache_text(cache_age_text)}{RESET}")
+
+    if bypass:
+        parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
+
+    line = sep.join(parts)
+    if not use_color:
+        return _strip(line)
+    return line
+
+
+# ---------------------------------------------------------------------------
 # Style: classic — wraps the existing format_status_line for backward compat
 # ---------------------------------------------------------------------------
 def render_classic(
@@ -549,6 +680,99 @@ def render_identity_line(info, *, theme: Theme, dirty,
         if update_text:
             ver += f"{_fg(theme.s_warn)} ↑{update_text}{RESET}"
     return head + body + stats + ver
+
+
+def _aurora_quiet(theme: Theme):
+    """Palette for aurora's lines below the first: line 1 carries the color,
+    these recede — grey text, with severity hues sunk halfway into mute."""
+    from .progress import _blend
+    return dict(
+        BASE=_fg(_blend(theme.pill_ink, theme.mute, 0.5)),
+        DIM=_fg(theme.mute),
+        EDGE=_fg(theme.edge),
+        soft=lambda rgb: _fg(_blend(rgb, theme.mute, 0.45)),
+    )
+
+
+def render_identity_line_aurora(info, *, theme: Theme, dirty,
+                                ahead=None, behind=None,
+                                duration_text: str = "", lines_text: str = "",
+                                version_text: str = "", update_text: str = "",
+                                cwd_text: str = "",
+                                worktree_glyph: str = "⑂",
+                                use_color: bool = True) -> str:
+    """Aurora's 2nd line: `⎇ main ●↓1 │ project │ +244 −3 │ ⏱ 4m`, muted.
+
+    Same facts as `render_identity_line`, regrouped behind `│` separators with
+    the branch leading. A linked worktree still leads the whole line; the trunk
+    marker appears only when other worktrees exist, the version only when an
+    update is waiting.
+    """
+    q = _aurora_quiet(theme)
+    BASE, DIM, EDGE, soft = q["BASE"], q["DIM"], q["EDGE"], q["soft"]
+
+    def c(color, text):
+        return f"{color}{text}{RESET}" if use_color else text
+
+    segs = []
+    if info.is_worktree:
+        segs.append(c(soft(theme.wt), f"{worktree_glyph} {_worktree_label(info)}"))
+    if info.in_git:
+        branch = info.branch or "?"
+        head = c(DIM, "⎇ ") + c(f"{DIM}{ITAL}" if info.detached else BASE, branch)
+        flags = ("●" if dirty else "") + _ahead_behind_glyphs(ahead, behind)
+        if flags:
+            head += " " + c(soft(theme.s_warn), flags)
+        segs.append(head)
+    segs.append(c(BASE, info.project_name))
+    if not info.in_git:
+        segs.append(c(f"{DIM}{ITAL}", "no git"))
+    if cwd_text and cwd_text != info.project_name:
+        segs.append(c(BASE, cwd_text))
+    if lines_text:
+        toks = []
+        for tok in lines_text.split():
+            if tok.startswith("+"):
+                toks.append(c(soft(theme.s_ok), tok))
+            elif tok.startswith("-"):
+                toks.append(c(soft(theme.s_hot), "−" + tok[1:]))
+            else:
+                toks.append(c(DIM, tok))
+        segs.append(" ".join(toks))
+    if duration_text:
+        segs.append(c(DIM, f"⏱ {duration_text}"))
+    if info.in_git and not info.is_worktree and info.worktree_count:
+        segs.append(c(DIM, f"{worktree_glyph} trunk ({info.worktree_count})"))
+    if version_text and update_text:
+        segs.append(c(DIM, f"v{version_text}") + c(soft(theme.s_warn), f" ↑{update_text}"))
+    return c(EDGE, " │ ").join(segs)
+
+
+def render_ocs_line_aurora(ocs_text: str, unread, lan, *, theme: Theme,
+                           use_color: bool = True) -> str:
+    """`ocs claude-b2242a10 │ ✉3 │ lan ● win · ● mac`, muted like line 2."""
+    q = _aurora_quiet(theme)
+    BASE, DIM, EDGE, soft = q["BASE"], q["DIM"], q["EDGE"], q["soft"]
+
+    def c(color, text):
+        return f"{color}{text}{RESET}" if use_color else text
+
+    name, sep, ident = ocs_text.partition(" · ")
+    segs = [c(DIM, "ocs ") + c(BASE, name) + (c(DIM, f" {ident}") if sep else "")]
+    if unread:
+        segs.append(c(soft(theme.s_warn), f"✉{unread}"))
+    if lan:
+        if not lan.get("running"):
+            segs.append(c(DIM, "lan ") + c(soft(theme.s_warn), "off"))
+        else:
+            peers = [c(soft(theme.s_ok) if recent else EDGE, "●") + " "
+                     + c(BASE if recent else DIM, label)
+                     for label, recent in (lan.get("peers") or [])]
+            body = c(DIM, " · ").join(peers) if peers else c(DIM, "on")
+            if lan.get("more"):
+                body += c(DIM, f" +{lan['more']}")
+            segs.append(c(DIM, "lan ") + body)
+    return c(EDGE, " │ ").join(segs)
 
 
 def _ocs_segment(ocs_text: str, theme: Theme) -> str:
@@ -793,6 +1017,7 @@ RENDERERS = {
     "classic":  render_classic,
     "capsule":  render_capsule,
     "hairline": render_hairline,
+    "aurora":   render_aurora,
 }
 
 
@@ -830,6 +1055,10 @@ def render(style: str, **kwargs) -> str:
     ip_line_level = kwargs.pop("ip_line_level", "ok")
     fp_line_text = kwargs.pop("fp_line_text", "")
     fp_line_level = kwargs.pop("fp_line_level", "ok")
+    ip_finding = kwargs.pop("ip_finding", None)
+    fp_finding = kwargs.pop("fp_finding", None)
+    risk_lang = kwargs.pop("risk_lang", None) or kwargs.pop("fp_lang", None) or "en"
+    kwargs.pop("fp_lang", None)
     show_version = kwargs.pop("identity_show_version", False)
     show_mode = kwargs.pop("mode_show", False)
     mode_effort = kwargs.pop("mode_effort", "")
@@ -893,7 +1122,9 @@ def render(style: str, **kwargs) -> str:
     if show_pb and info is not None:
         version_text = _statusbar_version() if show_version else ""
         update_text = _update_hint() if show_version else ""
-        out = out + "\n" + render_identity_line(
+        identity_fn = (render_identity_line_aurora if style == "aurora"
+                       else render_identity_line)
+        out = out + "\n" + identity_fn(
             info, theme=theme, dirty=dirty, ahead=ahead, behind=behind,
             duration_text=duration_text, lines_text=lines_text,
             version_text=version_text, update_text=update_text,
@@ -909,7 +1140,10 @@ def render(style: str, **kwargs) -> str:
                    f"{_fg(theme.pill_ink)}{cwd_text}{RESET}")
         else:
             out = out + "\n" + f"⤷ {cwd_text}"
-    if ocs_text:
+    if ocs_text and style == "aurora":
+        out = out + "\n" + render_ocs_line_aurora(
+            ocs_text, ocs_unread, ocs_lan, theme=theme, use_color=use_color)
+    elif ocs_text:
         # Always its own line — the address other agents copy, not branch info.
         out = out + "\n" + (_ocs_segment(ocs_text, theme) if use_color
                             else f"ocs {ocs_text}")
@@ -919,17 +1153,22 @@ def render(style: str, **kwargs) -> str:
     # (ip_risk.SHOW_THRESHOLD), amber for suspicious, red for bad. May be
     # multi-line (summary + action); each sub-line is colored separately, then
     # final width clipping applies per physical line. Not part of git identity.
-    def _emit_risk(text, level):
+    def _emit_risk(text, level, finding=None):
         nonlocal out
+        if finding is not None:
+            from .risk_line import format_finding
+            out = out + "\n" + format_finding(finding, theme=theme, lang=risk_lang,
+                                              use_color=use_color)
+            return
         if not text:
             return
         color = theme.s_hot if level == "crit" else theme.s_warn
         for seg in text.split("\n"):
             out = out + "\n" + (f"{_fg(color)}{seg}{RESET}" if use_color else seg)
 
-    _emit_risk(ip_line_text, ip_line_level)
-    # Relay fingerprint-risk warning line (local env inference; see fp_risk.py).
-    _emit_risk(fp_line_text, fp_line_level)
+    _emit_risk(ip_line_text, ip_line_level, ip_finding)
+    # Custom-endpoint notice (local env inference; see fp_risk.py).
+    _emit_risk(fp_line_text, fp_line_level, fp_finding)
 
     if show_mode:
         mode_line = render_mode_line(

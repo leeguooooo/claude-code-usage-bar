@@ -25,7 +25,7 @@ SAMPLE = dict(
 
 
 def test_three_builtin_styles():
-    assert set(list_styles()) == {"classic", "capsule", "hairline"}
+    assert set(list_styles()) == {"classic", "capsule", "hairline", "aurora"}
 
 
 def test_builtin_themes():
@@ -212,3 +212,89 @@ def test_every_theme_has_pill_cost():
             f"{t.name}.pill_cost must be an RGB 3-tuple"
         assert t.pill_cost != t.pill_lang, \
             f"{t.name}.pill_cost must differ from pill_lang (collision is the bug)"
+
+
+def test_aurora_cache_text_drops_seconds_when_far():
+    from claude_statusbar.styles import _aurora_cache_text
+    assert _aurora_cache_text("1h00m00s") == "1h00m"
+    assert _aurora_cache_text("59m12s") == "59m"
+    assert _aurora_cache_text("4m23s") == "4m23s"
+    assert _aurora_cache_text("42s") == "42s"
+    assert _aurora_cache_text("COLD") == "COLD"
+
+
+def test_aurora_plain_layout():
+    from claude_statusbar.styles import render
+    out = render("aurora", msgs_pct=4, weekly_pct=74, reset_5h="4h16m",
+                 reset_7d="2d18h", model="Opus 5.5(70.0k/1.0M)", ctx_pct=7,
+                 cache_age_text="59m12s", use_color=False)
+    assert out == ("5h ━━━━━━━━━━━━  4% ⏰4h16m │ 7d ━━━━━━━━━━━━ 74% ⏰2d18h"
+                   " │ Opus 5.5 ━━━━━━ 7% │ ❄ 59m")
+
+
+def test_aurora_keeps_tokens_without_ctx_and_handles_stale():
+    from claude_statusbar.styles import render
+    out = render("aurora", msgs_pct=None, weekly_pct=None, reset_5h="",
+                 reset_7d="", model="Opus 5.5(70.0k/1.0M)", quota_stale=True,
+                 use_color=False)
+    assert out.startswith("⟳ 5h/7d stale·restart │ Opus 5.5(70.0k/1.0M)")
+
+
+def test_aurora_identity_line_layout():
+    from types import SimpleNamespace
+    from claude_statusbar.styles import render_identity_line_aurora
+    from claude_statusbar.themes import get_theme
+    info = SimpleNamespace(project_name="proj", in_git=True, branch="main",
+                           detached=False, is_worktree=False, worktree_count=1,
+                           worktree_name=None)
+    out = render_identity_line_aurora(
+        info, theme=get_theme("graphite"), dirty=True, ahead=0, behind=1,
+        duration_text="4m", lines_text="+244", version_text="3.47.0",
+        update_text="", use_color=False)
+    assert out == "⎇ main ●↓1 │ proj │ +244 │ ⏱ 4m │ ⑂ trunk (1)"
+    # Trunk marker only with other worktrees; version only when an update waits.
+    info.worktree_count = 0
+    out = render_identity_line_aurora(
+        info, theme=get_theme("graphite"), dirty=False, lines_text="+5 -2",
+        version_text="3.48.0", update_text="3.49.0", use_color=False)
+    assert out == "⎇ main │ proj │ +5 −2 │ v3.48.0 ↑3.49.0"
+
+
+def test_aurora_ocs_line():
+    from claude_statusbar.styles import render_ocs_line_aurora
+    from claude_statusbar.themes import get_theme
+    out = render_ocs_line_aurora(
+        "claude-b2242a10", 3,
+        {"running": True, "peers": [("win", True), ("mac", False)]},
+        theme=get_theme("graphite"), use_color=False)
+    assert out == "ocs claude-b2242a10 │ ✉3 │ lan ● win · ● mac"
+
+
+def test_graphite_ok_is_leo_green():
+    from claude_statusbar.themes import get_theme
+    assert get_theme("graphite").s_ok == (78, 200, 91)
+
+
+def test_aurora_identity_worktree_leads():
+    from types import SimpleNamespace
+    from claude_statusbar.styles import render_identity_line_aurora
+    from claude_statusbar.themes import get_theme
+    info = SimpleNamespace(project_name="proj", in_git=True, branch="feat",
+                           detached=False, is_worktree=True, worktree_count=2,
+                           worktree_name="proj-wt-x")
+    out = render_identity_line_aurora(info, theme=get_theme("graphite"),
+                                      dirty=False, use_color=False)
+    assert out.startswith("⑂ ")
+    assert "trunk" not in out
+
+
+def test_aurora_projection_wins_over_forecast():
+    from claude_statusbar.styles import render
+    out = render("aurora", msgs_pct=40, weekly_pct=10, reset_5h="2h",
+                 reset_7d="3d", model="Opus", projection_5h="→80%",
+                 forecast_5h="~8m", use_color=False)
+    assert "→80%" in out and "~8m" not in out
+    out = render("aurora", msgs_pct=40, weekly_pct=10, reset_5h="2h",
+                 reset_7d="3d", model="Opus", forecast_5h="~8m",
+                 use_color=False)
+    assert "⚠~8m" in out
