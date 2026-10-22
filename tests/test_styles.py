@@ -336,3 +336,31 @@ def test_aurora_projection_wins_over_forecast():
                  reset_7d="3d", model="Opus", forecast_5h="~8m",
                  use_color=False)
     assert "⚠~8m" in out
+
+def test_narrow_stack_stacks_model_after_one_quota_window():
+    out = render(
+        "aurora", theme=get_theme("graphite"), use_color=False,
+        max_width=40, narrow_layout="stack", show_weekly=False,
+        msgs_pct=41, weekly_pct=35, reset_5h="3h54m", reset_7d="5d11h",
+        model="Opus 5.5(583k/1M)",
+    )
+    lines = out.splitlines()
+    assert any(line.startswith("5h") for line in lines)
+    assert any("Opus 5.5(583k/1M)" in line for line in lines)
+    assert lines.index(next(line for line in lines if "Opus 5.5" in line)) > 0
+    assert all(visible_width(line) <= 40 for line in lines)
+
+
+def test_narrow_stack_does_not_degrade_for_scoped_line_width():
+    out = render(
+        "aurora", theme=get_theme("graphite"), use_color=False,
+        max_width=70, narrow_layout="stack", msgs_pct=41, weekly_pct=35,
+        reset_5h="3h54m", reset_7d="5d11h",
+        model="Opus 5.5(583k/1M)",
+        per_model_limits=[{
+            "label": "A scoped label that is extremely long and breaks width",
+            "percent": 50, "resets_at": 9999999999,
+        }],
+    )
+    assert "Opus 5.5(583k/1M)" in out
+    assert all(visible_width(line) <= 70 for line in out.splitlines())

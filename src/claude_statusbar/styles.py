@@ -242,7 +242,7 @@ def render_aurora(
     if bypass:
         parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
 
-    if stack_quotas and len(quota_parts) > 1:
+    if stack_quotas and quota_parts:
         line = "\n".join(quota_parts + [sep.join(parts)])
         if not use_color:
             return _strip(line)
@@ -929,6 +929,8 @@ def render(style: str, **kwargs) -> str:
             stacked = "\n" in out
 
         def fits(text):
+            if stacked and scoped and text.endswith("\n" + scoped):
+                text = text[:-(len(scoped) + 1)]
             lines = text.splitlines() if stacked else text.split("\n", 1)[:1]
             return all(visible_width(line) <= max_width for line in lines)
 
