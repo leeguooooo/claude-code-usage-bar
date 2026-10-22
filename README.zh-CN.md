@@ -15,11 +15,9 @@
 
 [English](README.md) · **简体中文** · [安装](docs/install.md) · [文档](#文档)
 
-![claude-statusbar 演示](docs/images/hero.gif)
+![cs theme：带实时预览挑外观](docs/images/picker.gif)
 
 </div>
-
-![默认状态栏](docs/images/aurora-graphite.svg)
 
 Claude Code 几乎不告诉你离限额还有多远。`cs` 把要紧的数字压进终端底部一行：还剩多少、什么时候重置。
 
@@ -61,7 +59,7 @@ cs --setup                       # 接好 statusLine 钩子，并装上 skill
 
 ## 自定义
 
-三种外观：aurora 方块（默认，见上图）、aurora 细线、classic 原版：
+三种外观：aurora 方块（默认）、aurora 细线、classic 原版：
 
 ![aurora 细线](docs/images/aurora-thin-graphite.svg)
 ![classic](docs/images/classic-graphite.svg)

@@ -9,6 +9,15 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.50.2 — 2026-10-22
+
+- `cs theme` follows the `lang` setting (auto / zh / en) instead of always
+  speaking Chinese.
+- The README now opens with a GIF of the `cs theme` picker
+  (`scripts/picker.tape`; `TRIM=0 scripts/build-hero-gif.sh scripts/picker.tape`).
+
+---
+
 ## v3.50.1 — 2026-10-22
 
 **`cs theme` is now an interactive picker.**

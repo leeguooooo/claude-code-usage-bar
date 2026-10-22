@@ -15,11 +15,9 @@ freshness — inline in Claude Code's status line, or a floating HUD on the desk
 
 **English** · [简体中文](README.zh-CN.md) · [Install](docs/install.md) · [Documentation](#documentation)
 
-![claude-statusbar live demo](docs/images/hero.gif)
+![cs theme — pick a look with a live preview](docs/images/picker.gif)
 
 </div>
-
-![default status bar](docs/images/aurora-graphite.svg)
 
 Claude Code tells you almost nothing about where you stand against your rate limits.
 `cs` puts the numbers that matter on one quiet line at the bottom of your terminal:

@@ -9,12 +9,32 @@ import os
 import sys
 from typing import Optional
 
-# (key, style, bar_glyph, label, command)
+# (key, style, bar_glyph, label key, command)
 LOOKS = [
-    ("block", "aurora", "block", "Aurora 方块（默认）", "cs config set bar_glyph block"),
-    ("thin", "aurora", "thin", "Aurora 细线", "cs config set bar_glyph thin"),
-    ("classic", "classic", "block", "Classic 原版", "cs config set style classic"),
+    ("block", "aurora", "block", "label_block", "cs config set bar_glyph block"),
+    ("thin", "aurora", "thin", "label_thin", "cs config set bar_glyph thin"),
+    ("classic", "classic", "block", "label_classic", "cs config set style classic"),
 ]
+
+TEXT = {
+    "title":         {"zh": "选择状态栏外观", "en": "Pick a status-bar look"},
+    "keys":          {"zh": "↑/↓ 或 1-3 选择 · 回车应用 · q 取消",
+                      "en": "↑/↓ or 1-3 to move · Enter to apply · q to cancel"},
+    "current":       {"zh": "← 当前", "en": "← current"},
+    "label_block":   {"zh": "Aurora 方块（默认）", "en": "Aurora, block bars (default)"},
+    "label_thin":    {"zh": "Aurora 细线", "en": "Aurora, thin line"},
+    "label_classic": {"zh": "Classic 原版", "en": "Classic"},
+    "prompt":        {"zh": "输入 1-3 应用（回车取消）：", "en": "Type 1-3 to apply (Enter cancels): "},
+    "cancelled":     {"zh": "已取消，外观没变。", "en": "Cancelled — look unchanged."},
+    "unchanged":     {"zh": "没变，还是当前这个。", "en": "No change — that's already the current look."},
+    "applied":       {"zh": "已切换到 {label}，状态栏下一次刷新就生效。",
+                      "en": "Switched to {label}. The status bar picks it up on its next refresh."},
+}
+_lang = "en"
+
+
+def t(key: str, **kw) -> str:
+    return TEXT[key][_lang].format(**kw)
 
 GOLD = "\033[38;2;212;175;55m\033[1m"
 DIM = "\033[38;2;110;110;115m"
@@ -50,9 +70,10 @@ def _preview_lines(use_color: bool, width: Optional[int]) -> list:
 
 def _frame(sel: int, cur: str, previews: list, color: bool) -> list:
     g, d, ok, r = (GOLD, DIM, OK, R) if color else ("", "", "", "")
-    rows = [f"{g}选择状态栏外观{r}  {d}↑/↓ 或 1-3 选择 · 回车应用 · q 取消{r}", ""]
-    for i, (key, _s, _g, label, _c) in enumerate(LOOKS):
-        mark = f" {ok}← 当前{r}" if key == cur else ""
+    rows = [f"{g}{t('title')}{r}  {d}{t('keys')}{r}", ""]
+    for i, (key, _s, _g, label_key, _c) in enumerate(LOOKS):
+        label = t(label_key)
+        mark = f" {ok}{t('current')}{r}" if key == cur else ""
         if i == sel:
             rows.append(f"{g}› {i + 1}  {label}{r}{mark}")
         else:
@@ -122,7 +143,7 @@ def _interactive(cur: str, previews: list, color: bool) -> Optional[str]:
 def _numbered(cur: str, previews: list, color: bool) -> Optional[str]:
     print("\n".join(_frame(-1, cur, previews, color)))
     try:
-        ans = input("输入 1-3 应用（回车取消）：").strip()
+        ans = input(t("prompt")).strip()
     except (EOFError, KeyboardInterrupt):
         return None
     if ans in ("1", "2", "3"):
@@ -131,9 +152,13 @@ def _numbered(cur: str, previews: list, color: bool) -> Optional[str]:
 
 
 def run(no_color: bool = False) -> int:
+    global _lang
     from . import config as cfg_mod
     from ._display import terminal_width
-    cur = current_look(cfg_mod.load_config())
+    from .i18n import ui_lang
+    cfg = cfg_mod.load_config()
+    _lang = ui_lang(cfg.lang)
+    cur = current_look(cfg)
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     color = not no_color and "NO_COLOR" not in os.environ and sys.stdout.isatty()
     width = terminal_width(os.environ)
@@ -141,9 +166,9 @@ def run(no_color: bool = False) -> int:
 
     if not interactive:
         d, r = (DIM, R) if color else ("", "")
-        for i, (key, _s, _g, label, cmd) in enumerate(LOOKS):
-            mark = "  ← 当前" if key == cur else ""
-            print(f"{i + 1}  {label}{mark}  {d}{cmd}{r}")
+        for i, (key, _s, _g, label_key, cmd) in enumerate(LOOKS):
+            mark = f"  {t('current')}" if key == cur else ""
+            print(f"{i + 1}  {t(label_key)}{mark}  {d}{cmd}{r}")
             print(f"   {previews[i]}")
         return 0
 
@@ -154,12 +179,12 @@ def run(no_color: bool = False) -> int:
         pick = _numbered(cur, previews, color)
 
     if pick is None:
-        print("已取消，外观没变。")
+        print(t("cancelled"))
         return 0
     if pick == cur:
-        print("没变，还是当前这个。")
+        print(t("unchanged"))
         return 0
     apply(pick)
-    label = next(lk[3] for lk in LOOKS if lk[0] == pick)
-    print(f"已切换到 {label}，状态栏下一次刷新就生效。")
+    label = t(next(lk[3] for lk in LOOKS if lk[0] == pick))
+    print(t("applied", label=label))
     return 0

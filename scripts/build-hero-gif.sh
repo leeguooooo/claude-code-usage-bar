@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Re-build docs/images/hero.gif from scripts/hero.tape.
-# Trims ~3.5s of vhs setup leakage and re-quantizes the palette.
+# Re-build a README GIF from a vhs tape (default: scripts/hero.tape).
+#   scripts/build-hero-gif.sh scripts/picker.tape
+# Trims ~3.5s (TRIM=…) of vhs setup leakage and re-quantizes the palette.
 #
 # Deps: vhs (brew), ffmpeg (brew).
 
@@ -8,8 +9,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-TAPE="$ROOT/scripts/hero.tape"
-OUT="$ROOT/docs/images/hero.gif"
+TAPE="$(cd "$(dirname "${1:-$ROOT/scripts/hero.tape}")" && pwd)/$(basename "${1:-hero.tape}")"
+OUT="$ROOT/$(sed -n 's/^Output //p' "$TAPE")"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -17,11 +18,11 @@ command -v vhs >/dev/null    || { echo "missing: vhs (brew install vhs)" >&2; ex
 command -v ffmpeg >/dev/null || { echo "missing: ffmpeg (brew install ffmpeg)" >&2; exit 1; }
 
 echo "[1/2] vhs render..."
-vhs "$TAPE"   # writes to $OUT per the tape's `Output` directive
+(cd "$ROOT" && vhs "$TAPE")   # writes to $OUT per the tape's `Output` directive
 
 echo "[2/2] ffmpeg trim + re-quantize..."
 ffmpeg -y -loglevel warning \
-  -ss 3.5 -i "$OUT" \
+  -ss "${TRIM:-3.5}" -i "$OUT" \
   -vf "fps=15,split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
   -f gif "$TMP/hero.gif"
 

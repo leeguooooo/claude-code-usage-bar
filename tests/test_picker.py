@@ -12,6 +12,7 @@ from claude_statusbar import picker
 def live_cfg(tmp_path, monkeypatch):
     p = tmp_path / "c.json"
     monkeypatch.setattr(cfg_mod, "CONFIG_PATH", p)
+    p.write_text('{"lang": "zh"}', encoding="utf-8")
     monkeypatch.setattr("claude_statusbar.preview._real_data", lambda: None)
     return p
 
@@ -58,3 +59,11 @@ def test_cli_routes_theme_to_picker(live_cfg, monkeypatch, capsys):
         monkeypatch.setattr(sys, "argv", ["cs", word, "--no-color"])
         assert cli.main() == 0
         assert "Aurora 方块" in capsys.readouterr().out
+
+
+def test_english_ui(live_cfg, capsys):
+    cfg_mod.set_value("lang", "en")
+    picker.run(no_color=True)
+    out = capsys.readouterr().out
+    assert "Aurora, block bars (default)" in out and "← current" in out
+    assert "方块" not in out
