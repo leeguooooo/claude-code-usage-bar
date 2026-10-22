@@ -111,3 +111,18 @@ def test_primary_region_warning_survives_missing_family_coverage():
     assert "HK" in text and "unsupported region" in text
     assert level == "crit"
     assert "WILL" not in text
+
+
+@pytest.mark.parametrize("state", ["failed", "stale", "current"])
+def test_doctor_labels_retained_or_stale_family_samples(monkeypatch, capsys, state):
+    from claude_statusbar import config
+    import time
+    sample = {"ok": True, "risk": 0, "ts": time.time() if state == "current" else 1,
+              "families": {"v4": {"loc": "US"}, "v6": {"loc": "JP"}}}
+    entry = {"ok": False, "ts": time.time(), "last_good": sample} if state == "failed" else sample
+    monkeypatch.setattr(ip_risk, "read_cache", lambda: entry)
+    monkeypatch.setattr(config, "load_config", lambda: SimpleNamespace(show_ip_risk=True))
+    doctor.risk_details()
+    out = capsys.readouterr().out
+    assert "IPv4/IPv6 samples recorded" in out
+    assert ("last-known IPv4/IPv6" in out) == (state != "current")

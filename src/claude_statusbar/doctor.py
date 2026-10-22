@@ -188,10 +188,13 @@ def risk_details() -> None:
     level = ip_risk.cached_status(entry)[1]
     summary = f"{state} — cached network signals ({level}); account status unverified"
     _line("IP probe", summary if cfg.show_ip_risk else "off (opt-in)", ok=None)
-    family = entry.get("families") if isinstance(entry, dict) else None
-    _line("family probe coverage", "IPv4/IPv6 samples recorded; not a Claude-route verification"
+    coverage = entry if isinstance(entry, dict) and entry.get("ok") else (
+        entry.get("last_good") if isinstance(entry, dict) else None)
+    family = coverage.get("families") if isinstance(coverage, dict) else None
+    label = "last-known " if state in ("failed", "stale") and isinstance(family, dict) else "cached "
+    _line("family probe coverage", label + "IPv4/IPv6 samples recorded; not a Claude-route verification"
           if isinstance(family, dict) and family.get("v4") and family.get("v6")
-          else "partial, unavailable or skipped; not proof of no IPv6", ok=None)
+          else label + "partial, unavailable or skipped; not proof of no IPv6", ok=None)
     endpoint, _ = fp_risk_line()
     _line("endpoint metadata", "custom endpoint configured; payload not inspected" if endpoint
           else "not established by this local setting check", ok=None)
