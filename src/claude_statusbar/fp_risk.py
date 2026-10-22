@@ -62,9 +62,18 @@ def fp_risk_line(env: Optional[Dict[str, str]] = None) -> Tuple[str, str]:
     """
     if env is None:
         env = os.environ
+    f = fp_risk_finding(env)
+    return (f.legacy, "warn") if f else ("", "ok")
+
+
+def fp_risk_finding(env: Optional[Dict[str, str]] = None):
+    """Status-line form of fp_risk_line: a `note`-level Finding or None."""
+    from .risk_line import Finding
+    if env is None:
+        env = os.environ
     if _relay_host(env) is None:
-        return "", "ok"
-    return (
+        return None
+    return Finding(
+        "note", "api", "custom_endpoint", "metadata_unchecked", "check_telemetry",
         "⚠ custom API endpoint — request metadata not inspected\n"
-        "   ↳ review endpoint and telemetry settings: cs doctor"
-    ), "warn"
+        "   ↳ review endpoint and telemetry settings: cs doctor")

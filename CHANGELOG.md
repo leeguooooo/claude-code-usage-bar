@@ -9,6 +9,24 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.48.0 — 2026-10-22
+
+**IP and endpoint notices take one line, in your system language.**
+
+- The network notices under the status line collapse from two full-color
+  lines into one segmented line in the aurora look:
+  `✗ IPv6 CN │ unsupported region │ route unverified · cs doctor`. Only the
+  glyph, the value and the reason are colored; the `cs doctor` pointer is dim.
+- Chinese and English. `cs config set lang auto|zh|en` (default `auto`). On
+  macOS `auto` reads the first system language, so a Chinese system gets
+  `✗ IPv6 CN │ 不支持的地区 │ 实际路线未验证 · cs doctor` even when the
+  terminal's `$LANG` is `en_US.UTF-8`. Other platforms use `LC_ALL` /
+  `LC_MESSAGES` / `LANG`.
+- The custom-endpoint notice becomes a quieter `◌` note. `cs doctor` and the
+  checks behind each notice are unchanged.
+
+---
+
 ## v3.47.2 — 2026-10-22
 
 **The IP check no longer goes "unavailable" when ipapi.is is out of reach.**

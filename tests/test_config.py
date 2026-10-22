@@ -315,3 +315,10 @@ def test_saving_other_config_path_leaves_renders(tmp_path):
     meta.write_text("{}")
     cfg_mod.set_value("style", "classic", tmp_path / "other.json")
     assert meta.exists()
+
+
+def test_lang_validation(tmp_path):
+    p = tmp_path / "c.json"
+    assert cfg_mod.set_value("lang", "zh", p).lang == "zh"
+    with pytest.raises(ValueError):
+        cfg_mod.set_value("lang", "fr", p)

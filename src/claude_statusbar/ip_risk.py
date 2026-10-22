@@ -113,38 +113,54 @@ def clear_inflight() -> None:
         pass
 
 
-def _family_finding(entry: Dict[str, Any]) -> Tuple[str, str]:
+_ROUTE = "   ↳ actual Claude route unverified; details: cs doctor"
+_REVIEW = "   ↳ review network before signing in; details: cs doctor"
+
+
+def _family_struct(entry: Dict[str, Any]):
     """Probe observations only; neither differing geo nor a clean probe proves
-    the route of an actual Claude request."""
+    the route of an actual Claude request. Returns a Finding or None."""
     from .ip_score import region_status
+    from .risk_line import Finding
     # Primary enrichment remains useful when direct family probes are skipped.
-    if region_status(entry.get("country")) in ("unsupported", "sanctioned"):
-        return (f"✗ IP probe exit in {entry.get('country')} — unsupported region for Claude\n"
-                "   ↳ actual Claude route unverified; details: cs doctor"), "crit"
+    cc = entry.get("country")
+    if region_status(cc) in ("unsupported", "sanctioned"):
+        return Finding("crit", "IP", str(cc), "unsupported_region", "route_unverified",
+                       f"✗ IP probe exit in {cc} — unsupported region for Claude\n" + _ROUTE)
     fam = entry.get("families")
     if not isinstance(fam, dict):
-        return "", "ok"
+        return None
     seen = [(name, fam.get(key)) for name, key in (("IPv6", "v6"), ("IPv4", "v4"))
             if isinstance(fam.get(key), dict)]
     for name, t in seen:
         if t.get("warp") not in (None, "off"):
-            return (f"✗ {name} probe exit is Cloudflare WARP — VPN exit\n"
-                    "   ↳ review network before signing in; details: cs doctor"), "crit"
+            return Finding("crit", name, "WARP", "vpn_exit", "review_network",
+                           f"✗ {name} probe exit is Cloudflare WARP — VPN exit\n" + _REVIEW)
     for name, t in seen:
         if region_status(t.get("loc")) in ("unsupported", "sanctioned"):
-            return (f"✗ {name} probe exit in {t.get('loc')} — unsupported region for Claude\n"
-                    "   ↳ actual Claude route unverified; details: cs doctor"), "crit"
+            return Finding("crit", name, str(t.get("loc")), "unsupported_region",
+                           "route_unverified",
+                           f"✗ {name} probe exit in {t.get('loc')} — unsupported region for Claude\n"
+                           + _ROUTE)
     for name, t in seen:
         if t.get("verdict") == "ban-risk":
             kind = f" ({t['type']})" if t.get("type") else ""
-            return (f"✗ {name} exit {t.get('ip')}{kind} — network risk signal\n"
-                    "   ↳ review network before signing in; details: cs doctor"), "crit"
+            return Finding("crit", name, f"{t.get('ip')}{kind}", "risk_signal",
+                           "review_network",
+                           f"✗ {name} exit {t.get('ip')}{kind} — network risk signal\n" + _REVIEW)
     v4, v6 = fam.get("v4"), fam.get("v6")
     if (isinstance(v4, dict) and isinstance(v6, dict) and v4.get("loc") and v6.get("loc")
             and v4["loc"] != v6["loc"]):
-        return (f"⚠ ip exits differ: IPv4 {v4['loc']} / IPv6 {v6['loc']}\n"
-                "   ↳ geolocation differs; Claude route unverified (cs doctor)"), "warn"
-    return "", "ok"
+        return Finding("warn", "exits", f"IPv4 {v4['loc']} / IPv6 {v6['loc']}",
+                       "exits_differ", "route_unverified",
+                       f"⚠ ip exits differ: IPv4 {v4['loc']} / IPv6 {v6['loc']}\n"
+                       "   ↳ geolocation differs; Claude route unverified (cs doctor)")
+    return None
+
+
+def _family_finding(entry: Dict[str, Any]) -> Tuple[str, str]:
+    f = _family_struct(entry)
+    return (f.legacy, f.level) if f else ("", "ok")
 
 
 def family_issue(entry: Dict[str, Any]) -> str:
@@ -168,19 +184,28 @@ def risk_level(entry: Dict[str, Any]) -> str:
     return "ok"
 
 
-def line_text(entry: Dict[str, Any]) -> str:
-    """Two-line observation/action. No account prediction or routing assertion."""
-    issue, family_level = _family_finding(entry)
+def finding(entry: Dict[str, Any]):
+    """The finding the status line shows for a current reading, or None."""
+    from .risk_line import Finding
+    fam = _family_struct(entry)
     risk = _score(entry)
-    if issue and (family_level == "crit" or risk < CRIT_RISK):
-        return issue
+    if fam and (fam.level == "crit" or risk < CRIT_RISK):
+        return fam
     if risk <= SHOW_THRESHOLD:
-        return ""
+        return None
     kind = str(entry.get("type", "") or "").strip()
     kind_part = f" ({kind})" if kind else ""
+    level = "crit" if risk >= CRIT_RISK else "warn"
     symbol = "✗" if risk >= CRIT_RISK else "⚠"
-    return (f"{symbol} ip risk {risk}/100{kind_part} — network signal\n"
-            "   ↳ review network before signing in; details: cs doctor")
+    return Finding(level, "ip", f"{risk}/100" + (f" {kind}" if kind else ""),
+                   "risky_network", "review_network",
+                   f"{symbol} ip risk {risk}/100{kind_part} — network signal\n" + _REVIEW)
+
+
+def line_text(entry: Dict[str, Any]) -> str:
+    """Two-line observation/action. No account prediction or routing assertion."""
+    f = finding(entry)
+    return f.legacy if f else ""
 
 
 def _checked_recently(entry: Dict[str, Any], now: float) -> bool:
@@ -207,26 +232,37 @@ def cache_state(entry=None, now=None) -> str:
     return "current" if _checked_recently(entry, time.time() if now is None else now) else "stale"
 
 
-def cached_status(entry=None, now=None) -> Tuple[str, str]:
-    """Pure rendering shared with doctor; never probes or starts a scanner."""
+def cached_finding(entry=None, now=None):
+    """(Finding or None, level) from cached evidence; never probes."""
+    from .risk_line import Finding
     if now is None:
         now = time.time()
-    unknown = ("⚠ ip check unavailable — network status unknown\n"
-               "   ↳ no account status inferred; details: cs doctor", "warn")
+    unknown = (Finding("warn", "ip", "?", "check_unavailable", "status_unknown",
+                       "⚠ ip check unavailable — network status unknown\n"
+                       "   ↳ no account status inferred; details: cs doctor"), "warn")
     state = cache_state(entry, now)
     if state == "unknown":
         return unknown
     if state == "current":
-        return line_text(entry), risk_level(entry)
+        return finding(entry), risk_level(entry)
     previous = entry if entry.get("ok") else entry.get("last_good")
     if isinstance(previous, dict):
-        text = line_text(previous)
-        if text:
-            first = text.split("\n", 1)[0]
-            state = "refresh failed" if not entry.get("ok") else "check stale"
-            return (first + f" (last known; {state})\n"
-                    "   ↳ current status unknown; details: cs doctor"), risk_level(previous)
+        f = finding(previous)
+        if f:
+            first = f.legacy.split("\n", 1)[0]
+            label = "refresh failed" if not entry.get("ok") else "check stale"
+            note = "last_failed" if not entry.get("ok") else "last_stale"
+            return f._replace(
+                hint="current_unknown", note=note,
+                legacy=(first + f" (last known; {label})\n"
+                        "   ↳ current status unknown; details: cs doctor")), risk_level(previous)
     return unknown
+
+
+def cached_status(entry=None, now=None) -> Tuple[str, str]:
+    """Pure rendering shared with doctor; never probes or starts a scanner."""
+    f, level = cached_finding(entry, now)
+    return (f.legacy if f else ""), level
 
 
 def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:
@@ -234,6 +270,14 @@ def ip_risk_line(*, spawn: bool = True) -> Tuple[str, str]:
     if spawn:
         ensure_fresh(entry)
     return cached_status(entry)
+
+
+def ip_risk_finding(*, spawn: bool = True):
+    """Status-line form of ip_risk_line: (Finding or None, level)."""
+    entry = read_cache()
+    if spawn:
+        ensure_fresh(entry)
+    return cached_finding(entry)
 
 
 def ensure_fresh(entry=None) -> None:

@@ -1021,6 +1021,10 @@ def render(style: str, **kwargs) -> str:
     ip_line_level = kwargs.pop("ip_line_level", "ok")
     fp_line_text = kwargs.pop("fp_line_text", "")
     fp_line_level = kwargs.pop("fp_line_level", "ok")
+    ip_finding = kwargs.pop("ip_finding", None)
+    fp_finding = kwargs.pop("fp_finding", None)
+    risk_lang = kwargs.pop("risk_lang", None) or kwargs.pop("fp_lang", None) or "en"
+    kwargs.pop("fp_lang", None)
     show_version = kwargs.pop("identity_show_version", False)
     show_mode = kwargs.pop("mode_show", False)
     mode_effort = kwargs.pop("mode_effort", "")
@@ -1112,17 +1116,22 @@ def render(style: str, **kwargs) -> str:
     # (ip_risk.SHOW_THRESHOLD), amber for suspicious, red for bad. May be
     # multi-line (summary + action); each sub-line is colored separately, then
     # final width clipping applies per physical line. Not part of git identity.
-    def _emit_risk(text, level):
+    def _emit_risk(text, level, finding=None):
         nonlocal out
+        if finding is not None:
+            from .risk_line import format_finding
+            out = out + "\n" + format_finding(finding, theme=theme, lang=risk_lang,
+                                              use_color=use_color)
+            return
         if not text:
             return
         color = theme.s_hot if level == "crit" else theme.s_warn
         for seg in text.split("\n"):
             out = out + "\n" + (f"{_fg(color)}{seg}{RESET}" if use_color else seg)
 
-    _emit_risk(ip_line_text, ip_line_level)
-    # Relay fingerprint-risk warning line (local env inference; see fp_risk.py).
-    _emit_risk(fp_line_text, fp_line_level)
+    _emit_risk(ip_line_text, ip_line_level, ip_finding)
+    # Custom-endpoint notice (local env inference; see fp_risk.py).
+    _emit_risk(fp_line_text, fp_line_level, fp_finding)
 
     if show_mode:
         mode_line = render_mode_line(

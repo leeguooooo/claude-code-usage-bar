@@ -117,6 +117,8 @@ class StatusbarConfig:
     # Keep cs current on its own, once a day, in a detached background process.
     # CLAUDE_STATUSBAR_NO_UPDATE=1 still wins over this.
     auto_upgrade: bool = True
+    # Language of sentence-like status text (risk lines): auto follows the OS.
+    lang: str = "auto"
 
 
 def _to_bool(v):
@@ -177,6 +179,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         color_worktree=raw.get("color_worktree") or None,
         worktree_glyph=str(raw.get("worktree_glyph", "⑂") or "⑂"),
         auto_upgrade=_to_bool(raw.get("auto_upgrade", True)),
+        lang=str(raw.get("lang", "auto") or "auto"),
     )
 
 
@@ -259,7 +262,7 @@ VALID_KEYS = {
     "show_mode", "mode_gradient",
     "cache_ttl_seconds", "api_mode",
     "warning_threshold", "critical_threshold",
-    "color_ok", "color_warn", "color_hot", "color_worktree",
+    "color_ok", "color_warn", "color_hot", "color_worktree", "lang",
     "auto_upgrade", "worktree_glyph",
 }
 _VALID_API_MODE = {"auto", "on", "off"}
@@ -278,6 +281,7 @@ _INT_KEYS = {"auto_compact_width", "cache_ttl_seconds"}
 _COLOR_KEYS = {"color_ok", "color_warn", "color_hot", "color_worktree"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}
 _VALID_CWD_STYLE = {"basename", "full"}
+_VALID_LANG = {"auto", "zh", "en"}
 
 
 def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarConfig:
@@ -333,6 +337,10 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
     elif key == "density":
         if value not in _VALID_DENSITY:
             raise ValueError(f"density must be one of {sorted(_VALID_DENSITY)}, got {value!r}")
+        setattr(cfg, key, value)
+    elif key == "lang":
+        if value not in _VALID_LANG:
+            raise ValueError(f"lang must be one of {sorted(_VALID_LANG)}, got {value!r}")
         setattr(cfg, key, value)
     elif key == "api_mode":
         if value not in _VALID_API_MODE:
