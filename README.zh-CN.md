@@ -158,6 +158,10 @@ cs hud install                        # launchd：登录自启 + 保活
 
 `↑` 比上次会话进步 · `↓` 退步 · `→` 持平。
 
+**[ccx](https://github.com/aaronwong1999/ccx)** —— 在 macOS 上把 Claude Code 会话和 Codex 对话关联起来。
+装了状态栏后，Claude 的 5 小时或每周额度超过 90% 时，ccx 的菜单栏应用会提醒你，并可一键把最新的会话
+切到 Codex 接着做（不用配置；ccx 在 `~/.cache/claude-statusbar/last_stdin.json` 较新时读取其中的 `rate_limits`）。
+
 ## 参与贡献
 
 欢迎 PR。**[CONTRIBUTING.md](CONTRIBUTING.md)** 有完整的贡献指南：本地环境、测试命令、架构地图、

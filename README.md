@@ -227,6 +227,11 @@ automatically (no config; appears when `~/.claude/language-progress.json` exists
 
 `↑` improved · `↓` dropped · `→` no change since last session.
 
+**[ccx](https://github.com/aaronwong1999/ccx)** — keeps a Claude Code session and a Codex thread
+linked on macOS. With the bar installed, ccx's menu bar app warns you when Claude's 5-hour or
+weekly window passes 90% and offers to continue the newest session in Codex in one click (no
+config; ccx reads `rate_limits` from `~/.cache/claude-statusbar/last_stdin.json` while it's fresh).
+
 ## Contributing
 
 PRs welcome. The full contributor guide — local setup, test commands, architecture map, coding
