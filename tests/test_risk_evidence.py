@@ -126,3 +126,30 @@ def test_doctor_labels_retained_or_stale_family_samples(monkeypatch, capsys, sta
     out = capsys.readouterr().out
     assert "IPv4/IPv6 samples recorded" in out
     assert ("last-known IPv4/IPv6" in out) == (state != "current")
+
+
+def test_ipapi_outage_falls_back_to_own_origin(tmp_path, monkeypatch):
+    monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path)
+    monkeypatch.setattr(refresh, "egress_ip", lambda: "192.0.2.7")
+    monkeypatch.setattr(refresh, "evaluate_ip",
+                        lambda: (_ for _ in ()).throw(OSError("refused")))
+    monkeypatch.setattr(refresh, "family_traces", lambda: {})
+    monkeypatch.setattr(refresh, "_get", lambda url: json.dumps(
+        {"ip": "192.0.2.7", "type": "residential", "country": "jp", "risk": 0,
+         "claude": {"verdict": "safe"}}))
+    refresh._refresh_locked()
+    entry = ip_risk.read_cache()
+    assert entry["ok"] and entry["provider"] == "ip-check-origin"
+    assert entry["country"] == "JP" and entry["proxy"] == "no"
+    assert ip_risk.cache_state(entry) == "current"
+    assert ip_risk.cached_status(entry)[0] == ""
+
+
+def test_origin_fallback_rejects_reading_without_risk(tmp_path, monkeypatch):
+    monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path)
+    monkeypatch.setattr(refresh, "egress_ip", lambda: "192.0.2.7")
+    monkeypatch.setattr(refresh, "evaluate_ip",
+                        lambda: (_ for _ in ()).throw(OSError("refused")))
+    monkeypatch.setattr(refresh, "_get", lambda url: json.dumps({"ip": "192.0.2.7"}))
+    refresh._refresh_locked()
+    assert ip_risk.read_cache()["ok"] is False

@@ -148,6 +148,30 @@ def evaluate_ip() -> dict:
     return out
 
 
+def evaluate_via_origin(ip: str) -> dict:
+    """Fallback verdict from our own ip-check origin when ipapi.is is out of
+    reach (it refuses connections from some networks outright, and then every
+    check read as "unavailable" although the egress IP was known). Same 0–100
+    risk scale; anything malformed raises so the caller records a failure."""
+    raw = json.loads(_get(f"https://{_TRACE_HOST}/_asn?v=2&ip="
+                          + urllib.request.quote(ip, safe="")))
+    risk = raw.get("risk")
+    if (isinstance(risk, bool) or not isinstance(risk, (int, float))
+            or not 0 <= risk <= 100):
+        raise ValueError("no risk")
+    kind = str(raw.get("type") or "").lower() or None
+    claude = raw.get("claude") if isinstance(raw.get("claude"), dict) else {}
+    out = {
+        "ok": True, "ip": raw.get("ip") or ip, "provider": "ip-check-origin",
+        "risk": risk, "type": kind,
+        "country": (raw.get("country") or "").upper() or None,
+        "verdict": claude.get("verdict"),
+        "proxy": "yes" if (kind in ip_score._BAN_TYPES or kind == "hosting"
+                           or risk >= ip_risk.WARN_RISK) else "no",
+    }
+    return {k: v for k, v in out.items() if v is not None}
+
+
 def _parse_abuser(s):
     if isinstance(s, (int, float)):
         return float(s)
@@ -189,7 +213,10 @@ def _refresh_locked() -> int:
                 and ip_risk.is_fresh(prev, now)):
             entry = dict(prev)
         else:
-            entry = evaluate_ip()
+            try:
+                entry = evaluate_ip()
+            except Exception:
+                entry = evaluate_via_origin(ip)
     except Exception:
         entry = {"ok": False, "ts": now}
         previous = prev if prev.get("ok") else prev.get("last_good")

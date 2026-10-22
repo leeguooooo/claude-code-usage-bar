@@ -22,6 +22,10 @@ def _no_trace_network(monkeypatch):
 
 def _iso(tmp_path, monkeypatch):
     monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path)
+    # refresh.main()'s single-flight lock lives in git_cache's dir; on the real
+    # path a running daemon's prober holds it and main() silently skips.
+    from claude_statusbar import git_cache
+    monkeypatch.setattr(git_cache, "_cache_root", lambda: tmp_path / "git-cache")
 
 
 # --- levels & text ---

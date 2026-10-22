@@ -9,6 +9,19 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.47.2 — 2026-10-22
+
+**The IP check no longer goes "unavailable" when ipapi.is is out of reach.**
+
+- Some networks refuse connections to `api.ipapi.is` outright. The egress IP
+  was still known, yet every check failed and the status line kept a two-line
+  `⚠ ip check unavailable` notice. The check now falls back to our own
+  ip-check origin (the one already used for the IPv4/IPv6 readings) for the
+  risk score, type and country. A clean reading stays silent as before.
+- If both sources fail, the check is still reported as unknown.
+
+---
+
 ## v3.47.1 — 2026-10-22
 
 **`aurora` is the default style; config changes show on the next render.**
