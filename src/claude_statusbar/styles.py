@@ -950,17 +950,18 @@ def render(style: str, **kwargs) -> str:
 
     fn = RENDERERS.get(style, render_aurora)
     render_kwargs = dict(kwargs)
-    scoped_parts = []
-    if per_model_limits:
-        from .scoped_usage import limit_parts
-        scoped_parts = limit_parts(per_model_limits, theme, use_color,
-                                   kwargs.get('warning_threshold'),
-                                   kwargs.get('critical_threshold'), per_model_projection)
-    scoped = ' | '.join(seg for _, seg in scoped_parts)
     stack = narrow_layout == "stack" and max_width is not None and max_width > 0
+    scoped_projection = per_model_projection
 
     def compose():
         line = fn(**render_kwargs)
+        scoped_parts = []
+        if per_model_limits:
+            from .scoped_usage import limit_parts
+            scoped_parts = limit_parts(per_model_limits, theme, use_color,
+                                       kwargs.get('warning_threshold'),
+                                       kwargs.get('critical_threshold'), scoped_projection)
+        scoped = ' | '.join(seg for _, seg in scoped_parts)
         if stack and (visible_width(line) > max_width
                       or visible_width(scoped) > max_width):
             return _stack(line,
@@ -996,6 +997,8 @@ def render(style: str, **kwargs) -> str:
             degradation = degradation[-2:]
         for replacements in degradation:
             render_kwargs.update(replacements)
+            if stack and "projection_5h" in replacements:
+                scoped_projection = False  # per-model rows are stacked bars too
             out = compose()
             if fits(out):
                 break

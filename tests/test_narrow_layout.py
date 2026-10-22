@@ -2,6 +2,7 @@
 
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -97,3 +98,23 @@ def test_narrow_layout_config_key(tmp_path: Path):
     with pytest.raises(ValueError):
         config.set_value("narrow_layout", "wrap", p)
     assert "narrow_layout" in config.VALID_KEYS
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+@pytest.mark.parametrize("use_color", [False, True])
+def test_per_model_projection_degrades_with_the_other_bars(style, use_color):
+    # A long per-model ETA chip must not survive while 5h/7d lose theirs.
+    limits = [dict(label="Fable", percent=10, resets_at=1_561_600)]
+    with patch("claude_statusbar.scoped_usage.time.time", return_value=1_000_000):
+        out = _render(style, 40, use_color=use_color, per_model_limits=limits,
+                      reset_7d="6d12h", ctx_pct=58.3,
+                      projection_5h="→60%", projection_7d="→60%")
+    assert all(visible_width(line) <= 40 for line in out.split("\n"))
+    assert "…" not in out
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_drop_keeps_the_per_model_row_while_degrading(style):
+    limits = [dict(label="Fable", percent=20, resets_at=time.time() + 3 * 86400)]
+    out = _render(style, 70, layout="drop", per_model_limits=limits)
+    assert out.split("\n")[1].startswith("Fable")
