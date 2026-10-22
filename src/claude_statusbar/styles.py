@@ -137,7 +137,7 @@ def _quota_labels(fn, kw) -> list:
 
 
 def _stack(line: str, sep: str, labels: list, scoped: list,
-           max_width: int) -> str:
+           max_width: int) -> tuple:
     """Re-flow a too-wide line 1 instead of dropping segments (#73).
 
     The leading `labels` segments of `line` are its quota bars; `scoped` adds
@@ -145,6 +145,9 @@ def _stack(line: str, sep: str, labels: list, scoped: list,
     stay there; otherwise each gets its own row, labels right-aligned so the
     bars line up. The other line-1 segments (model, cost, cache, ...) pack
     onto the rows after.
+
+    Returns ``(text, n)``: the first `n` rows hold the bars and the model, the
+    only rows that render()'s drop steps can make narrower.
     """
     segs = line.split(sep)
     quota = list(zip(labels, segs)) + list(scoped)
@@ -156,7 +159,8 @@ def _stack(line: str, sep: str, labels: list, scoped: list,
         w = max(visible_width(label) for label, _ in quota)
         lines = [" " * (w - visible_width(label)) + seg for label, seg in quota]
         cur = None
-    for seg in rest:
+    n = len(lines) + (cur is not None)
+    for i, seg in enumerate(rest):
         if cur is None:
             cur = seg
         elif visible_width(cur + sep + seg) <= max_width:
@@ -164,9 +168,11 @@ def _stack(line: str, sep: str, labels: list, scoped: list,
         else:
             lines.append(cur)
             cur = seg
+        if i == 0:  # the model: line 1's first segment after the bars
+            n = len(lines) + 1
     if cur is not None:
         lines.append(cur)
-    return "\n".join(lines)
+    return "\n".join(lines), n
 
 
 # ---------------------------------------------------------------------------
@@ -968,21 +974,22 @@ def render(style: str, **kwargs) -> str:
                           _line_separator(fn, theme, render_kwargs.get("density", "regular"),
                                           use_color),
                           _quota_labels(fn, render_kwargs), scoped_parts, max_width)
-        return line + ('\n' + scoped if scoped else '')
+        return line + ('\n' + scoped if scoped else ''), 1
 
-    def fits(text):
-        # drop judges line 1 only (the per-model line just clips, as before);
-        # stack has re-flowed every quota row, so all of them must fit.
-        rows = text.split("\n") if stack else text.split("\n", 1)[:1]
-        return all(visible_width(r) <= max_width for r in rows)
+    def fits(text, n):
+        # Only the first n rows count: line 1 in drop mode (the per-model line
+        # just clips, as before); the bar and model rows once stacked. A long
+        # cost/language/cache row is left to clip, since no drop step
+        # shrinks it.
+        return all(visible_width(r) <= max_width for r in text.split("\n")[:n])
 
-    out = compose()
+    out, n = compose()
 
     # Preserve core quota/model signal before hard clipping. Optional segments
     # disappear in stable least-important-first order; selected style stays put.
     # With narrow_layout=stack the re-flow above runs first, so these steps only
     # kick in once a single stacked row is still wider than the pane.
-    if max_width is not None and max_width > 0 and not fits(out):
+    if max_width is not None and max_width > 0 and not fits(out, n):
         degradation = (
             {"cache_age_text": ""},
             {"lang_body": ""},
@@ -999,8 +1006,8 @@ def render(style: str, **kwargs) -> str:
             render_kwargs.update(replacements)
             if stack and "projection_5h" in replacements:
                 scoped_projection = False  # per-model rows are stacked bars too
-            out = compose()
-            if fits(out):
+            out, n = compose()
+            if fits(out, n):
                 break
         else:
             # Context tokens go last, and in two steps: drop the window
@@ -1015,8 +1022,8 @@ def render(style: str, **kwargs) -> str:
                 head = model[:m.start()]
                 for candidate in (f"{head}({m.group(1)})", head):
                     render_kwargs["model"] = candidate
-                    out = compose()
-                    if fits(out):
+                    out, n = compose()
+                    if fits(out, n):
                         break
 
     if show_pb and info is not None:

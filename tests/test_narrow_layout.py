@@ -118,3 +118,13 @@ def test_drop_keeps_the_per_model_row_while_degrading(style):
     limits = [dict(label="Fable", percent=20, resets_at=time.time() + 3 * 86400)]
     out = _render(style, 70, layout="drop", per_model_limits=limits)
     assert out.split("\n")[1].startswith("Fable")
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_long_language_row_does_not_strip_rows_that_fit(style):
+    out = _render(style, 32, model="Sonnet 4.6(583.0k/1.0M)",
+                  projection_5h="→60%", projection_7d="→60%",
+                  cost_text="", cache_age_text="",
+                  lang_body="ZH:6.0↑ EN:6.0↑ FR:6.0↑ JA:6.0↑")
+    assert out.count("→60%") == 2
+    assert "583.0k/1.0M" in out
