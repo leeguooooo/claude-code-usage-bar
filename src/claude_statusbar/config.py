@@ -26,6 +26,7 @@ LOOKS_VERSION = 1   # 3.50: aurora ■ / aurora ━ / classic
 DEFAULT_AUTO_COMPACT_WIDTH = 0  # deprecated no-op: the hairline style it switched to is gone
 DEFAULT_CACHE_TTL_SECONDS = 300  # 5min — Anthropic's base prompt cache TTL.
 DEFAULT_CWD_STYLE = "basename"  # basename | full — how show_cwd renders the dir
+DEFAULT_NARROW_LAYOUT = "drop"  # drop | stack — what line 1 does when wider than the pane
 DEFAULT_API_MODE = "auto"  # auto-detect relay/Bedrock/Vertex | on (force) | off (force official)
 # DEPRECATED: the cache countdown now auto-detects the real TTL (5m vs 1h)
 # from the transcript's message.usage.cache_creation buckets, which reflect
@@ -68,6 +69,10 @@ class StatusbarConfig:
     # deliberately conservative about adding text (see #3).
     show_cwd: bool = False
     cwd_style: str = DEFAULT_CWD_STYLE  # basename (default) | full
+    # Line 1 wider than the pane: `drop` sheds optional segments (forecast,
+    # projection, ...) until it fits; `stack` first moves each quota bar onto
+    # its own line so nothing is lost (#73).
+    narrow_layout: str = DEFAULT_NARROW_LAYOUT
     # Live-activity / session-stats segments. show_todos (activity line) and
     # show_lines (+added -removed on the identity line) default on; the rest are
     # opt-in so the line isn't crowded for users who didn't ask.
@@ -166,6 +171,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         show_ocs=_to_bool(raw.get("show_ocs", True)),
         show_cwd=_to_bool(raw.get("show_cwd", False)),
         cwd_style=str(raw.get("cwd_style", DEFAULT_CWD_STYLE)),
+        narrow_layout=str(raw.get("narrow_layout", DEFAULT_NARROW_LAYOUT)),
         show_todos=_to_bool(raw.get("show_todos", True)),
         show_tools=_to_bool(raw.get("show_tools", False)),
         show_tool_rollup=_to_bool(raw.get("show_tool_rollup", False)),
@@ -304,7 +310,7 @@ VALID_KEYS = {
     "show_weekly", "show_per_model", "show_language", "show_cost", "show_balance", "balance_bar",
     "show_cache_age",
     "show_project_branch", "show_ocs",
-    "show_cwd", "cwd_style",
+    "show_cwd", "cwd_style", "narrow_layout",
     "show_todos", "show_tools", "show_tool_rollup", "show_agents",
     "show_ip_risk", "show_fp_risk",
     "show_duration", "show_lines", "show_ahead_behind", "show_version",
@@ -332,6 +338,7 @@ _COLOR_KEYS = {"color_ok", "color_warn", "color_hot", "color_worktree"}
 _VALID_DENSITY = {"compact", "regular", "cozy"}
 _VALID_BAR_GLYPH = {"block", "thin"}
 _VALID_CWD_STYLE = {"basename", "full"}
+_VALID_NARROW_LAYOUT = {"drop", "stack"}
 _VALID_LANG = {"auto", "zh", "en"}
 
 
@@ -417,6 +424,10 @@ def set_value(key: str, value: str, path: Optional[Path] = None) -> StatusbarCon
     elif key == "cwd_style":
         if value not in _VALID_CWD_STYLE:
             raise ValueError(f"cwd_style must be one of {sorted(_VALID_CWD_STYLE)}, got {value!r}")
+        setattr(cfg, key, value)
+    elif key == "narrow_layout":
+        if value not in _VALID_NARROW_LAYOUT:
+            raise ValueError(f"narrow_layout must be one of {sorted(_VALID_NARROW_LAYOUT)}, got {value!r}")
         setattr(cfg, key, value)
     elif key == "style":
         # Lazy import to avoid a config↔styles cycle at module load.

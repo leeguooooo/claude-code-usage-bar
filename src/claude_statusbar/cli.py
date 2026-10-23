@@ -55,6 +55,7 @@ def _run_config_subcommand(rest):
             print(f"{key:<20}= {value}{mark}")
 
         line("style"); line("theme"); line("density"); line("bar_glyph")
+        line("narrow_layout")
         for key in ("show_weekly", "show_language", "show_cost", "show_balance",
                     "balance_bar", "show_cache_age", "show_project_branch",
                     "show_ocs", "show_ahead_behind", "show_todos",
