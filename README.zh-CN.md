@@ -99,6 +99,10 @@ pip 用户执行 `pip install 'claude-statusbar[hud]' && cs hud install`。
 想要图表和按周的花费拆解？在侧边窗格开 [ccusage](https://github.com/ryoppippi/ccusage) 或
 [Claude Code Usage Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)，和 `cs` 并存没问题。
 
+**[ccx](https://github.com/aaronwong1999/ccx)** 在 macOS 上把 Claude Code 会话和 Codex 对话关联起来。
+装了状态栏后，Claude 的 5 小时额度超过 90%，或每周额度用尽时，ccx 的菜单栏应用会提醒你，并可一键把最新的会话
+切到 Codex 接着做（不用配置；ccx 在 `~/.cache/claude-statusbar/last_stdin.json` 较新时读取其中的 `rate_limits`）。
+
 ## 参与贡献
 
 欢迎 PR，先看 **[CONTRIBUTING.md](CONTRIBUTING.md)**（环境、测试、架构、发版流程）和

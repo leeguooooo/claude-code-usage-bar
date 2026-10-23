@@ -104,6 +104,11 @@ Want charts and weekly cost breakdowns instead of one line? Run
 [Claude Code Usage Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) in a
 side pane — they coexist with `cs`.
 
+**[ccx](https://github.com/aaronwong1999/ccx)** — keeps a Claude Code session and a Codex thread
+linked on macOS. With the bar installed, ccx's menu bar app warns you when Claude's 5-hour
+window passes 90% or its weekly quota is exhausted, and offers to continue the newest session in Codex in one click (no
+config; ccx reads `rate_limits` from `~/.cache/claude-statusbar/last_stdin.json` while it's fresh).
+
 ## Contributing
 
 PRs welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** (setup, tests, architecture, release flow)
