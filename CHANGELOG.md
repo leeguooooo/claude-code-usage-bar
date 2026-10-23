@@ -9,6 +9,19 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.52.1 — 2026-10-23
+
+- Preserve complete model names and other segments containing ` | ` or `│`
+  when the narrow layout stacks rows.
+- Limit label alignment to the space available in each row, so an oversized
+  per-model label cannot push the 5h/7d bars out of view.
+- Shorten only overflowing quota segments: keep fitting projections when
+  another quota or the model name is too wide. An oversized per-model row
+  drops its own projection before clipping, without rearranging a fitting
+  first line. The default `drop` layout keeps its existing behavior.
+
+---
+
 ## v3.52.0 — 2026-10-23
 
 **Keep quota forecasts visible in narrow panes.**

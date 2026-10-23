@@ -484,6 +484,7 @@ def format_status_line(
     balance_pct=None,
     balance_amount="",
     quota_stale: bool = False,
+    _segments=None,
 ):
     """Build the complete classic-style status line.
 
@@ -548,6 +549,8 @@ def format_status_line(
         if bypass:
             parts.append(colorize("⚠️BYPASS", _fg(theme.s_hot), use_color))
         separator = colorize(" | ", mute, use_color)
+        if _segments is not None:
+            _segments.extend(parts)
         return separator.join(parts)
 
     if quota_stale and msgs_pct is None and weekly_pct is None:
@@ -572,6 +575,8 @@ def format_status_line(
         if bypass:
             parts.append(colorize("⚠️BYPASS", _fg(theme.s_hot), use_color))
         separator = colorize(" | ", mute, use_color)
+        if _segments is not None:
+            _segments.extend(parts)
         return separator.join(parts)
 
     # 5h/7d severity follows the projection (where usage is HEADED), falling
@@ -633,4 +638,6 @@ def format_status_line(
         parts.append(colorize("⚠️BYPASS", _fg(theme.s_hot), use_color))
 
     separator = colorize(" | ", mute, use_color)
+    if _segments is not None:
+        _segments.extend(parts)
     return separator.join(parts)
