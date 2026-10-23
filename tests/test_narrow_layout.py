@@ -128,3 +128,17 @@ def test_long_language_row_does_not_strip_rows_that_fit(style):
                   lang_body="ZH:6.0↑ EN:6.0↑ FR:6.0↑ JA:6.0↑")
     assert out.count("→60%") == 2
     assert "583.0k/1.0M" in out
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+@pytest.mark.parametrize("use_color", [False, True])
+def test_long_scoped_row_preserves_fitting_first_line(style, use_color):
+    limits = [dict(label="Model" + str(i), percent=20,
+                   resets_at=time.time() + 3 * 86400) for i in range(8)]
+    first = _render(style, 500, use_color=use_color).splitlines()[0]
+    width = visible_width(first)
+    rows = _render(style, width, use_color=use_color,
+                   per_model_limits=limits).splitlines()
+    assert rows[0] == first
+    assert len(rows) == 1 + len(limits)
+    assert all(visible_width(row) <= width for row in rows)

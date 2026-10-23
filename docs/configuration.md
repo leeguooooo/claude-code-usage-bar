@@ -9,6 +9,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
   "style": "aurora",
   "bar_glyph": "block",
   "density": "regular",
+  "narrow_layout": "drop",
   "show_weekly": true,
   "show_language": true,
   "show_cost": false,
@@ -31,6 +32,7 @@ Persisted to `~/.claude/claude-statusbar.json`:
 | `style` | `aurora` / `classic` | Layout (see [Looks](styles-and-themes.md)) |
 | `theme` | `graphite` | Palette — the only one since 3.50.0; tune colors with `color_*` |
 | `density` | `compact` / `regular` / `cozy` | Segment padding (aurora) |
+| `narrow_layout` | `drop` (default) / `stack` | When the first line is too wide, `stack` moves quota bars and other segments onto more rows before dropping forecasts or projections. A row that still exceeds the pane width is shortened or clipped. |
 | `bar_glyph` | `block` (default) / `thin` | Aurora bar cells: `■` blocks or the thin `━` line |
 | `looks_seen` | int, `0` | Written by `cs theme`. While it's below the current looks version the bar shows a one-line `✦ New looks available` hint, and an interactive `cs upgrade` opens the picker |
 | `show_cost` | bool, `false` | Append `$ X.XX` session cost (API-equivalent value for subscribers) |
@@ -96,6 +98,7 @@ cs --style classic              # render with a one-off style
 # Configuration
 cs config show                  # show all persistent config
 cs config set style classic     # persist style → ~/.claude/claude-statusbar.json
+cs config set narrow_layout stack # preserve quota forecasts in narrow panes
 cs config set bar_glyph thin    # aurora: thin ━ line instead of ■ blocks
 cs config set show_cost true    # session $ cost segment
 cs config set show_cache_age false  # hide prompt-cache age segment

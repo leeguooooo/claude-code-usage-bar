@@ -968,12 +968,16 @@ def render(style: str, **kwargs) -> str:
                                        kwargs.get('warning_threshold'),
                                        kwargs.get('critical_threshold'), scoped_projection)
         scoped = ' | '.join(seg for _, seg in scoped_parts)
-        if stack and (visible_width(line) > max_width
-                      or visible_width(scoped) > max_width):
+        if stack and visible_width(line) > max_width:
             return _stack(line,
                           _line_separator(fn, theme, render_kwargs.get("density", "regular"),
                                           use_color),
                           _quota_labels(fn, render_kwargs), scoped_parts, max_width)
+        if stack and visible_width(scoped) > max_width:
+            # A separate quota row must not rearrange a fitting first line.
+            width = max(visible_width(label) for label, _ in scoped_parts)
+            scoped = '\n'.join(' ' * (width - visible_width(label)) + segment
+                               for label, segment in scoped_parts)
         return line + ('\n' + scoped if scoped else ''), 1
 
     def fits(text, n):
