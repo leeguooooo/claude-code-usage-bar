@@ -68,6 +68,7 @@ cs --setup                       # 接好 statusLine 钩子，并装上 skill
 cs theme                         # 带实时预览的选择器（↑/↓ 选，回车应用）
 cs config set bar_glyph thin     # ━ 细线，默认是 ■ 方块
 cs config set style classic      # 原来的电池条样式
+cs config set narrow_layout stack # stack quota bars in narrow panes
 cs preview                       # 三种外观放一起看，用你的真实数据
 cs config show                   # 所有配置项，以及你改过哪些
 ```

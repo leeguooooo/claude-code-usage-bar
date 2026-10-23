@@ -9,6 +9,21 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.52.0 — 2026-10-23
+
+**Keep quota forecasts visible in narrow panes.**
+
+- Opt in with `cs config set narrow_layout stack`: quota bars and other
+  segments move onto additional rows when the first line exceeds the pane
+  width. Per-model quota labels align with the 5h/7d bars. The default
+  remains `drop`; a fitting first line keeps its layout (#73, #78).
+- Preserve the per-model quota row when the default layout removes optional
+  first-line segments to fit the pane.
+- Add ccx to the English and Chinese integration guides, with the correct
+  warning conditions: 5-hour usage above 90%, or weekly quota exhausted (#76).
+
+---
+
 ## v3.51.2 — 2026-10-22
 
 - The `✦ New looks available` hint now also goes away when a look is chosen
