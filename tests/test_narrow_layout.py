@@ -8,7 +8,7 @@ import pytest
 
 from claude_statusbar import config
 from claude_statusbar._display import visible_width
-from claude_statusbar.styles import RENDERERS, render
+from claude_statusbar.styles import RENDERERS, _strip, render
 from claude_statusbar.themes import get_theme
 
 SAMPLE = dict(
@@ -142,3 +142,77 @@ def test_long_scoped_row_preserves_fitting_first_line(style, use_color):
     assert rows[0] == first
     assert len(rows) == 1 + len(limits)
     assert all(visible_width(row) <= width for row in rows)
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+@pytest.mark.parametrize("use_color", [False, True])
+def test_model_separator_is_content_not_a_layout_boundary(style, use_color):
+    sep = " | " if style == "classic" else " │ "
+    extra = dict(model="M", lang_body="", cost_text="", cache_age_text="")
+    bars = _render(style, 500, **extra).rsplit(sep, 1)[0]
+    width = visible_width(bars + sep + "X")
+    model = "X" + sep + "Model"
+    out = _render(style, width, use_color=use_color, **{**extra, "model": model})
+    assert model in _strip(out)
+    assert model in _strip(out).splitlines()[-1]
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_oversized_model_does_not_remove_fitting_quota_projections(style):
+    out = _render(style, 40, model="Model" * 15 + "(583.0k/1.0M)",
+                  projection_5h="→60%", projection_7d="→60%")
+    assert out.count("→60%") == 2
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+@pytest.mark.parametrize("use_color", [False, True])
+def test_long_scoped_label_cannot_hide_other_quota_bars(style, use_color):
+    limits = [dict(label="LongModel" * 12, percent=20,
+                   resets_at=time.time() + 3 * 86400)]
+    out = _render(style, 70, use_color=use_color, per_model_limits=limits)
+    plain = _strip(out)
+    assert "5h" in plain and "7d" in plain
+    assert "41%" in plain and "35%" in plain
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+def test_only_oversized_quota_drops_its_projection(style):
+    out = _render(style, 40, projection_5h="→60%", projection_7d="→100%·100d12h")
+    assert "→60%" in out
+    assert "…" not in out
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+@pytest.mark.parametrize("use_color", [False, True])
+def test_scoped_projection_fits_without_changing_a_fitting_first_line(style, use_color):
+    from claude_statusbar.scoped_usage import render_limits
+    limits = [dict(label="LongModel" * 6, percent=10, resets_at=1_561_600)]
+    with patch("claude_statusbar.scoped_usage.time.time", return_value=1_000_000):
+        base = render_limits(limits, get_theme("graphite"), use_color, 30, 70, False)
+        width = visible_width(base)
+        extra = dict(model="M", lang_body="", cost_text="", cache_age_text="",
+                     projection_5h="", projection_7d="")
+        first = _render(style, width, use_color=use_color, **extra).splitlines()[0]
+        out = _render(style, width, use_color=use_color, per_model_limits=limits, **extra)
+    assert out.splitlines()[0] == first
+    assert _strip(out).splitlines()[1] == _strip(base)
+    assert "…" not in out
+
+
+@pytest.mark.parametrize("style", list(RENDERERS))
+@pytest.mark.parametrize("use_color", [False, True])
+@pytest.mark.parametrize("width", [1, 18, 32, 70])
+@pytest.mark.parametrize("density", ["compact", "regular", "cozy"])
+@pytest.mark.parametrize("mode", ["normal", "no_quota", "stale"])
+def test_stack_boundaries_for_quota_and_api_modes(style, use_color, width, density, mode):
+    extra = {"density": density, "ctx_pct": 58.3}
+    if mode == "no_quota":
+        extra.update(no_quota=True, balance_text="bal $12.34")
+    elif mode == "stale":
+        extra.update(quota_stale=True, msgs_pct=None, weekly_pct=None)
+    out = _render(style, width, use_color=use_color, **extra)
+    assert out
+    assert all(visible_width(row) <= width for row in out.splitlines())
+    if width >= 32:
+        expected = "ctx" if mode == "no_quota" else "stale" if mode == "stale" else "5h"
+        assert expected in _strip(out)

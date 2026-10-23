@@ -136,31 +136,44 @@ def _quota_labels(fn, kw) -> list:
     return ["5h", "7d"]
 
 
-def _stack(line: str, sep: str, labels: list, scoped: list,
-           max_width: int) -> tuple:
+def _shorter_models(model: str) -> tuple:
+    """Drop the context denominator, then the entire context suffix."""
+    match = _re.search(r"\s*\(([^()\n]*)/[^()\n]*\)$", model)
+    if match is None:
+        return ()
+    head = model[:match.start()]
+    return f"{head}({match.group(1)})", head
+
+
+def _align_quotas(quota: list, max_width: int) -> list:
+    """Align labels only within the spare space of each quota row."""
+    width = max(visible_width(label) for label, _ in quota)
+    return [" " * min(width - visible_width(label),
+                      max(0, max_width - visible_width(segment))) + segment
+            for label, segment in quota]
+
+
+def _stack(segs: list, sep: str, labels: list, scoped: list,
+           max_width: int) -> str:
     """Re-flow a too-wide line 1 instead of dropping segments (#73).
 
-    The leading `labels` segments of `line` are its quota bars; `scoped` adds
+    The leading `labels` segments are quota bars; `scoped` adds
     the per-model ``(label, segment)`` bars. If all the bars fit on one row they
     stay there; otherwise each gets its own row, labels right-aligned so the
     bars line up. The other line-1 segments (model, cost, cache, ...) pack
     onto the rows after.
 
-    Returns ``(text, n)``: the first `n` rows hold the bars and the model, the
-    only rows that render()'s drop steps can make narrower.
+    Segments come from the renderer; separators inside their content are data.
     """
-    segs = line.split(sep)
     quota = list(zip(labels, segs)) + list(scoped)
     rest = segs[len(labels):]
     row = sep.join(seg for _, seg in quota)
     if visible_width(row) <= max_width:
         lines, cur = [], row
     else:
-        w = max(visible_width(label) for label, _ in quota)
-        lines = [" " * (w - visible_width(label)) + seg for label, seg in quota]
+        lines = _align_quotas(quota, max_width)
         cur = None
-    n = len(lines) + (cur is not None)
-    for i, seg in enumerate(rest):
+    for seg in rest:
         if cur is None:
             cur = seg
         elif visible_width(cur + sep + seg) <= max_width:
@@ -168,11 +181,9 @@ def _stack(line: str, sep: str, labels: list, scoped: list,
         else:
             lines.append(cur)
             cur = seg
-        if i == 0:  # the model: line 1's first segment after the bars
-            n = len(lines) + 1
     if cur is not None:
         lines.append(cur)
-    return "\n".join(lines), n
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +219,7 @@ def render_aurora(
     no_quota: bool = False,
     balance_text: str = "",
     quota_stale: bool = False,
+    _segments=None,
     **_ignored,
 ) -> str:
     from .progress import (window_severity_rgb, _blend, projection_pct,
@@ -302,6 +314,8 @@ def render_aurora(
         parts.append(f"{_fg(theme.s_hot)}{BOLD}⚠ BYPASS{RESET}")
 
     line = sep.join(parts)
+    if _segments is not None:
+        _segments.extend(parts if use_color else [_strip(part) for part in parts])
     if not use_color:
         return _strip(line)
     return line
@@ -327,6 +341,7 @@ def render_classic(
     balance_pct=None,
     balance_amount: str = "",
     quota_stale: bool = False,
+    _segments=None,
     **_ignored,
 ) -> str:
     from .progress import format_status_line, _fg, colorize, RESET
@@ -357,6 +372,7 @@ def render_classic(
         balance_pct=balance_pct,
         balance_amount=balance_amount,
         quota_stale=quota_stale,
+        _segments=_segments,
     )
     if cache_age_text:
         # Three-level severity: COLD red, <1m yellow, otherwise green.
@@ -369,6 +385,8 @@ def render_classic(
         mute = _fg(theme.mute)
         reset = RESET if use_color else ""  # don't leak a bare RESET in no-color mode
         result += f"{reset}{colorize(' | ', mute, use_color)}{colorize(f'cache {cache_age_text}', col, use_color)}"
+        if _segments is not None:
+            _segments.append(colorize(f'cache {cache_age_text}', col, use_color))
     return result
 
 
@@ -957,43 +975,58 @@ def render(style: str, **kwargs) -> str:
     fn = RENDERERS.get(style, render_aurora)
     render_kwargs = dict(kwargs)
     stack = narrow_layout == "stack" and max_width is not None and max_width > 0
-    scoped_projection = per_model_projection
+
+    def rendered_parts():
+        parts = []
+        line = fn(**render_kwargs, _segments=parts)
+        return line, parts
 
     def compose():
-        line = fn(**render_kwargs)
+        line, parts = rendered_parts() if stack else (fn(**render_kwargs), [])
         scoped_parts = []
         if per_model_limits:
             from .scoped_usage import limit_parts
             scoped_parts = limit_parts(per_model_limits, theme, use_color,
                                        kwargs.get('warning_threshold'),
-                                       kwargs.get('critical_threshold'), scoped_projection)
+                                       kwargs.get('critical_threshold'), per_model_projection,
+                                       max_width=max_width if stack else None)
         scoped = ' | '.join(seg for _, seg in scoped_parts)
         if stack and visible_width(line) > max_width:
-            return _stack(line,
+            labels = _quota_labels(fn, render_kwargs)
+            # Shrink only the quota segment that overflows. A long model,
+            # cost or per-model label must not erase a fitting quota's chips.
+            for prefix in ("forecast", "projection"):
+                for label in ("5h", "7d"):
+                    key = prefix + "_" + label
+                    if (label in labels and render_kwargs.get(key)
+                            and visible_width(parts[labels.index(label)]) > max_width):
+                        render_kwargs[key] = ""
+                        line, parts = rendered_parts()
+            if visible_width(parts[len(labels)]) > max_width:
+                for candidate in _shorter_models(str(render_kwargs.get("model", ""))):
+                    render_kwargs["model"] = candidate
+                    line, parts = rendered_parts()
+                    if visible_width(parts[len(labels)]) <= max_width:
+                        break
+            return _stack(parts,
                           _line_separator(fn, theme, render_kwargs.get("density", "regular"),
                                           use_color),
-                          _quota_labels(fn, render_kwargs), scoped_parts, max_width)
+                          labels, scoped_parts, max_width)
         if stack and visible_width(scoped) > max_width:
             # A separate quota row must not rearrange a fitting first line.
-            width = max(visible_width(label) for label, _ in scoped_parts)
-            scoped = '\n'.join(' ' * (width - visible_width(label)) + segment
-                               for label, segment in scoped_parts)
-        return line + ('\n' + scoped if scoped else ''), 1
+            scoped = '\n'.join(_align_quotas(scoped_parts, max_width))
+        return line + ('\n' + scoped if scoped else '')
 
-    def fits(text, n):
-        # Only the first n rows count: line 1 in drop mode (the per-model line
-        # just clips, as before); the bar and model rows once stacked. A long
-        # cost/language/cache row is left to clip, since no drop step
-        # shrinks it.
-        return all(visible_width(r) <= max_width for r in text.split("\n")[:n])
+    def fits(text):
+        return visible_width(text.split("\n", 1)[0]) <= max_width
 
-    out, n = compose()
+    out = compose()
 
     # Preserve core quota/model signal before hard clipping. Optional segments
     # disappear in stable least-important-first order; selected style stays put.
-    # With narrow_layout=stack the re-flow above runs first, so these steps only
-    # kick in once a single stacked row is still wider than the pane.
-    if max_width is not None and max_width > 0 and not fits(out, n):
+    # Stack mode fits individual segments in compose(); drop keeps the
+    # historical first-line degradation order.
+    if not stack and max_width is not None and max_width > 0 and not fits(out):
         degradation = (
             {"cache_age_text": ""},
             {"lang_body": ""},
@@ -1002,16 +1035,10 @@ def render(style: str, **kwargs) -> str:
             {"forecast_5h": "", "forecast_7d": ""},
             {"projection_5h": "", "projection_7d": ""},
         )
-        if stack:
-            # Cache, cost etc. already have rows of their own; only the chips
-            # inside a quota row can make it narrower.
-            degradation = degradation[-2:]
         for replacements in degradation:
             render_kwargs.update(replacements)
-            if stack and "projection_5h" in replacements:
-                scoped_projection = False  # per-model rows are stacked bars too
-            out, n = compose()
-            if fits(out, n):
+            out = compose()
+            if fits(out):
                 break
         else:
             # Context tokens go last, and in two steps: drop the window
@@ -1019,16 +1046,12 @@ def render(style: str, **kwargs) -> str:
             # ~6 columns and keeps the number people actually read. A ~70-col
             # pane on a 1M-context model lands exactly here, so dropping
             # straight to a bare model name loses the count for no reason.
-            import re
             model = str(render_kwargs.get("model", ""))
-            m = re.search(r"\s*\(([^()\n]*)/[^()\n]*\)$", model)
-            if m:
-                head = model[:m.start()]
-                for candidate in (f"{head}({m.group(1)})", head):
-                    render_kwargs["model"] = candidate
-                    out, n = compose()
-                    if fits(out, n):
-                        break
+            for candidate in _shorter_models(model):
+                render_kwargs["model"] = candidate
+                out = compose()
+                if fits(out):
+                    break
 
     if show_pb and info is not None:
         version_text = _statusbar_version() if show_version else ""

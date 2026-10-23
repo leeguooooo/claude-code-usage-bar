@@ -120,7 +120,8 @@ def render_limits(limits, theme, use_color, warning, critical, projection=True):
         limits, theme, use_color, warning, critical, projection))
 
 
-def limit_parts(limits, theme, use_color, warning, critical, projection=True):
+def limit_parts(limits, theme, use_color, warning, critical, projection=True, *,
+                max_width=None):
     """One ``(label, segment)`` per usable per-model limit, in input order."""
     from .progress import _build_dimension, _fg, _render_projection
     from .predict import project_window, format_eta
@@ -149,6 +150,11 @@ def limit_parts(limits, theme, use_color, warning, critical, projection=True):
         rgb = window_severity_rgb(pct, chip, theme, warning, critical) or theme.mute
         bar = _build_dimension(label, pct, _fg(rgb), use_color,
                                warning, critical, theme, fill_rgb=rgb)
-        parts.append((label, bar + '⏰' + format_eta(remaining) +
-                      (' ' + _render_projection(chip, theme, use_color) if chip else '')))
+        segment = bar + '⏰' + format_eta(remaining)
+        if chip:
+            from ._display import visible_width
+            projected = segment + ' ' + _render_projection(chip, theme, use_color)
+            if max_width is None or visible_width(projected) <= max_width:
+                segment = projected
+        parts.append((label, segment))
     return parts
