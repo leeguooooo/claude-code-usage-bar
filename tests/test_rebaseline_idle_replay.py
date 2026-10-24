@@ -94,6 +94,9 @@ def test_frozen_replay_cannot_reupgrade_after_heal(tmp_path):
     ttl = predict.RL_IDLE_TTL_S
     grace = predict.DOWNGRADE_GRACE_S
     _replay("idle-a", 63.0, NOW)
+    # A first-seen blob has unknown origin time; a later transition proves
+    # active-b actually refreshed its headers.
+    _replay("active-b", 2.0, NOW + 1)
     healed_at = NOW + ttl + grace + 60.0
     _, _, u7, _ = reconcile_account(11.0, R5, 2.0, R7,
                                     now=healed_at, session_id="active-b")
@@ -101,6 +104,68 @@ def test_frozen_replay_cannot_reupgrade_after_heal(tmp_path):
     _, _, u7_idle, _ = _replay("idle-a", 63.0, healed_at + 15.0)
     assert u7_idle == 2.0
     assert _store(tmp_path)["seven_day"][str(int(R7))]["used"] == 2.0
+
+
+def test_first_seen_lower_replay_cannot_replace_frozen_full_quota(tmp_path):
+    """A late statusline's first 91% is not a fresh rebaseline of 100%."""
+    _replay("full", 100.0, NOW)
+    later = NOW + predict.RL_IDLE_TTL_S + predict.DOWNGRADE_GRACE_S + 1
+    for step in range(0, 900, 30):
+        t = later + step
+        _, _, used, _ = _replay("late-old-window", 91.0, t)
+        assert used == 100.0
+        assert _replay("full", 100.0, t)[2] == 100.0
+    assert _store(tmp_path)["seven_day"][str(int(R7))]["used"] == 100.0
+
+
+def test_lower_signature_observed_before_new_high_cannot_rebaseline(tmp_path):
+    _replay("old", 87.0, NOW)
+    _replay("old", 91.0, NOW + 1)
+    _replay("full", 100.0, NOW + 2)
+    later = NOW + predict.DOWNGRADE_GRACE_S + 30
+    assert _replay("old", 91.0, later)[2] == 100.0
+
+
+def test_proven_rebaseline_survives_replays_during_grace(tmp_path):
+    _replay("active", 99.0, NOW)
+    _replay("active", 2.0, NOW + 1)
+    later = NOW + predict.DOWNGRADE_GRACE_S + 1
+    assert _replay("active", 2.0, later)[2] == 2.0
+
+
+def test_concurrent_first_seen_sessions_cannot_lower_full_quota(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+    from pathlib import Path
+
+    path = tmp_path / "shared.json"
+    reconcile_account(10, R5, 100, R7, now=NOW, session_id="full", path=path)
+    later = NOW + predict.RL_IDLE_TTL_S + predict.DOWNGRADE_GRACE_S + 1
+    env = dict(os.environ, HOME=str(tmp_path),
+               PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"))
+    script = """
+import sys
+from claude_statusbar.predict import reconcile_account
+path, sid, now, r5, r7 = sys.argv[1:]
+for step in range(5):
+    result = reconcile_account(10, float(r5), 91, float(r7), path=path,
+                               now=float(now) + step, session_id=sid)
+    assert result[2] == 100, result
+"""
+
+    def run(index):
+        return subprocess.run(
+            [sys.executable, "-c", script, str(path), f"old-{index}",
+             str(later), str(R5), str(R7)], env=env, capture_output=True,
+            text=True, timeout=15)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(run, range(4)))
+    for result in results:
+        assert result.returncode == 0, result.stderr
+    assert json.loads(path.read_text())["seven_day"][str(int(R7))]["used"] == 100
 
 
 def test_changing_session_keeps_glitch_protection(tmp_path):

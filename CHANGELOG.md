@@ -9,6 +9,20 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.52.2 — 2026-10-24
+
+- Prevent a newly observed session replaying an older quota snapshot from
+  lowering the shared account reading after its confirmation grace expires.
+  For example, a frozen 91% weekly reading no longer replaces a recorded 100%.
+- Require a subsequent change in the session's raw quota signature, newer
+  than the shared observation, before accepting a downward recalibration.
+  Genuine recalibrations still use the existing grace period; unchanged
+  snapshots remain unable to confirm or overwrite quota after their idle TTL.
+- Cover late-session replays, delayed recalibrations, and concurrent writes
+  from separate processes with regression tests.
+
+---
+
 ## v3.52.1 — 2026-10-23
 
 - Preserve complete model names and other segments containing ` | ` or `│`
