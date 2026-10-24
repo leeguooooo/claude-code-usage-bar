@@ -70,20 +70,20 @@ def _replay(sid, u7, t, u5=10.0):
 
 def test_frozen_replay_stops_confirming_after_ttl(tmp_path):
     """Idle session A replays a frozen 63% blob forever; active session B's
-    weekly signature changes after A stops confirming. Once A's signature has been
-    frozen past RL_IDLE_TTL_S, its replays no longer refresh the grace
+    weekly signature changes once, then its 5h usage keeps changing. Once A's
+    signature has been frozen past RL_IDLE_TTL_S, its replays no longer refresh the grace
     clock, and B's re-baseline lands."""
     ttl = predict.RL_IDLE_TTL_S
     grace = predict.DOWNGRADE_GRACE_S
     _replay("idle-a", 63.0, NOW)
+    _replay("active-b", 3.0, NOW + 1)
     t = NOW
     u7 = None
     while t < NOW + ttl + grace + 120.0:
         t += 30.0
         _replay("idle-a", 63.0, t)                       # frozen signature
         u5 = 10.0 + (t - NOW) / 600.0                    # B's usage creeps up
-        weekly = 3.0 if t <= NOW + ttl + grace else 2.0
-        _, _, u7, _ = reconcile_account(u5, R5, weekly, R7,
+        _, _, u7, _ = reconcile_account(u5, R5, 2.0, R7,
                                         now=t, session_id="active-b")
     assert u7 == 2.0
 
@@ -147,6 +147,17 @@ def test_weekly_changes_do_not_date_unchanged_five_hour_reading(tmp_path):
     _replay("old", 80.0, NOW + 1, u5=91.0)
     later = NOW + predict.RL_IDLE_TTL_S + predict.DOWNGRADE_GRACE_S + 1
     assert _replay("old", 81.0, later, u5=91.0)[0] == 100.0
+
+
+def test_confirming_high_value_does_not_erase_newer_recalibration(tmp_path):
+    _replay("old-high", 99.0, NOW)
+    _replay("active", 3.0, NOW + 1)
+    _replay("active", 2.0, NOW + 30)
+    _replay("old-high", 99.0, NOW + 60)
+    # A real 3 -> 2 transition remains newer than the value 99, even though
+    # old-high later confirmed it. Grace still starts at that confirmation.
+    assert _replay("active", 2.0, NOW + 60 + predict.DOWNGRADE_GRACE_S - 1)[2] == 99.0
+    assert _replay("active", 2.0, NOW + 60 + predict.DOWNGRADE_GRACE_S + 1)[2] == 2.0
 
 
 def test_concurrent_first_seen_sessions_cannot_lower_full_quota(tmp_path):
