@@ -443,10 +443,11 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
     render is answered from the bucket matching ITS OWN blob's resets_at.
     "Later reset wins" across buckets is exactly what pinned the bar to the
     other account's 7d window for days (live incident 2026-06-12: bar 14%,
-    real account 77%). Within one bucket the v3.13.3-5 healing rules apply
-    unchanged: monotonic up, equal readings refresh the grace clock, lower
-    readings accepted as an official re-baseline once unconfirmed for
-    DOWNGRADE_GRACE_S. Never raises — on any error returns the inputs."""
+    real account 77%). Within one bucket: monotonic up, equal readings refresh
+    the grace clock, lower readings accepted as an official re-baseline once
+    unconfirmed for DOWNGRADE_GRACE_S. With a session ID, a signature transition
+    for that window newer than the stored value is also required: first
+    sighting alone cannot date a client's headers. Never raises on errors."""
     p = Path(path) if path is not None else _latest_path(transcript_path)
     try:
         from .cache import file_transaction
@@ -481,6 +482,11 @@ def _reconcile_account_locked(p, used_5h, resets_5h, used_7d, resets_7d,
         # blobs every render — they must neither write the store nor count as
         # confirmations (or a pre-rebaseline pct never heals).
         blob_fresh = True
+        # First seeing a session is not evidence that its headers are new.
+        # A newly opened statusline can replay an hours-old client snapshot.
+        # A subsequent transition must belong to the window being lowered:
+        # new 5h headers cannot date an unchanged weekly reading.
+        advanced_at = {}
         for win, reset in (("five_hour", resets_5h), ("seven_day", resets_7d)):
             r = _coerce(reset)
             if r is not None and not _reset_plausible(win, r, now):
@@ -498,6 +504,10 @@ def _reconcile_account_locked(p, used_5h, resets_5h, used_7d, resets_7d,
             prev_sig = ent.get("sig") if isinstance(ent, dict) else None
             seen_at = _coerce(ent.get("changed_at")) if isinstance(ent, dict) else None
             prev_model = ent.get("model") if isinstance(ent, dict) else None
+            advances = ent.get("advanced_at") if isinstance(ent, dict) else None
+            if isinstance(advances, dict):
+                advanced_at = {k: v for k, v in advances.items()
+                               if _coerce(v) is not None}
 
             # Burn-rate regime boundary: this session switched models, or a
             # new session joined bringing a model the active fleet doesn't
@@ -530,6 +540,12 @@ def _reconcile_account_locked(p, used_5h, resets_5h, used_7d, resets_7d,
                     changed = True
             else:
                 upd = {"sig": sig, "changed_at": now}
+                if isinstance(prev_sig, list) and len(prev_sig) == len(sig):
+                    for win, offset in (("five_hour", 0), ("seven_day", 2)):
+                        if prev_sig[offset:offset + 2] != sig[offset:offset + 2]:
+                            advanced_at[win] = now
+                if advanced_at:
+                    upd["advanced_at"] = advanced_at
                 if keep_model:
                     upd["model"] = keep_model
                 sessions[session_id] = upd
@@ -572,15 +588,23 @@ def _reconcile_account_locked(p, used_5h, resets_5h, used_7d, resets_7d,
             ent = buckets.get(key) if key is not None else None
             pu = _coerce(ent.get("used")) if ent else None
             po = _coerce(ent.get("observed_at")) if ent else None
+            # Equal confirmations extend grace, but do not make the underlying
+            # value newer than a subsequent real recalibration.
+            value_at = _coerce(ent.get("value_at", po)) if ent else None
             # Bucket is "unconfirmed" when nothing has re-observed it within
             # the grace period.
             unconfirmed = po is None or (now - po) > DOWNGRADE_GRACE_S
+            window_advanced_at = _coerce(advanced_at.get(win))
+            can_rebaseline = (not session_id or
+                              (window_advanced_at is not None and
+                               (value_at is None or window_advanced_at > value_at)))
 
-            if cur_ok and (pu is None or cu > pu or (cu < pu and unconfirmed)):
+            if cur_ok and (pu is None or cu > pu or
+                           (cu < pu and unconfirmed and can_rebaseline)):
                 # Fresh reading for its own window: first sighting, monotonic
                 # growth, or an official downward re-baseline that went
                 # unchallenged for the whole grace period.
-                buckets[key] = {"used": cu, "observed_at": now}
+                buckets[key] = {"used": cu, "observed_at": now, "value_at": now}
                 out[win] = (cu, cr)
                 changed = True
             elif cur_ok and cu == pu:
@@ -589,7 +613,8 @@ def _reconcile_account_locked(p, used_5h, resets_5h, used_7d, resets_7d,
                     # value any live session still agrees with can't be
                     # downgraded by a stale replay. Throttled to avoid a 1 Hz
                     # write storm.
-                    buckets[key] = {"used": pu, "observed_at": now}
+                    buckets[key] = {"used": pu, "observed_at": now,
+                                    "value_at": value_at}
                     changed = True
                 out[win] = (pu, cr)
             elif cur_ok:
