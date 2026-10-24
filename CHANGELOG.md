@@ -14,8 +14,9 @@ For a quick overview of the latest release, see the
 - Prevent a newly observed session replaying an older quota snapshot from
   lowering the shared account reading after its confirmation grace expires.
   For example, a frozen 91% weekly reading no longer replaces a recorded 100%.
-- Require a subsequent change in the session's raw quota signature, newer
+- Require a subsequent change in that window's raw quota signature, newer
   than the shared observation, before accepting a downward recalibration.
+  A change in 5h usage cannot make an unchanged weekly snapshot fresh.
   Genuine recalibrations still use the existing grace period; unchanged
   snapshots remain unable to confirm or overwrite quota after their idle TTL.
 - Cover late-session replays, delayed recalibrations, and concurrent writes

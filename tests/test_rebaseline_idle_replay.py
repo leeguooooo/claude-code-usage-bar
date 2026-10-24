@@ -70,7 +70,7 @@ def _replay(sid, u7, t, u5=10.0):
 
 def test_frozen_replay_stops_confirming_after_ttl(tmp_path):
     """Idle session A replays a frozen 63% blob forever; active session B's
-    signature keeps changing and reads 2%. Once A's signature has been
+    weekly signature changes after A stops confirming. Once A's signature has been
     frozen past RL_IDLE_TTL_S, its replays no longer refresh the grace
     clock, and B's re-baseline lands."""
     ttl = predict.RL_IDLE_TTL_S
@@ -82,7 +82,8 @@ def test_frozen_replay_stops_confirming_after_ttl(tmp_path):
         t += 30.0
         _replay("idle-a", 63.0, t)                       # frozen signature
         u5 = 10.0 + (t - NOW) / 600.0                    # B's usage creeps up
-        _, _, u7, _ = reconcile_account(u5, R5, 2.0, R7,
+        weekly = 3.0 if t <= NOW + ttl + grace else 2.0
+        _, _, u7, _ = reconcile_account(u5, R5, weekly, R7,
                                         now=t, session_id="active-b")
     assert u7 == 2.0
 
@@ -96,7 +97,7 @@ def test_frozen_replay_cannot_reupgrade_after_heal(tmp_path):
     _replay("idle-a", 63.0, NOW)
     # A first-seen blob has unknown origin time; a later transition proves
     # active-b actually refreshed its headers.
-    _replay("active-b", 2.0, NOW + 1)
+    _replay("active-b", 3.0, NOW + 1)
     healed_at = NOW + ttl + grace + 60.0
     _, _, u7, _ = reconcile_account(11.0, R5, 2.0, R7,
                                     now=healed_at, session_id="active-b")
@@ -131,6 +132,21 @@ def test_proven_rebaseline_survives_replays_during_grace(tmp_path):
     _replay("active", 2.0, NOW + 1)
     later = NOW + predict.DOWNGRADE_GRACE_S + 1
     assert _replay("active", 2.0, later)[2] == 2.0
+
+
+def test_five_hour_changes_do_not_date_unchanged_weekly_reading(tmp_path):
+    _replay("full", 100.0, NOW)
+    _replay("old", 91.0, NOW + 1)
+    later = NOW + predict.RL_IDLE_TTL_S + predict.DOWNGRADE_GRACE_S + 1
+    assert _replay("old", 91.0, later, u5=11.0)[2] == 100.0
+    assert _replay("old", 91.0, later + 30, u5=12.0)[2] == 100.0
+
+
+def test_weekly_changes_do_not_date_unchanged_five_hour_reading(tmp_path):
+    _replay("full", 90.0, NOW, u5=100.0)
+    _replay("old", 80.0, NOW + 1, u5=91.0)
+    later = NOW + predict.RL_IDLE_TTL_S + predict.DOWNGRADE_GRACE_S + 1
+    assert _replay("old", 81.0, later, u5=91.0)[0] == 100.0
 
 
 def test_concurrent_first_seen_sessions_cannot_lower_full_quota(tmp_path):
