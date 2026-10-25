@@ -10,7 +10,6 @@ Reference docs for [`claude-statusbar`](../README.md). Start with the main
 - [Configuration](configuration.md) — config file, all `show_*` keys, env vars, JSON output, CLI cheatsheet
 
 ## Surfaces & modes
-- [Desktop HUD (`cs hud`)](desktop-hud.md) — macOS floating panel for the Claude desktop app
 - [Fast mode (daemon)](daemon.md) — sub-1% CPU daemon, launchd / systemd auto-start
 - [No-quota mode](no-quota-mode.md) — relay / Bedrock / Vertex layout, context battery, balance
 

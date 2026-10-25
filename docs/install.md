@@ -28,8 +28,7 @@ bash /tmp/cs.sh
 ```
 
 Update later by re-running the same one-liner. (The binary can't `pip`-upgrade
-itself; `cs upgrade` prints this command for you.) The desktop HUD (`cs hud`)
-is **not** in the binary — it needs PyObjC; install it via the pip extra below.
+itself; `cs upgrade` prints this command for you.)
 
 ## Claude Code: Windows (PowerShell)
 

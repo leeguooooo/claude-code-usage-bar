@@ -21,10 +21,6 @@
 #   4. Runs `cs --setup` to wire the Claude Code statusLine + slash commands.
 #   5. Removes inactive `_MEI*` directories leaked by legacy onefile versions,
 #      after stopping the old daemon and verifying no process has them open.
-#   6. On macOS, if the Claude desktop app is installed, also registers the
-#      floating desktop HUD to auto-start on login (`cs hud install`) — the
-#      macOS binary bundles the HUD, so this needs no Python. One command wires
-#      up both the terminal statusLine and the desktop panel.
 #
 #   If no prebuilt binary matches your platform (e.g. Linux arm64, Windows), it
 #   automatically falls back to the pip/uv-based installer (web-install.sh),
@@ -426,20 +422,6 @@ finish_install() {
         [ "$setup_ok" -eq 1 ] && prune_old_bundles "$bundle_dir"
     fi
 
-    # macOS: if the Claude *desktop* app is installed, wire the floating HUD too,
-    # so a single install covers BOTH surfaces — the terminal statusLine and the
-    # desktop panel — with no extra steps. The macOS binary bundles the HUD, so
-    # this needs no Python/pip and rides the same auto-update.
-    if [ "${CS_SKIP_SETUP:-0}" != "1" ] && [ "$(uname -s)" = "Darwin" ] && \
-       { [ -d "/Applications/Claude.app" ] || [ -d "$HOME/Applications/Claude.app" ]; }; then
-        say "Detected the Claude desktop app — installing the floating HUD..."
-        if "$INSTALL_DIR/cs" hud install; then
-            ok "✓ Desktop HUD installed — auto-starts on login (drag to place, click to expand)"
-        else
-            warn "HUD setup hit an issue; run 'cs hud install' to retry."
-        fi
-    fi
-
     echo ""
     ok "═══════════════════════════════════════"
     ok "Install complete."
@@ -450,8 +432,6 @@ finish_install() {
     echo "  cs preview   # try every style × theme"
     echo ""
     echo "Update later:   curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash"
-    echo "Desktop HUD:    auto-installed above if the Claude desktop app was found (macOS)."
-    echo "                otherwise: cs hud install"
 }
 
 main "$@"

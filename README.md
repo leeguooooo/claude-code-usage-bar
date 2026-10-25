@@ -6,7 +6,7 @@
 
 **Your Claude Code usage, at a glance.**
 5h / 7d rate-limit bars, reset countdowns, model, context window, and prompt-cache
-freshness — inline in Claude Code's status line, or a floating HUD on the desktop app.
+freshness — inline in Claude Code's status line.
 
 [![PyPI](https://img.shields.io/pypi/v/claude-statusbar.svg?color=2b7)](https://pypi.org/project/claude-statusbar/)
 [![Downloads](https://static.pepy.tech/badge/claude-statusbar/month)](https://pepy.tech/project/claude-statusbar)
@@ -32,7 +32,6 @@ how much you have left, and when it resets.
 
 - **Official numbers** — the same 5h / 7d limits Claude Code enforces, not a local guess.
 - **Prompt-cache countdown** — `❄ 4m23s` tells you when the next turn pays full price.
-- **Two surfaces** — the terminal `statusLine`, or a floating HUD for the Claude desktop app (macOS).
 - **Fast** — native cache reader plus a background daemon; well under 1% CPU at one refresh per second.
 - **Opt-in extras** — cost, relay balance, git ahead/behind, activity, IP checks, [IELTS writing-coach](https://github.com/leeguooooo/prompt-language-coach) progress.
 
@@ -42,8 +41,7 @@ how much you have left, and when it resets.
 curl -fsSL https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/install.sh | bash
 ```
 
-A prebuilt binary for macOS Apple Silicon and Linux x86_64 — no Python needed. On macOS it
-also registers the desktop HUD when the Claude app is installed. Other platforms fall back to pip.
+A prebuilt binary for macOS Apple Silicon and Linux x86_64 — no Python needed. Other platforms fall back to pip.
 
 **Windows** (PowerShell, no admin):
 
@@ -78,16 +76,6 @@ cs preview                       # all three looks, with your real numbers
 cs config show                   # every key, and which ones you changed
 ```
 
-## Desktop app (macOS) — `cs hud`
-
-The desktop app has no status line, so `cs hud` adds an always-on-top floating panel with the
-same official usage. The one-liner installs it; for pip use `pip install 'claude-statusbar[hud]' && cs hud install`.
-
-<div align="center">
-<img width="209" alt="collapsed HUD pill" src="https://github.com/user-attachments/assets/4bcf4c8d-e919-416a-8356-daa4d5c1a966" />
-<img width="620" alt="expanded HUD panel" src="https://github.com/user-attachments/assets/fcdea929-5e85-4f1a-982e-ba431d8a80d1" />
-</div>
-
 ## Documentation
 
 | Guide | What's inside |
@@ -96,7 +84,6 @@ same official usage. The one-liner installs it; for pip use `pip install 'claude
 | [What it shows](docs/segments.md) | Every segment, icon and color threshold |
 | [Looks](docs/styles-and-themes.md) | The three looks, slash commands |
 | [Configuration](docs/configuration.md) | All keys, env vars, JSON output |
-| [Desktop HUD](docs/desktop-hud.md) | The macOS floating panel |
 | [Fast mode (daemon)](docs/daemon.md) | Daemon, auto-start, refresh and caching |
 | [No-quota mode](docs/no-quota-mode.md) | Relay / Bedrock / Vertex layout and balance |
 | [Cache countdown](docs/cache-countdown.md) | How `❄ 4m23s` is computed |
