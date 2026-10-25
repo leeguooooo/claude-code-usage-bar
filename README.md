@@ -1,3 +1,5 @@
+> Using **Codex CLI**? Try the sibling project **[Codex Statebar](https://github.com/leeguooooo/codex-statebar)** — the same status bar, built for Codex.
+
 <div align="center">
 
 # Claude Status Bar
