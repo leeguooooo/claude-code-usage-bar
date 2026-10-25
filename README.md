@@ -17,7 +17,7 @@ freshness — inline in Claude Code's status line.
 
 **English** · [简体中文](README.zh-CN.md) · [Install](docs/install.md) · [Documentation](#documentation)
 
-![cs theme — pick a look with a live preview](docs/images/picker.gif)
+![Aurora — the default look](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/docs/images/look-aurora.png)
 
 </div>
 
@@ -64,8 +64,13 @@ an old version, run `cs upgrade` or re-run the one-liner
 
 Three looks — aurora with block bars (default), aurora with a thin line, and classic:
 
-![aurora, thin line](docs/images/aurora-thin-graphite.svg)
-![classic](docs/images/classic-graphite.svg)
+![aurora, block bars (default)](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/docs/images/look-aurora.png)
+![aurora, thin line](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/docs/images/look-thin.png)
+![classic](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/docs/images/look-classic.png)
+
+`cs theme` picks one with a live preview:
+
+![cs theme — pick a look with a live preview](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/docs/images/picker.gif)
 
 ```bash
 cs theme                         # pick one with a live preview (↑/↓, Enter)

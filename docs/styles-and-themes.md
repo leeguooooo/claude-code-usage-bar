@@ -5,15 +5,15 @@
 **Aurora, block bars** — the default. Each bar cell blends green → amber → red
 by position, so a fuller bar reaches further into the red.
 
-![aurora, block bars](images/aurora-graphite.svg)
+![aurora, block bars](images/look-aurora.png)
 
 **Aurora, thin line** — same colors, a thin `━` line instead of `■` blocks.
 
-![aurora, thin line](images/aurora-thin-graphite.svg)
+![aurora, thin line](images/look-thin.png)
 
 **Classic** — the original `[battery] | pipe` layout, unchanged.
 
-![classic](images/classic-graphite.svg)
+![classic](images/look-classic.png)
 
 ```bash
 cs theme                         # interactive: live preview, ↑/↓ or 1-3, Enter applies

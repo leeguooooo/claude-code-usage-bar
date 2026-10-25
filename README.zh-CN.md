@@ -17,7 +17,7 @@
 
 [English](README.md) · **简体中文** · [安装](docs/install.md) · [文档](#文档)
 
-![cs theme：带实时预览挑外观](docs/images/picker.gif)
+![Aurora：默认外观](docs/images/look-aurora.png)
 
 </div>
 
@@ -61,8 +61,13 @@ cs --setup                       # 接好 statusLine 钩子，并装上 skill
 
 三种外观：aurora 方块（默认）、aurora 细线、classic 原版：
 
-![aurora 细线](docs/images/aurora-thin-graphite.svg)
-![classic](docs/images/classic-graphite.svg)
+![aurora 方块（默认）](docs/images/look-aurora.png)
+![aurora 细线](docs/images/look-thin.png)
+![classic](docs/images/look-classic.png)
+
+`cs theme` 带实时预览挑外观：
+
+![cs theme：带实时预览挑外观](docs/images/picker.gif)
 
 ```bash
 cs theme                         # 带实时预览的选择器（↑/↓ 选，回车应用）
