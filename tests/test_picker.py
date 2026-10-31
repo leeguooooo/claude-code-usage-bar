@@ -99,6 +99,7 @@ def test_bar_shows_hint_only_while_looks_unseen(lang, text):
 
 
 def test_core_passes_hint_from_config(live_cfg, monkeypatch):
+    live_cfg.write_text('{"style": "classic", "ui_version": 3}', encoding="utf-8")
     import claude_statusbar.styles as styles
     from claude_statusbar.core import main
     seen = []
@@ -133,3 +134,17 @@ def test_choosing_a_look_any_way_clears_the_hint(live_cfg, key, value):
     assert cfg_mod.load_config().looks_seen < cfg_mod.LOOKS_VERSION
     cfg_mod.set_value(key, value)
     assert cfg_mod.load_config().looks_seen == cfg_mod.LOOKS_VERSION
+
+
+def test_default_look_users_get_no_hint(live_cfg, monkeypatch):
+    # Still on the default look = already running what's new.
+    import claude_statusbar.styles as styles
+    from claude_statusbar.core import main
+    seen = []
+    original = styles.render
+    monkeypatch.setattr(styles, "render",
+                        lambda style, **kw: seen.append(kw.get("looks_hint")) or original(style, **kw))
+    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO("{}"))
+    main(use_color=False, _suppress_side_effects=True)
+    assert cfg_mod.load_config().looks_seen < cfg_mod.LOOKS_VERSION
+    assert seen == [False]

@@ -1258,7 +1258,9 @@ def main(json_output: bool = False,
 
     # Optional project + branch identity segment (second line). Also carries
     # the "new looks · cs theme" nudge, since every render path spreads it.
-    identity_kwargs = {"looks_hint": cfg.looks_seen < _cfg.LOOKS_VERSION,
+    # Someone still on the default look is already running what's new.
+    on_default_look = (cfg.style, cfg.bar_glyph) == (_cfg.DEFAULT_STYLE, _cfg.DEFAULT_BAR_GLYPH)
+    identity_kwargs = {"looks_hint": cfg.looks_seen < _cfg.LOOKS_VERSION and not on_default_look,
                        "narrow_layout": cfg.narrow_layout}
     if cfg.show_project_branch:
         from .identity import resolve_identity, dirty_with_async_refresh
