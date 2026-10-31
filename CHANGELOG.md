@@ -9,6 +9,11 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.52.3 — 2026-11-01
+
+### Fixed
+- 已取消 5 小时限制的账号（如已验证的 Ultra）不再显示空的 `5h[--%]`，状态栏只留 7d。判定依据是 `rate_limits` 只含 `seven_day`；额度未知时不隐藏，仍有 5h 限制的账号不受影响。
+
 ## v3.52.2 — 2026-10-24
 
 - Prevent a newly observed session replaying an older quota snapshot from

@@ -159,6 +159,9 @@ def parse_stdin_data() -> Dict[str, Any]:
         if sd:
             result['rate_limit_7d_pct'] = _pct(sd.get('used_percentage', 0))
             result['rate_limit_7d_resets_at'] = sd.get('resets_at')
+        # Accounts without a 5-hour limit (verified Ultra) get seven_day alone.
+        # Only that shape means "no limit": an empty blob just means not yet known.
+        result['no_five_hour_limit'] = bool(sd) and not fh
 
         # Fallback only to quota with a matching account/session owner.
         if not fh and not sd:
@@ -167,6 +170,7 @@ def parse_stdin_data() -> Dict[str, Any]:
                 cached_rl = read(data)
                 cached_fh = cached_rl.get('five_hour', {})
                 cached_sd = cached_rl.get('seven_day', {})
+                result['no_five_hour_limit'] = bool(cached_sd) and not cached_fh
                 if cached_fh:
                     p, ra = _rollover_cached(_pct(cached_fh.get('used_percentage', 0)),
                                        cached_fh.get('resets_at'), FIVE_HOUR_S)
@@ -1469,6 +1473,11 @@ def main(json_output: bool = False,
             except Exception:
                 pass
 
+            hide_5h = bool(stdin_data.get('no_five_hour_limit'))
+            if hide_5h:
+                # The reconcile store may still hold a pre-removal 5h reading.
+                msgs_pct, resets_at = None, None
+
             if resets_at:
                 diff = datetime.fromtimestamp(resets_at, tz=timezone.utc) - datetime.now(timezone.utc)
                 total_min = max(0, int(diff.total_seconds() / 60))
@@ -1572,6 +1581,7 @@ def main(json_output: bool = False,
                     countdown_emoji=countdown,
                     density=cfg.density, bar_glyph=cfg.bar_glyph,
                     show_weekly=cfg.show_weekly,
+                    hide_5h=hide_5h,
                     ctx_pct=ctx_pct,
                     shimmer_phase=shimmer_phase,
                     max_width=max_width,

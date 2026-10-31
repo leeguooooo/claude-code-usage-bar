@@ -131,9 +131,12 @@ def _quota_labels(fn, kw) -> list:
     if (kw.get("quota_stale") and kw.get("msgs_pct") is None
             and kw.get("weekly_pct") is None):
         return [""]  # the one `⟳ 5h/7d stale` notice
+    labels = ["5h", "7d"]
     if fn is render_aurora and not kw.get("show_weekly", True):
-        return ["5h"]
-    return ["5h", "7d"]
+        labels.remove("7d")
+    if kw.get("hide_5h"):
+        labels.remove("5h")
+    return labels
 
 
 def _shorter_models(model: str) -> tuple:
@@ -212,6 +215,7 @@ def render_aurora(
     show_weekly: bool = True,
     ctx_pct: Optional[float] = None,
     projection_5h: str = "",
+    hide_5h: bool = False,
     projection_7d: str = "",
     forecast_5h: str = "",
     forecast_7d: str = "",
@@ -279,8 +283,9 @@ def render_aurora(
     elif quota_stale and msgs_pct is None and weekly_pct is None:
         parts.append(f"{_fg(theme.s_warn)}⟳ 5h/7d stale·restart{RESET}")
     else:
-        parts.append(window("5h", msgs_pct, projection_5h, forecast_5h,
-                            reset_5h, countdown_emoji))
+        if not hide_5h:
+            parts.append(window("5h", msgs_pct, projection_5h, forecast_5h,
+                                reset_5h, countdown_emoji))
         if show_weekly:
             parts.append(window("7d", weekly_pct, projection_7d, forecast_7d,
                                 reset_7d))
@@ -333,6 +338,7 @@ def render_classic(
     ctx_pct: Optional[float] = None,
     shimmer_phase=None,
     projection_5h: str = "",
+    hide_5h: bool = False,
     projection_7d: str = "",
     forecast_5h: str = "",
     forecast_7d: str = "",
@@ -364,6 +370,7 @@ def render_classic(
         theme=theme,
         shimmer_phase=shimmer_phase,
         projection_5h=projection_5h,
+        hide_5h=hide_5h,
         projection_7d=projection_7d,
         forecast_5h=forecast_5h,
         forecast_7d=forecast_7d,

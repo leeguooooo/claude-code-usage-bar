@@ -476,6 +476,7 @@ def format_status_line(
     theme=None,
     shimmer_phase=None,
     projection_5h: str = "",
+    hide_5h: bool = False,
     projection_7d: str = "",
     forecast_5h: str = "",
     forecast_7d: str = "",
@@ -603,7 +604,7 @@ def format_status_line(
     # (projection off, or the early-window `→--` placeholder).
     if forecast_5h and projection_pct(projection_5h) is None:
         dim_5h += " " + _render_forecast(forecast_5h, theme, use_color)
-    parts = [dim_5h]
+    parts = [] if hide_5h else [dim_5h]
 
     dim_7d = _build_dimension("7d", weekly_pct, color_7d, use_color,
                               warning_threshold, critical_threshold, theme,
