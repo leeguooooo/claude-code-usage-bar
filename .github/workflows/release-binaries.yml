@@ -59,7 +59,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14        # Apple Silicon
+          - os: macos-15        # Apple Silicon
             asset: cs-darwin-arm64.tar.gz
             extra_assets: cs-darwin-arm64.dmg*
           - os: ubuntu-22.04    # glibc 2.35 — broad compat

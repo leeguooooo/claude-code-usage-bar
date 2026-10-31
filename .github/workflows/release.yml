@@ -72,7 +72,7 @@ jobs:
         include:
           - os: ubuntu-latest
             suite: tests/
-          - os: macos-14
+          - os: macos-15
             suite: tests/test_review_regressions.py tests/test_release_recovery.py tests/test_setup_windows_exe.py
           - os: windows-latest
             suite: tests/test_review_regressions.py tests/test_release_recovery.py tests/test_setup_windows_exe.py

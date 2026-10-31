@@ -171,7 +171,8 @@ def main() -> int:
         OUT.mkdir(parents=True, exist_ok=True)
         for look in LOOKS:
             ansi = render(look, home, payload, env)
-            print(f"{look}: {re.sub(chr(27) + r'\[[0-9;]*m', '', ansi)}")
+            plain = re.sub(chr(27) + r"\[[0-9;]*m", "", ansi)
+            print(f"{look}: {plain}")
             shutil.copy(capture(f"look-{look}", ansi, base), OUT / f"look-{look}.png")
     print(f"wrote {OUT}/look-{{{','.join(LOOKS)}}}.png")
     return 0
