@@ -205,6 +205,79 @@ def _aurora_cache_text(text: str) -> str:
     return text
 
 
+def _aurora_bar(p, width: int, theme: Theme, cell: str) -> str:
+    """Each cell's color is fixed by its position along the bar, so a fuller
+    bar literally reaches further into the red end of the spectrum."""
+    from .progress import _blend
+    edge = _fg(theme.edge)
+    if p is None:
+        return f"{edge}{cell * width}{RESET}"
+    clamped = max(0.0, min(float(p), 100.0))
+    filled = int(clamped / 100 * width + 0.5)
+    if p > 0 and filled == 0:
+        filled = 1
+    out = ""
+    for i in range(width):
+        if i < filled:
+            t = i / (width - 1) if width > 1 else 0.0
+            rgb = (_blend(theme.s_ok, theme.s_warn, t * 2) if t < 0.5
+                   else _blend(theme.s_warn, theme.s_hot, (t - 0.5) * 2))
+            out += f"{_fg(rgb)}{cell}"
+        else:
+            out += f"{edge}{cell}"
+    return out + RESET
+
+
+def _aurora_countdown(seconds: float) -> str:
+    """Same `2d18h` / `3h54m` / `12m` shape as the 5h/7d reset text."""
+    s = max(0, int(seconds))
+    d, s = divmod(s, 86400)
+    h, s = divmod(s, 3600)
+    if d > 0:
+        return f"{d}d{h:02d}h"
+    if h > 0:
+        return f"{h}h{s // 60:02d}m"
+    return f"{s // 60}m"
+
+
+def _aurora_model_matches(model, label: str) -> bool:
+    """True when a per-model limit's label names the session's model family
+    (`Fable` ↔ `Fable 5.2`)."""
+    name = _AURORA_TOKENS_RE.sub("", str(model)).strip().lower()
+    label = label.strip().lower()
+    return bool(label) and (name == label or name.startswith(label + " "))
+
+
+def _aurora_scoped_segment(theme: Theme, bar_glyph: str, reset_7d: str,
+                           use_color: bool, model: str = ""):
+    """Per-model weekly limit in aurora's own look: `Fable ■■■■■■■■ 59%`.
+
+    The bar is shorter than the 12-cell 5h/7d bars so it reads as a sub-limit
+    of the week. Its reset is printed only when it differs from the 7d reset
+    already on the line — they normally share one.
+
+    With `model` given, the limit that belongs to the session's own model is
+    headed by the full model name in the model accent (`Fable 5.2 ■■■■ 59%`),
+    so it doubles as the model segment instead of repeating the name."""
+    from .progress import _blend
+    cell = "━" if bar_glyph == "thin" else "■"
+    mute, edge, ink = _fg(theme.mute), _fg(theme.edge), _fg(theme.ink)
+    accent = _fg(_blend(theme.s_hot, theme.wt, 0.5))
+    name = _AURORA_TOKENS_RE.sub("", str(model)).strip()
+
+    def segment(label, pct, rgb, remaining):
+        col = _fg(rgb) if rgb is not None else ink
+        head = (f"{accent}{name}" if model and _aurora_model_matches(model, label)
+                else f"{mute}{label}")
+        out = (f"{head}{RESET} {_aurora_bar(pct, 8, theme, cell)} "
+               f"{col}{BOLD}{int(round(pct)):>2}%{RESET}")
+        reset = _aurora_countdown(remaining)
+        if reset != reset_7d:
+            out += f" {edge}⏰{mute}{reset}{RESET}"
+        return out if use_color else _strip(out)
+    return segment
+
+
 def render_aurora(
     *, msgs_pct, weekly_pct, reset_5h, reset_7d, model,
     lang_body="", cost_text="", cache_age_text="", bypass=False,
@@ -223,6 +296,8 @@ def render_aurora(
     no_quota: bool = False,
     balance_text: str = "",
     quota_stale: bool = False,
+    scoped_segments=(),
+    model_in_scoped: bool = False,
     _segments=None,
     **_ignored,
 ) -> str:
@@ -237,24 +312,7 @@ def render_aurora(
     cell = "━" if bar_glyph == "thin" else "■"
 
     def bar(p, width):
-        # Each cell's color is fixed by its position along the bar, so a fuller
-        # bar literally reaches further into the red end of the spectrum.
-        if p is None:
-            return f"{EDGE}{cell * width}{RESET}"
-        clamped = max(0.0, min(float(p), 100.0))
-        filled = int(clamped / 100 * width + 0.5)
-        if p > 0 and filled == 0:
-            filled = 1
-        out = ""
-        for i in range(width):
-            if i < filled:
-                t = i / (width - 1) if width > 1 else 0.0
-                rgb = (_blend(theme.s_ok, theme.s_warn, t * 2) if t < 0.5
-                       else _blend(theme.s_warn, theme.s_hot, (t - 0.5) * 2))
-                out += f"{_fg(rgb)}{cell}"
-            else:
-                out += f"{EDGE}{cell}"
-        return out + RESET
+        return _aurora_bar(p, width, theme, cell)
 
     def pct_text(p, rgb):
         if p is None:
@@ -289,6 +347,8 @@ def render_aurora(
         if show_weekly:
             parts.append(window("7d", weekly_pct, projection_7d, forecast_7d,
                                 reset_7d))
+    # Per-model weekly limits sit with the quota windows they are part of.
+    parts.extend(scoped_segments)
 
     # The mini bar carries context fill, so the `(70.0k/1.0M)` suffix is
     # redundant here; no_quota already shows ctx as the lead segment.
@@ -298,7 +358,13 @@ def render_aurora(
     if ctx_pct is not None and not no_quota:
         name = _AURORA_TOKENS_RE.sub("", str(model))
         rgb = _severity_color(theme, ctx_pct, _CW, _CC)
-        parts.append(f"{accent}{name}{RESET} {bar(ctx_pct, 6)} "
+        # The model and its context fill are separate segments: glued together
+        # (`Opus 5.5 ■■■■ 63%`) the bar reads as that model's quota, right next
+        # to the real quota bars.
+        # ...unless a per-model limit segment already carries the name.
+        if not model_in_scoped:
+            parts.append(f"{accent}{name}{RESET}")
+        parts.append(f"{MUTE}ctx{RESET} {bar(ctx_pct, 6)} "
                      f"{_fg(rgb)}{int(round(ctx_pct))}%{RESET}")
     else:
         parts.append(f"{accent}{model}{RESET}")
@@ -991,13 +1057,41 @@ def render(style: str, **kwargs) -> str:
     def compose():
         line, parts = rendered_parts() if stack else (fn(**render_kwargs), [])
         scoped_parts = []
-        if per_model_limits:
+        aurora = fn is render_aurora
+
+        def scoped_for(model=""):
             from .scoped_usage import limit_parts
-            scoped_parts = limit_parts(per_model_limits, theme, use_color,
-                                       kwargs.get('warning_threshold'),
-                                       kwargs.get('critical_threshold'), per_model_projection,
-                                       max_width=max_width if stack else None)
-        scoped = ' | '.join(seg for _, seg in scoped_parts)
+            return limit_parts(
+                per_model_limits, theme, use_color,
+                kwargs.get('warning_threshold'),
+                kwargs.get('critical_threshold'), per_model_projection,
+                max_width=max_width if stack else None,
+                segment_fn=_aurora_scoped_segment(
+                    theme, render_kwargs.get("bar_glyph", "block"),
+                    # Only a 7d window drawn on the line makes the reset redundant.
+                    render_kwargs.get("reset_7d", "")
+                    if "7d" in _quota_labels(fn, render_kwargs) else "",
+                    use_color, model) if aurora else None)
+
+        if per_model_limits:
+            scoped_parts = scoped_for()
+        if aurora and scoped_parts and not render_kwargs.get("no_quota"):
+            # Aurora keeps per-model limits on line 1, right after 5h/7d,
+            # whenever the pane has room; otherwise they get their own row.
+            # The session model's own limit absorbs the model segment:
+            # `Fable 5.2 ■■■■ 60%` rather than `Fable ■■■■ 60% │ Fable 5.2`.
+            model = str(render_kwargs.get("model", ""))
+            merged = (render_kwargs.get("ctx_pct") is not None
+                      and any(_aurora_model_matches(model, label)
+                              for label, _ in scoped_parts))
+            inline_parts = scoped_for(model) if merged else scoped_parts
+            inline = fn(**render_kwargs, model_in_scoped=merged,
+                        scoped_segments=[seg for _, seg in inline_parts])
+            if not max_width or max_width <= 0 or visible_width(inline) <= max_width:
+                return inline
+        scoped = (_line_separator(fn, theme, render_kwargs.get("density", "regular"),
+                                  use_color) if aurora else ' | ').join(
+            seg for _, seg in scoped_parts)
         if stack and visible_width(line) > max_width:
             labels = _quota_labels(fn, render_kwargs)
             # Shrink only the quota segment that overflows. A long model,

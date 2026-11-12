@@ -195,7 +195,12 @@ def test_scoped_projection_fits_without_changing_a_fitting_first_line(style, use
         first = _render(style, width, use_color=use_color, **extra).splitlines()[0]
         out = _render(style, width, use_color=use_color, per_model_limits=limits, **extra)
     assert out.splitlines()[0] == first
-    assert _strip(out).splitlines()[1] == _strip(base)
+    row = _strip(out).splitlines()[1]
+    if style == "aurora":  # aurora draws the limit in its own, narrower look
+        assert row.startswith("LongModel") and "10%" in row
+        assert visible_width(row) <= width
+    else:
+        assert row == _strip(base)
     assert "…" not in out
 
 
@@ -216,3 +221,57 @@ def test_stack_boundaries_for_quota_and_api_modes(style, use_color, width, densi
     if width >= 32:
         expected = "ctx" if mode == "no_quota" else "stale" if mode == "stale" else "5h"
         assert expected in _strip(out)
+
+
+def _fable(percent=59, days=2.75):
+    return [dict(label="Fable", percent=percent,
+                 resets_at=time.time() + days * 86400 + 30)]
+
+
+def test_aurora_puts_per_model_limit_on_line_one_after_the_quotas():
+    out = _render("aurora", 500, layout="drop", per_model_limits=_fable(),
+                  reset_7d="2d18h", ctx_pct=63, projection_5h="",
+                  projection_7d="", per_model_projection=False)
+    assert "\n" not in out
+    segs = out.split(" │ ")
+    assert segs[1].startswith("7d")
+    # Same reset as the 7d window right before it: not repeated.
+    assert segs[2] == "Fable ■■■■■■■■ 59%"
+    assert segs[3] == "Opus 5.5"
+    assert segs[4] == "ctx ■■■■■■ 63%"
+
+
+def test_aurora_per_model_limit_shows_its_own_reset_when_it_differs():
+    out = _render("aurora", 500, layout="drop", per_model_limits=_fable(days=1.5),
+                  reset_7d="2d18h", per_model_projection=False)
+    assert "Fable ■■■■■■■■ 59% ⏰1d12h" in out
+
+
+def test_classic_per_model_row_is_unchanged():
+    out = _render("classic", 500, layout="drop", per_model_limits=_fable())
+    assert out.split("\n")[1].startswith("Fable[")
+
+
+def test_aurora_per_model_limit_keeps_its_reset_when_7d_is_hidden():
+    out = _render("aurora", 500, layout="drop", per_model_limits=_fable(),
+                  reset_7d="2d18h", show_weekly=False, per_model_projection=False)
+    assert "7d" not in out
+    assert "Fable ■■■■■■■■ 59% ⏰2d18h" in out
+
+
+def test_aurora_merges_the_session_models_own_limit_into_the_model_segment():
+    out = _render("aurora", 500, layout="drop", per_model_limits=_fable(),
+                  model="Fable 5.2(70.0k/1.0M)", reset_7d="2d18h", ctx_pct=13,
+                  projection_5h="", projection_7d="", per_model_projection=False)
+    segs = out.split(" │ ")
+    assert segs[2:4] == ["Fable 5.2 ■■■■■■■■ 59%", "ctx ■■■■■■ 13%"]
+    assert out.count("Fable") == 1
+
+
+def test_aurora_keeps_another_models_limit_separate():
+    limits = _fable() + [dict(label="Fab", percent=10,
+                              resets_at=time.time() + 2.75 * 86400 + 30)]
+    out = _render("aurora", 500, layout="drop", per_model_limits=limits,
+                  model="Opus 5.5", reset_7d="2d18h", ctx_pct=13,
+                  projection_5h="", projection_7d="", per_model_projection=False)
+    assert " │ Fable ■■■■■■■■ 59% │ Fab ■■■■■■■■ 10% │ Opus 5.5 │ ctx " in out

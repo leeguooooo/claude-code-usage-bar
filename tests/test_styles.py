@@ -216,7 +216,7 @@ def test_aurora_plain_layout():
                  reset_7d="2d18h", model="Opus 5.5(70.0k/1.0M)", ctx_pct=7,
                  cache_age_text="59m12s", use_color=False)
     assert out == ("5h ■■■■■■■■■■■■  4% ⏰4h16m │ 7d ■■■■■■■■■■■■ 74% ⏰2d18h"
-                   " │ Opus 5.5 ■■■■■■ 7% │ ❄ 59m")
+                   " │ Opus 5.5 │ ctx ■■■■■■ 7% │ ❄ 59m")
 
 
 def test_aurora_thin_bar_glyph():

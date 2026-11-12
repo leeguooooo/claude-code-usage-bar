@@ -48,7 +48,10 @@ class StatusbarConfig:
     looks_seen: int = 0
     auto_compact_width: int = DEFAULT_AUTO_COMPACT_WIDTH  # deprecated, ignored
     show_weekly: bool = True
-    show_per_model: bool = False
+    # Per-model weekly limits (e.g. Fable's own cap). Not in statusLine stdin:
+    # fetched in the background from the account usage endpoint with the
+    # Claude Code login, cached 5 minutes. Subscription sessions only.
+    show_per_model: bool = True
     show_language: bool = True
     show_cost: bool = False
     # Relay account balance (no-quota mode only). Auto: shown when the relay
@@ -161,7 +164,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         looks_seen=int(raw.get("looks_seen", 0) or 0),
         auto_compact_width=int(raw.get("auto_compact_width", DEFAULT_AUTO_COMPACT_WIDTH) or 0),
         show_weekly=_to_bool(raw.get("show_weekly", True)),
-        show_per_model=_to_bool(raw.get("show_per_model", False)),
+        show_per_model=_to_bool(raw.get("show_per_model", True)),
         show_language=_to_bool(raw.get("show_language", True)),
         show_cost=_to_bool(raw.get("show_cost", False)),
         show_balance=_to_bool(raw.get("show_balance", True)),

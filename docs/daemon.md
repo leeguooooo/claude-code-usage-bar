@@ -42,11 +42,14 @@ The native reader is included in macOS arm64 and Linux x86_64 release archives.
 Pip/uv installations continue to use the Python client. Existing `cs render`
 commands keep working; binary upgrades take effect on the next invocation.
 
-Optional model-specific weekly limits can be enabled with
-`cs config set show_per_model true`. This explicitly enables read-only OAuth
-credential access (`~/.claude/.credentials.json`, or the macOS login Keychain)
-and background requests to Anthropic's undocumented usage endpoint. No token
-is logged or stored in a cache. Requests are account-scoped, cached for five
-minutes, and disabled by default; unsupported responses hide the segment.
-Relay/no-quota sessions never request these limits. The segment appears on
-its own line below the main usage row, using the same battery and projection.
+Model-specific weekly limits (for example Fable's own weekly cap) are shown
+by default; turn them off with `cs config set show_per_model false`. They are
+not part of the statusLine input, so this uses read-only OAuth credential
+access (`~/.claude/.credentials.json`, or the macOS login Keychain) and
+background requests to Anthropic's undocumented usage endpoint. No token is
+logged or stored in a cache. Requests are account-scoped and cached for five
+minutes; unsupported responses hide the segment. Relay/no-quota sessions never
+request these limits. In the aurora look the limit sits on the main usage row
+right after the 5h/7d bars (`Fable ■■■■■■■■ 60%`), moving to its own row when
+the pane is too narrow; classic keeps it on its own line below, using the same
+battery and projection.

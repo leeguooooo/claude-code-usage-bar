@@ -9,6 +9,19 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.53.0 — 2026-11-12
+
+### Added
+- 模型自己的周额度（例如 Fable 的单独额度）默认显示。它不在 statusLine 输入里，由后台用 Claude Code 登录凭据请求用量接口取得，每 5 分钟刷新一次；API/中转会话不请求。不想要可以 `cs config set show_per_model false`。
+- aurora 外观下，模型额度并入第一行，紧跟 5h/7d：`7d ■■■■■■■■■■■■ 72% ⏰2d18h │ Fable ■■■■■■■■ 60%`。重置时间与 7d 相同时不重复显示；当前会话的模型就是该额度的模型时，模型名直接带额度条（`Fable 5.2 ■■■■■■■■ 60%`）；窗口放不下时额度退到单独一行。classic 外观不变。
+
+### Changed
+- aurora 的上下文占用独立成段并带 `ctx` 标签（`Opus 5.5 │ ctx ■■■■■■ 63%`）。原来的 `Opus 5.5 ■■■■■■ 63%` 容易被看成该模型的额度。
+
+### Fixed
+- macOS 钥匙串里有多个 `Claude Code-credentials` 条目时，可能读到 token 为空的旧条目，模型额度一直不显示。现在优先读当前登录用户的条目。
+- 使用默认外观的用户不再看到“有新外观”的提示。
+
 ## v3.52.3 — 2026-11-01
 
 ### Fixed

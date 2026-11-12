@@ -33,7 +33,7 @@ LOOKS = {
     "classic": [("style", "classic")],
 }
 # Terminal size per tool: Claude shows two lines, Codex three (effort line).
-WIDTH, HEIGHT = (800, 138) if IS_CODEX else (1270, 112)
+WIDTH, HEIGHT = (800, 138) if IS_CODEX else (1310, 112)
 THEME = {
     "background": "#1c1f26", "foreground": "#dcdcdc", "cursor": "#1c1f26",
     "selection": "#333333",

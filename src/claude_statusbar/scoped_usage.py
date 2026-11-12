@@ -1,4 +1,6 @@
-"""Opt-in model caps. Credentials and HTTPS are confined to background work."""
+"""Per-model weekly caps (`show_per_model`, on by default; subscription only).
+
+Credentials and HTTPS are confined to background work."""
 import hashlib
 import json
 import math
@@ -42,15 +44,31 @@ def _token():
         import sys
         if sys.platform != 'darwin':
             return None
+        import getpass
         import subprocess
-        # Token stays on a private pipe, never in argv, logs, or a cache.
-        p = subprocess.run(['/usr/bin/security', 'find-generic-password',
-                            '-s', 'Claude Code-credentials', '-w'],
-                           capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=2)
-        if p.returncode:
-            return None
-        text = p.stdout
+        # The keychain can hold several `Claude Code-credentials` items; a bare
+        # `-s` lookup returns whichever comes first, which may be a stale one
+        # (account "unknown", empty token). Ask for the login user's item
+        # first and only then fall back to the unqualified lookup.
+        try:
+            lookups = [['-a', getpass.getuser()], []]
+        except (KeyError, OSError):
+            lookups = [[]]
+        for extra in lookups:
+            # Token stays on a private pipe, never in argv, logs, or a cache.
+            p = subprocess.run(['/usr/bin/security', 'find-generic-password',
+                                '-s', 'Claude Code-credentials', *extra, '-w'],
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=2)
+            if p.returncode:
+                continue
+            try:
+                token = json.loads(p.stdout)['claudeAiOauth']['accessToken']
+            except (ValueError, KeyError, TypeError):
+                continue
+            if isinstance(token, str) and token:
+                return token
+        return None
     data = json.loads(text).get('claudeAiOauth', {})
     return data.get('accessToken')
 
@@ -121,8 +139,11 @@ def render_limits(limits, theme, use_color, warning, critical, projection=True):
 
 
 def limit_parts(limits, theme, use_color, warning, critical, projection=True, *,
-                max_width=None):
-    """One ``(label, segment)`` per usable per-model limit, in input order."""
+                max_width=None, segment_fn=None):
+    """One ``(label, segment)`` per usable per-model limit, in input order.
+
+    ``segment_fn(label, pct, rgb, remaining)`` lets a style draw the bar in its
+    own look; the default is the classic battery bar."""
     from .progress import _build_dimension, _fg, _render_projection
     from .predict import project_window, format_eta
     from .progress import window_severity_rgb
@@ -147,10 +168,14 @@ def limit_parts(limits, theme, use_color, warning, critical, projection=True, *,
         chip = '' if estimate is None else f'→{min(100, round(estimate[0]))}%'
         if estimate and estimate[1] < remaining:
             chip += '·' + format_eta(estimate[1])
-        rgb = window_severity_rgb(pct, chip, theme, warning, critical) or theme.mute
-        bar = _build_dimension(label, pct, _fg(rgb), use_color,
-                               warning, critical, theme, fill_rgb=rgb)
-        segment = bar + '⏰' + format_eta(remaining)
+        severity = window_severity_rgb(pct, chip, theme, warning, critical)
+        if segment_fn is not None:
+            segment = segment_fn(label, pct, severity, remaining)
+        else:
+            rgb = severity or theme.mute
+            bar = _build_dimension(label, pct, _fg(rgb), use_color,
+                                   warning, critical, theme, fill_rgb=rgb)
+            segment = bar + '⏰' + format_eta(remaining)
         if chip:
             from ._display import visible_width
             projected = segment + ' ' + _render_projection(chip, theme, use_color)

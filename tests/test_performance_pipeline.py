@@ -81,7 +81,7 @@ def test_scoped_parser_and_opt_in():
     from claude_statusbar.scoped_usage import parse_limits, render_limits
     from claude_statusbar.config import StatusbarConfig
     from claude_statusbar.themes import get_theme
-    assert not StatusbarConfig().show_per_model
+    assert StatusbarConfig().show_per_model
     row = dict(kind='weekly_scoped', percent=81,
                resets_at=(datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
                scope={'model': {'display_name': 'Fable'}})
@@ -185,3 +185,34 @@ def test_scheduler_spawn_failure_is_throttled(tmp_path, monkeypatch):
     for _ in range(20):
         scheduler.tick(1)
     assert calls == [True]
+
+
+def test_scoped_token_prefers_the_login_users_keychain_item(tmp_path, monkeypatch):
+    """A bare `-s` lookup can return a stale item with an empty token."""
+    import subprocess
+    from claude_statusbar import scoped_usage
+    monkeypatch.setattr(scoped_usage.Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(sys, 'platform', 'darwin')
+    monkeypatch.setattr('getpass.getuser', lambda: 'fixture-user')
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        token = 'real' if '-a' in argv else ''
+        return subprocess.CompletedProcess(
+            argv, 0, json.dumps({'claudeAiOauth': {'accessToken': token}}), '')
+    monkeypatch.setattr(subprocess, 'run', fake_run)
+    assert scoped_usage._token() == 'real'
+    assert calls[0][calls[0].index('-a') + 1] == 'fixture-user'
+
+    # No per-user item: the unqualified lookup still works; empty stays None.
+    def only_bare(argv, **kwargs):
+        if '-a' in argv:
+            return subprocess.CompletedProcess(argv, 44, '', '')
+        return subprocess.CompletedProcess(
+            argv, 0, json.dumps({'claudeAiOauth': {'accessToken': 'bare'}}), '')
+    monkeypatch.setattr(subprocess, 'run', only_bare)
+    assert scoped_usage._token() == 'bare'
+    monkeypatch.setattr(subprocess, 'run', lambda argv, **k: subprocess.CompletedProcess(
+        argv, 0, json.dumps({'claudeAiOauth': {'accessToken': ''}}), ''))
+    assert scoped_usage._token() is None
