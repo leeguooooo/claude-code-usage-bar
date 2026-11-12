@@ -17,7 +17,9 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest (26.04) no longer ships Python 3.9, which we still support
+    # (requires-python >=3.9); that one job stays on the last image that has it.
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
