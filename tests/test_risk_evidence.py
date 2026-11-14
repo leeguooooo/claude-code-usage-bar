@@ -174,6 +174,28 @@ def test_ipapi_outage_falls_back_to_vpndetection(tmp_path, monkeypatch, answer, 
     assert {k: entry[k] for k in expect} == expect
 
 
+def test_vpndetection_non_boolean_tor_falls_through_to_origin(tmp_path, monkeypatch):
+    monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path)
+    monkeypatch.setattr(refresh, "egress_ip", lambda: "192.0.2.7")
+    monkeypatch.setattr(refresh, "evaluate_ip",
+                        lambda: (_ for _ in ()).throw(OSError("refused")))
+    monkeypatch.setattr(refresh, "family_traces", lambda: {})
+    seen = []
+
+    def _g(url):
+        seen.append(url)
+        if "vpndetection" in url:
+            return json.dumps({"ip": "192.0.2.7", "is_vpn": False, "is_tor": "false",
+                               "asn": {"type": "isp"}, "location": {"country": "CA"}})
+        return json.dumps({"ip": "192.0.2.7", "type": "residential", "country": "ca",
+                           "risk": 0, "claude": {"verdict": "safe"}})
+    monkeypatch.setattr(refresh, "_get", _g)
+    refresh._refresh_locked()
+    entry = ip_risk.read_cache()
+    assert len(seen) == 2
+    assert entry["ok"] and entry["provider"] == "ip-check-origin"
+
+
 def test_origin_fallback_rejects_reading_without_risk(tmp_path, monkeypatch):
     monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path)
     monkeypatch.setattr(refresh, "egress_ip", lambda: "192.0.2.7")

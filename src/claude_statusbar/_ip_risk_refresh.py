@@ -156,7 +156,8 @@ def evaluate_via_vpndetection(ip: str) -> dict:
     like ipapi.is. Anything malformed raises so the caller tries the origin."""
     raw = json.loads(_get("https://api.vpndetection.io/"
                           + urllib.request.quote(ip, safe="")))
-    if not isinstance(raw.get("is_vpn"), bool) or not raw.get("ip"):
+    if (not isinstance(raw.get("is_vpn"), bool)
+            or not isinstance(raw.get("is_tor"), bool) or not raw.get("ip")):
         raise ValueError("no verdict")
     asn = raw.get("asn") or {}
     loc = raw.get("location") or {}
