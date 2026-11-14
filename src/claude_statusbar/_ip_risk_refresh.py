@@ -8,7 +8,9 @@ Background-only probing. Two tiers keep enrichment load small:
     to ipapi.is (the user's OWN quota, distributed across users, ~1000/day
     each) for datacenter/vpn/proxy/tor/abuser + ASN + country, then local
     scoring (ip_score). So a fleet of statusbar users never concentrates load
-    on any shared quota or on our Worker.
+    on any shared quota or on our Worker. If ipapi.is is out of reach,
+    VPNDetection (keyless, no daily quota) is scored the same way, and only
+    then our own origin.
 
 Every spawn also reads the exit IP once over IPv4 and once over IPv6
 (``family_traces``) from our own Cloudflare origin, then classifies each IP
@@ -148,6 +150,28 @@ def evaluate_ip() -> dict:
     return out
 
 
+def evaluate_via_vpndetection(ip: str) -> dict:
+    """Second source when ipapi.is is out of reach: VPNDetection's lookup
+    (no key, no daily quota) for vpn/tor + ASN type + country, scored locally
+    like ipapi.is. Anything malformed raises so the caller tries the origin."""
+    raw = json.loads(_get("https://api.vpndetection.io/"
+                          + urllib.request.quote(ip, safe="")))
+    if not isinstance(raw.get("is_vpn"), bool) or not raw.get("ip"):
+        raise ValueError("no verdict")
+    asn = raw.get("asn") or {}
+    loc = raw.get("location") or {}
+    sig = {
+        "is_datacenter": asn.get("type") == "hosting",
+        "is_vpn": raw.get("is_vpn"),
+        "is_tor": raw.get("is_tor"),
+        "org": asn.get("name"),
+        "asn": _parse_asn(asn.get("asn")),
+    }
+    out = ip_score.evaluate(sig, loc.get("country"))
+    out.update({"ok": True, "ip": raw["ip"], "provider": "vpndetection+local"})
+    return out
+
+
 def evaluate_via_origin(ip: str) -> dict:
     """Fallback verdict from our own ip-check origin when ipapi.is is out of
     reach (it refuses connections from some networks outright, and then every
@@ -216,7 +240,10 @@ def _refresh_locked() -> int:
             try:
                 entry = evaluate_ip()
             except Exception:
-                entry = evaluate_via_origin(ip)
+                try:
+                    entry = evaluate_via_vpndetection(ip)
+                except Exception:
+                    entry = evaluate_via_origin(ip)
     except Exception:
         entry = {"ok": False, "ts": now}
         previous = prev if prev.get("ok") else prev.get("last_good")
