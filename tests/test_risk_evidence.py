@@ -145,6 +145,35 @@ def test_ipapi_outage_falls_back_to_own_origin(tmp_path, monkeypatch):
     assert ip_risk.cached_status(entry)[0] == ""
 
 
+@pytest.mark.parametrize("answer, expect", [
+    ({"ip": "192.0.2.7", "is_vpn": True, "is_tor": False,
+      "asn": {"asn": 9009, "name": "M247 Europe SRL", "type": "hosting"},
+      "location": {"country": "SE"}},
+     {"type": "vpn/hosting", "verdict": "ban-risk", "country": "SE", "proxy": "yes"}),
+    ({"ip": "192.0.2.7", "is_vpn": False, "is_tor": False,
+      "asn": {"asn": 5769, "name": "Videotron Ltee", "type": "isp"},
+      "location": {"country": "CA"}},
+     {"type": "residential", "verdict": "safe", "country": "CA", "proxy": "no"}),
+])
+def test_ipapi_outage_falls_back_to_vpndetection(tmp_path, monkeypatch, answer, expect):
+    monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path)
+    monkeypatch.setattr(refresh, "egress_ip", lambda: "192.0.2.7")
+    monkeypatch.setattr(refresh, "evaluate_ip",
+                        lambda: (_ for _ in ()).throw(OSError("refused")))
+    monkeypatch.setattr(refresh, "family_traces", lambda: {})
+    seen = []
+
+    def _g(url):
+        seen.append(url)
+        return json.dumps(answer)
+    monkeypatch.setattr(refresh, "_get", _g)
+    refresh._refresh_locked()
+    entry = ip_risk.read_cache()
+    assert seen == ["https://api.vpndetection.io/192.0.2.7"]
+    assert entry["ok"] and entry["provider"] == "vpndetection+local"
+    assert {k: entry[k] for k in expect} == expect
+
+
 def test_origin_fallback_rejects_reading_without_risk(tmp_path, monkeypatch):
     monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path)
     monkeypatch.setattr(refresh, "egress_ip", lambda: "192.0.2.7")
