@@ -190,6 +190,8 @@ def _parse_asn(v):
 
 
 def main(force=True) -> int:
+    if ip_risk.DISABLED:
+        return 0
     from .git_cache import try_claim
     lock = try_claim('ip-risk')
     if lock is None:

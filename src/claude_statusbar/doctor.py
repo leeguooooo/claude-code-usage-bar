@@ -187,7 +187,7 @@ def risk_details() -> None:
     state = ip_risk.cache_state(entry)
     level = ip_risk.cached_status(entry)[1]
     summary = f"{state} — cached network signals ({level}); account status unverified"
-    _line("IP probe", summary if cfg.show_ip_risk else "off (opt-in)", ok=None)
+    _line("IP probe", "disabled (privacy)" if ip_risk.DISABLED else (summary if cfg.show_ip_risk else "off (opt-in)"), ok=None)
     coverage = entry if isinstance(entry, dict) and entry.get("ok") else (
         entry.get("last_good") if isinstance(entry, dict) else None)
     family = coverage.get("families") if isinstance(coverage, dict) else None

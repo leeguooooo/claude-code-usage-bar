@@ -9,6 +9,12 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.53.1 — 2026-11-16
+
+- Disable the exit-IP risk probe for privacy. It sent the user's IP to
+  ipify and ipapi.is; `show_ip_risk` is now ignored, nothing is spawned and
+  no lookup is made. `cs doctor` reports it as disabled.
+
 ## v3.53.0 — 2026-11-12
 
 ### Added

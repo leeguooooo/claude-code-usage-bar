@@ -83,8 +83,8 @@ class StatusbarConfig:
     show_tools: bool = False
     show_tool_rollup: bool = False
     show_agents: bool = False
-    # Egress-IP risk chip on the identity line (proxycheck.io, 30-min cadence,
-    # detached prober — see ip_risk.py). Opt-in: it talks to a third party.
+    # Egress-IP risk chip. Temporarily disabled for privacy: the prober sent the
+    # user's IP to third parties. A stored `true` is ignored (ip_risk.DISABLED).
     show_ip_risk: bool = False
     # Local-only custom-endpoint notice, not a watermark/account detector.
     # Default on; no request inspection, network calls or timezone inference.
@@ -179,7 +179,7 @@ def load_config(path: Optional[Path] = None) -> StatusbarConfig:
         show_tools=_to_bool(raw.get("show_tools", False)),
         show_tool_rollup=_to_bool(raw.get("show_tool_rollup", False)),
         show_agents=_to_bool(raw.get("show_agents", False)),
-        show_ip_risk=_to_bool(raw.get("show_ip_risk", False)),
+        show_ip_risk=False,  # disabled: see ip_risk.DISABLED
         show_fp_risk=_to_bool(raw.get("show_fp_risk", True)),
         show_duration=_to_bool(raw.get("show_duration", False)),
         show_lines=_to_bool(raw.get("show_lines", True)),

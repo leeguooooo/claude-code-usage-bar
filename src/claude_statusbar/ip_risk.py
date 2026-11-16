@@ -29,6 +29,11 @@ CRIT_RISK = 67
 SHOW_THRESHOLD = 40
 
 
+# Kill switch: the IP probe is disabled for privacy (it sent the user's IP
+# to ipify / ipapi.is). Nothing spawns the prober and no request is made.
+DISABLED = True
+
+
 def _cache_root() -> Path:
     return Path(os.path.expanduser("~/.cache/claude-statusbar"))
 
@@ -292,6 +297,8 @@ def ensure_fresh(entry=None) -> None:
     isn't already running. Safe to call from anywhere (render path AND the
     daemon heartbeat) — the inflight marker prevents double-spawns. Never
     raises."""
+    if DISABLED:
+        return
     try:
         if entry is None:
             entry = read_cache()

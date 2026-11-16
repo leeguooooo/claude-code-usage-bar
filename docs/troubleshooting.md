@@ -81,7 +81,8 @@ To disable auto-updates: `export CLAUDE_STATUSBAR_NO_UPDATE=1`
 
 ## Network and custom-endpoint notices
 
-`show_ip_risk` stays opt-in. A fresh low-risk result is silent, and so is a
+`show_ip_risk` is temporarily disabled for privacy: the setting is ignored and
+no IP lookup is made. When it returns, it stays opt-in. A fresh low-risk result is silent, and so is a
 check that couldn't run (`cs doctor` still reports it). A failed or stale
 refresh keeps an old warning with an explicit last-known label. A difference between IPv4/IPv6 exit
 countries does not establish a leak or Claude's actual route. Scores and local
