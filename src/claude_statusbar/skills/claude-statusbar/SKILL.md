@@ -58,7 +58,7 @@ give a short confirmation (one line, no lecture).
 | Force / disable no-quota (API) mode | `cs config set api_mode <auto\|on\|off>` |
 | Show working directory | `cs config set show_cwd true\|false` + `cs config set cwd_style <basename\|full>` |
 | Relay balance fuel gauge | `cs config set show_balance true\|false` + `cs config set balance_bar true\|false` (no-quota mode only; auto-hidden when the relay has no balance API) |
-| Exit-IP purity segment (also checks IPv4 and IPv6 exits separately against our own host — warns on an IPv4/IPv6 split, WARP, VPN/proxy, or an unsupported region; never contacts Anthropic, and a per-domain proxy rule can still route claude.ai differently) | `cs config set show_ip_risk true\|false` |
+| Exit-IP purity segment — **temporarily disabled for privacy**; `show_ip_risk` is ignored and no IP lookups are made | — |
 | Local custom-endpoint notice (no watermark or account prediction) | `cs config set show_fp_risk true\|false` |
 | Window-end projection `→NN%` | `cs config set show_projection true\|false` |
 | Worktree count glyph (`worktree (🌳3)`) | `cs config set worktree_glyph ⑂` (default `🌳`; any 1-2 cell symbol) |

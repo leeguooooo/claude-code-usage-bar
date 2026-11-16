@@ -39,6 +39,27 @@ def test_levels_follow_proxycheck_bands():
     assert ip_risk.risk_level({"risk": 5, "proxy": "yes"}) == "warn"
 
 
+@pytest.fixture(autouse=True)
+def _probe_enabled(request, monkeypatch):
+    """The probe ships disabled; these tests cover its internals."""
+    if "disabled" not in request.node.name:
+        monkeypatch.setattr(ip_risk, "DISABLED", False)
+
+
+def test_probe_disabled_makes_no_requests(tmp_path, monkeypatch):
+    from claude_statusbar import _ip_risk_refresh as refresh
+    from claude_statusbar.config import load_config
+    assert ip_risk.DISABLED
+    monkeypatch.setattr(ip_risk, "_cache_root", lambda: tmp_path)
+    (tmp_path / "config.json").write_text('{"show_ip_risk": true}')
+    monkeypatch.setattr(refresh, "_get", lambda url: pytest.fail("network: " + url))
+    import subprocess
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("spawned"))
+    ip_risk.ensure_fresh(None)
+    assert refresh.main() == 0
+    assert load_config(tmp_path / "config.json").show_ip_risk is False
+
+
 def test_line_hidden_at_or_below_threshold():
     assert ip_risk.line_text({"risk": 0}) == ""
     assert ip_risk.line_text({"risk": 40}) == ""
