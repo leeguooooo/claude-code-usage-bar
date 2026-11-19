@@ -171,6 +171,11 @@ def parse_stdin_data() -> Dict[str, Any]:
                 cached_fh = cached_rl.get('five_hour', {})
                 cached_sd = cached_rl.get('seven_day', {})
                 result['no_five_hour_limit'] = bool(cached_sd) and not cached_fh
+                # Another session's last reading, not this one's: display only.
+                # Recorded as this session's own, it re-confirmed whatever stale
+                # value an idle window last wrote (live 2026-11-19: 7d pinned
+                # at 97% after an early weekly reset, API said 0%).
+                result['rate_limits_borrowed'] = bool(cached_fh or cached_sd)
                 if cached_fh:
                     p, ra = _rollover_cached(_pct(cached_fh.get('used_percentage', 0)),
                                        cached_fh.get('resets_at'), FIVE_HOUR_S)
@@ -1465,13 +1470,27 @@ def main(json_output: bool = False,
 
             try:
                 from .predict import reconcile_account
-                msgs_pct, resets_at, weekly_pct, resets_at_7d = reconcile_account(
-                    msgs_pct, resets_at, weekly_pct, resets_at_7d,
-                    session_id=stdin_data.get('session_id') or None,
-                    # parse_stdin_data flattens stdin's model.id to 'model_id'
-                    model=stdin_data.get('model_id') or None,
-                    transcript_path=stdin_data.get('transcript_path') or None,
-                )
+                if stdin_data.get('rate_limits_borrowed'):
+                    # Borrowed snapshot: answer from the shared store for the
+                    # same windows without writing or confirming anything. The
+                    # pcts are withheld so the snapshot (last writer among all
+                    # open windows, often an idle one) can't outvote the store;
+                    # it only fills in when the store has nothing.
+                    u5, r5, u7, r7 = reconcile_account(
+                        None, resets_at, None, resets_at_7d, record=False,
+                        transcript_path=stdin_data.get('transcript_path') or None,
+                    )
+                    msgs_pct = u5 if u5 is not None else msgs_pct
+                    weekly_pct = u7 if u7 is not None else weekly_pct
+                    resets_at, resets_at_7d = r5 or resets_at, r7 or resets_at_7d
+                else:
+                    msgs_pct, resets_at, weekly_pct, resets_at_7d = reconcile_account(
+                        msgs_pct, resets_at, weekly_pct, resets_at_7d,
+                        session_id=stdin_data.get('session_id') or None,
+                        # parse_stdin_data flattens stdin's model.id to 'model_id'
+                        model=stdin_data.get('model_id') or None,
+                        transcript_path=stdin_data.get('transcript_path') or None,
+                    )
             except Exception:
                 pass
 

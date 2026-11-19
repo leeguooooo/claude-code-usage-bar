@@ -9,6 +9,11 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.53.2 — 2026-11-19
+
+### Fixed
+- 周额度被官方提前重置后，7d 可能一直卡在重置前的数（实测 97%，接口已是 0%）。没有 `rate_limits` 的会话会借用账号最近一次额度快照，而这份快照常被闲置窗口用旧读数反复覆盖；借来的值之前被当成该会话自己的新读数写进共享存储，每次渲染都在重新确认旧值。现在借来的快照只用于显示，不写入也不算确认，有共享读数时以共享读数为准。
+
 ## v3.53.1 — 2026-11-16
 
 - Disable the exit-IP risk probe for privacy. It sent the user's IP to
