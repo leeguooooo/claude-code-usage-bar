@@ -409,6 +409,15 @@ def quota_cache_status(now=None, path=None):
     return ("fresh" if plausible else "stale", age)
 
 
+def _transcript_mtime(transcript_path):
+    if not transcript_path:
+        return None
+    try:
+        return os.stat(transcript_path).st_mtime
+    except (OSError, TypeError, ValueError):
+        return None
+
+
 def regime_changed_at(path=None, transcript_path=None):
     """Timestamp of the last burn-rate regime boundary (model switch or
     novel-model fleet join), or None. Never raises."""
@@ -454,13 +463,14 @@ def reconcile_account(used_5h, resets_5h, used_7d, resets_7d, path=None, now=Non
         with file_transaction(p):
             return _reconcile_account_locked(
                 p, used_5h, resets_5h, used_7d, resets_7d, now,
-                session_id, record, model)
+                session_id, record, model, transcript_path)
     except Exception:
         return used_5h, resets_5h, used_7d, resets_7d
 
 
 def _reconcile_account_locked(p, used_5h, resets_5h, used_7d, resets_7d,
-                              now, session_id, record, model):
+                              now, session_id, record, model,
+                              transcript_path=None):
     try:
         if now is None:
             import time as _t
@@ -539,7 +549,24 @@ def _reconcile_account_locked(p, used_5h, resets_5h, used_7d, resets_7d,
                     sessions[session_id] = upd
                     changed = True
             else:
-                upd = {"sig": sig, "changed_at": now}
+                changed_at = now
+                if ent is None:
+                    # First sighting can't date the headers, but the transcript
+                    # can bound them: a response is written there after its
+                    # headers arrive, so the blob is at least as old as the
+                    # transcript's last write. An idle window re-seen after
+                    # its entry aged out (or a daemon restart) replays days-old
+                    # headers; without this it passed as fresh and lifted the
+                    # bar (live 2026-11-19: 3% → 31% from a two-day-old window).
+                    written = _transcript_mtime(transcript_path)
+                    if written is not None and written < now:
+                        if now - written > RL_IDLE_TTL_S:
+                            blob_fresh = False
+                            # Just past the idle gate keeps it frozen without
+                            # the entry aging out (and being re-seen) at once.
+                            written = max(written, now - RL_IDLE_TTL_S - 1.0)
+                        changed_at = written
+                upd = {"sig": sig, "changed_at": changed_at}
                 if isinstance(prev_sig, list) and len(prev_sig) == len(sig):
                     for win, offset in (("five_hour", 0), ("seven_day", 2)):
                         if prev_sig[offset:offset + 2] != sig[offset:offset + 2]:

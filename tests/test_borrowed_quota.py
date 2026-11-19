@@ -43,3 +43,37 @@ def test_borrowed_snapshot_fills_in_when_store_is_empty(monkeypatch, capsys):
 
     assert out["rate_limits"]["seven_day"]["used_percentage"] == 40
     assert not predict._LATEST_PATH.exists()
+
+
+def test_first_sighting_of_idle_window_cannot_lift_the_bar(tmp_path):
+    """An idle window re-seen (entry aged out, daemon restart) replays old
+    headers. Its transcript dates them: last written long ago → display only."""
+    import os
+    now = time.time()
+    reset = now + 3 * 86400
+    predict.reconcile_account(None, None, 3.0, reset, now=now, session_id="live")
+    old = tmp_path / "idle.jsonl"
+    old.write_text("{}\n")
+    os.utime(old, (now - 2 * 3600, now - 2 * 3600))
+
+    _, _, u7, _ = predict.reconcile_account(
+        None, None, 31.0, reset, now=now + 1, session_id="idle",
+        transcript_path=str(old))
+    assert u7 == 3.0
+    # Still frozen on the next render, and the entry stays (no re-sighting churn).
+    _, _, u7, _ = predict.reconcile_account(
+        None, None, 31.0, reset, now=now + 2, session_id="idle",
+        transcript_path=str(old))
+    assert u7 == 3.0
+
+
+def test_first_sighting_of_new_session_is_fresh(tmp_path):
+    now = time.time()
+    reset = now + 3 * 86400
+    predict.reconcile_account(None, None, 3.0, reset, now=now, session_id="live")
+    fresh = tmp_path / "new.jsonl"
+    fresh.write_text("{}\n")
+
+    _, _, u7, _ = predict.reconcile_account(
+        None, None, 5.0, reset, session_id="new", transcript_path=str(fresh))
+    assert u7 == 5.0
